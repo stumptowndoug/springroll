@@ -42,6 +42,8 @@ export function openStore(dir) {
   // Columns added after the first release (each fails harmlessly once it exists).
   // The runs table is also the jobs' queue: a run waits as 'queued' (until not_before, and until there's
   // room) and survives restarts; attempt counts retries; how is scheduled | manual | retry.
+  // Threads: the agent's settings as it reports them, Full access or Ask first, the effort chosen.
+  for (const col of ['options text', "access text default 'full'", 'effort text']) { try { db.exec(`alter table threads add column ${col}`); } catch {} }
   for (const col of ['report text', 'title text', 'attempt integer not null default 1', 'not_before integer', 'how text']) { try { db.exec(`alter table runs add column ${col}`); } catch {} }
   // Signals from connectors: an icon, the note an agent gets when the owner asks about it, and a revision
   // (what changed upstream) so an item the owner marked done stays done until something new happens.

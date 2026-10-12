@@ -23,12 +23,17 @@ Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
   the turn; an agent still going 30s later is closed (its session resumes on
   the next message). Streamed text is written and sent every 100ms, as
   `append` events (`{threadId, id, from, text}`: the text added at offset
-  `from`), not per chunk.
+  `from`), not per chunk. Size limits: tool output keeps its last 24k characters;
+  a diff over 24k characters or 2000 lines is kept as `{path, truncated}`, at
+  most 8 per tool call; an image over 4 MB becomes a notice. Switching a chat to
+  Full access answers its waiting requests (allow once).
 - `jobs.mjs` + `cron.mjs`: jobs in `~/home/jobs/<name>/job.json` (+ the
   agent's `NOTES.md`), five-field cron schedules, skip missed runs unless
   `catchUp: "once"`, never overlapping. Each run is a thread (origin
   `job:<name>`); its final message is the report, sent to the owner's phone.
 - `store.mjs`: SQLite at `~/data/agentd/agentd.db`.
+- `test/`: the chat runtime against a fake ACP agent (streaming, Stop, permissions, size limits):
+  `node --test agentd/test/chat.test.mjs`. Run it after changing `threads.mjs`.
 - Connected services' MCP servers (`~/home/connections/<name>/mcp.json`) are
   given to every new session.
 

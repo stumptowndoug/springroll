@@ -28,9 +28,6 @@ function applyTimezone() {
 applyTimezone();
 
 const store = openStore(path.join(HOME, 'data', 'agentd'));
-for (const col of ["options text", "access text default 'full'", "effort text"]) {
-  try { store.db.exec(`alter table threads add column ${col}`); } catch {}
-}
 // Agents with no remembered model list yet: take it from their latest chat that has one.
 for (const r of store.db.prepare("select agent, options from threads where options is not null order by updated desc").all()) {
   if (store.agentOptions(r.agent)) continue;

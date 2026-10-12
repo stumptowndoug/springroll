@@ -145,3 +145,13 @@
 }
 .ui-diff .diff-file { color: inherit; }
 .ui-diff .diff-file:hover { color: var(--accent); }
+
+/* Long chats, long messages, images from other sites */
+.earlier { display: flex; justify-content: center; padding-top: 14px; }
+.earlier:empty { display: none; }
+.msg-agent .plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-agent .img-link { display: inline-flex; align-items: center; gap: 6px; }
+
+/* A slash command the agent doesn't offer in chat */
+.nudge { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-sm); color: var(--muted); }
+.nudge > span { flex: 1; min-width: 200px; }

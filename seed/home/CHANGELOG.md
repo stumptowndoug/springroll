@@ -5,6 +5,37 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Chat: recall, long chats, size limits, slash commands, tests
+
+The rest of what Shep's ACP chat taught (`agentd/threads.mjs`, `agentd/store.mjs`, `agentd/server.mjs`,
+`agentd/test/`, `views/desk/public/app/thread.js`, `thread.css`, `agentd/README.md`). Restart agentd and desk.
+
+- **↑/↓ recall** what was sent in this chat, in an empty composer (or one still showing a recalled
+  prompt), like a shell. Any edit ends recall.
+- **Long chats** show their last 50 turns; "Show N earlier turns" adds 50 at a time, keeping the view in
+  place. A message over 24k characters streams as plain text and is formatted when the turn ends.
+- **Size limits on what's stored** (`clipContent`): tool output keeps its *last* 24k characters (a log's
+  end says what happened; it kept the start). A diff over 24k characters or 2000 lines is kept as
+  `{type: 'diff', path, truncated: true}`, shown as "Large change, not shown" with the file linked,
+  instead of half a diff; at most 8 diffs per tool call. An image over 4 MB becomes a notice.
+- **Images from other sites in chat** show as links, not loaded: an agent that read a hostile email could
+  otherwise put text from it in an image address and the browser would send it (`chatMarkdown`).
+  Images from Springroll itself (`/…`) still show. `ui.markdown` elsewhere is unchanged.
+- **Slash commands the agent doesn't offer in chat** (it listed its commands and this isn't one, e.g.
+  Claude's `/login`): not sent as a message; a note offers **Open terminal** (the agent's own CLI in the
+  chat's folder, via `POST /api/sessions`) or **Send anyway**. Paths like `/home/…` aren't commands.
+- **Switching to Full access** answers requests already waiting (allow once, as Full access does), and the
+  chat carries on (`setAccess`).
+- **The live turn** is the one working, not messages queued behind it (the shimmer and folding were off
+  while a message was queued). Earlier turns shown later are inserted in order.
+- **Schema:** the threads columns `options`, `access`, `effort` are added in `store.mjs` (were in
+  `server.mjs`), so anything opening the store gets them.
+- **Tests:** `node --test agentd/test/chat.test.mjs` runs the chat runtime against a fake ACP agent
+  (`agentd/test/fake-agent.mjs`): streaming, Stop, Ask first → Full access, size limits.
+- **If you changed this:** if this machine's `server.mjs` added more thread columns in that loop, move them
+  to `store.mjs` with the others. If it changed how tool content is clipped, keep its limits but keep a
+  big diff as `truncated` rather than cut text (the composer's diff view can't show half a diff).
+
 ## 2026-10-11 · Chat: a streamed answer stays one message
 
 - **Fix** (`agentd/threads.mjs`, `onNotification`): the batching above ended the streamed message at

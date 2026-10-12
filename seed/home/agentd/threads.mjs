@@ -21,14 +21,26 @@ const FLUSH_CHARS = 64000;
 const FULL_MODES = ['bypassPermissions', 'agent-full-access', 'full-access', 'yolo', 'full', 'agent-full'];
 // "Ask first": the harness's mode that asks before acting (Claude's default, Codex's agent).
 const ASK_MODES = ['default', 'agent', 'auto', 'manual', 'ask', 'ask-first'];
+const MAX_DIFFS = 8;            // diffs kept per tool call
+const MAX_DIFF_LINES = 2000;
+const MAX_IMAGE = 4 * 2 ** 20;   // base64 characters of an image an agent shows
 const clip = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) + `\n… (${s.length - MAX_TEXT} more characters)` : s);
+// Output keeps its end: that's where a log says what happened.
+const clipTail = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? `(${s.length - MAX_TEXT} earlier characters) …\n` + s.slice(-MAX_TEXT) : s);
+const lineCount = (s) => (typeof s === 'string' ? s.split('\n').length : 0);
 
+// A diff too big to show whole is kept as just its path ("Large change"): half a diff misleads.
 function clipContent(content) {
   if (!Array.isArray(content)) return content;
-  return content.map((c) => {
-    if (c.type === 'content' && c.content?.type === 'text') return { ...c, content: { ...c.content, text: clip(c.content.text) } };
-    if (c.type === 'diff') return { ...c, oldText: clip(c.oldText), newText: clip(c.newText) };
-    return c;
+  let diffs = 0;
+  return content.flatMap((c) => {
+    if (c.type === 'content' && c.content?.type === 'text') return [{ ...c, content: { ...c.content, text: clipTail(c.content.text) } }];
+    if (c.type === 'diff') {
+      if (++diffs > MAX_DIFFS) return [];
+      const big = (c.oldText?.length || 0) > MAX_TEXT || (c.newText?.length || 0) > MAX_TEXT || lineCount(c.oldText) + lineCount(c.newText) > MAX_DIFF_LINES;
+      return [big ? { type: 'diff', path: c.path, truncated: true } : c];
+    }
+    return [c];
   });
 }
 
@@ -79,12 +91,13 @@ export function agentEnv() {
 }
 
 export class ThreadManager {
-  constructor({ store, agents, emit, notify, mcpServers }) {
+  constructor({ store, agents, emit, notify, mcpServers, cancelMs = CANCEL_MS }) {
     this.store = store;
     this.agents = agents;        // () => registry entries
     this.emit = emit;            // (event) => broadcast to clients
     this.notify = notify;        // (thread, text) => phone notification
     this.mcpServers = mcpServers; // () => ACP mcpServers for new sessions
+    this.cancelMs = cancelMs;
     this.live = new Map();       // threadId -> { conn, sessionId, loading, last, permissions: Map }
     this.running = new Map();    // threadId -> { started, turn }
     this.cancelled = new Set();  // threads stopped while their agent was still starting
@@ -402,10 +415,10 @@ export class ThreadManager {
     setTimeout(() => {
       if (this.running.get(threadId) !== run || this.live.get(threadId) !== live) return;
       const name = this.agentDef(this.store.thread(threadId).agent).name;
-      this.add(threadId, run.turn, 'notice', { level: 'warn', text: `${name} didn't stop within ${CANCEL_MS / 1000}s, so it was closed. Your next message picks the conversation up again.` });
+      this.add(threadId, run.turn, 'notice', { level: 'warn', text: `${name} didn't stop within ${Math.round(this.cancelMs / 1000)}s, so it was closed. Your next message picks the conversation up again.` });
       this.cancelled.add(threadId);
       this.stop(threadId);
-    }, CANCEL_MS).unref();
+    }, this.cancelMs).unref();
     return true;
   }
 
@@ -434,6 +447,18 @@ export class ThreadManager {
   async setAccess(threadId, access) {
     this.store.db.prepare('update threads set access = ? where id = ?').run(access, threadId);
     const live = this.live.get(threadId);
+    // Full access answers what's already waiting too, the way it answers what comes next.
+    if (access === 'full' && live?.permissions.size) {
+      for (const [rpcId, p] of live.permissions) {
+        const opts = this.store.item(p.itemId)?.options || [];
+        const allow = opts.find((o) => o.kind === 'allow_once') || opts.find((o) => o.kind === 'allow_always');
+        if (!allow) continue;
+        p.reply.respond({ outcome: { outcome: 'selected', optionId: allow.optionId } });
+        live.permissions.delete(rpcId);
+        this.resolvePermissionItem(threadId, p.itemId, { outcome: 'selected', optionId: allow.optionId });
+      }
+      if (!live.permissions.size && this.store.thread(threadId)?.status === 'waiting') this.store.updateThread(threadId, { status: 'running' });
+    }
     if (live?.sessionId) {
       await this.applyAccess(threadId, live, access);
       this.saveOptions(threadId, live);
@@ -461,6 +486,8 @@ export class ThreadManager {
         const c = u.content || {};
         if (c.type === 'text') {
           if (c.text) this.appendText(threadId, turn, kind, c.text, u.messageId || null);
+        } else if (c.type === 'image' && (c.data?.length || 0) > MAX_IMAGE) {
+          this.add(threadId, turn, 'notice', { level: '', text: `The agent showed an image too large to keep here (${Math.round(c.data.length * 0.75 / 2 ** 20)} MB).` });
         } else if (c.type === 'image' || c.type === 'resource_link') {
           this.add(threadId, turn, 'media', { content: c });
         }

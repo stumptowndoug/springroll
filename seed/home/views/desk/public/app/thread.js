@@ -116,10 +116,11 @@ function lineDiff(a = '', b = '') {
 }
 function diffStats(item) {
   let add = 0, del = 0;
-  for (const d of diffsOf(item)) for (const [op] of lineDiff(d.oldText, d.newText)) { if (op === 'add') add++; if (op === 'del') del++; }
+  for (const d of diffsOf(item).filter((x) => !x.truncated)) for (const [op] of lineDiff(d.oldText, d.newText)) { if (op === 'add') add++; if (op === 'del') del++; }
   return { add, del };
 }
 function renderDiff(d) {
+  if (d.truncated) return `<div class="ui-diff"><div class="path"><a class="diff-file" href="#/v/files#p=${encodeURIComponent(d.path)}" title="Open in Files">${ui.esc(home(d.path))}</a><span class="stats ui-faint">Large change, not shown</span></div></div>`;
   const ops = lineDiff(d.oldText, d.newText);
   const keep = new Set();
   ops.forEach(([op], i) => { if (op !== 'same') for (let k = i - 2; k <= i + 2; k++) keep.add(k); });
@@ -133,6 +134,16 @@ function renderDiff(d) {
   return `<div class="ui-diff"><div class="path"><a class="diff-file" href="#/v/files#p=${encodeURIComponent(d.path)}" title="Open in Files">${ui.esc(home(d.path))}</a><span class="stats"><span class="add-n">+${add}</span> <span class="del-n">−${del}</span></span></div><div class="lines">${html}</div></div>`;
 }
 
+const TURN_PAGE = 50;       // turns shown at first, and per "Show earlier"
+const BIG_TEXT = 24000;     // a message this long streams as plain text, formatted once it's done
+
+// Agent text as Markdown. Images from other sites become links: loading one would tell that site
+// whatever the agent put in its address (text from an email it read, say).
+function chatMarkdown(text) {
+  return ui.markdown(text).replace(/<img alt="([^"]*)" src="(https?:[^"]*)">/g, (_, alt, src) =>
+    `<a class="img-link" href="${src}" target="_blank" rel="noopener">${ui.icon('image', 'sm')}${alt || 'Image'}</a>`);
+}
+
 /* ---------- The view ---------- */
 class ThreadView {
   constructor(el, { ctx, mode, context, onCreated, onClose }) {
@@ -142,12 +153,14 @@ class ThreadView {
     el.innerHTML = `
       <div class="thread ${mode}">
         <header class="thread-head"></header>
-        <div class="thread-scroll"><div class="timeline"></div><article class="chat-report" hidden></article><div class="tail"></div></div>
+        <div class="thread-scroll"><div class="earlier"></div><div class="timeline"></div><article class="chat-report" hidden></article><div class="tail"></div></div>
         <div class="dock"><div class="stack"></div><div class="composer"></div></div>
       </div>`;
     this.$head = el.querySelector('.thread-head');
     this.$scroll = el.querySelector('.thread-scroll');
     this.$timeline = el.querySelector('.timeline');
+    this.$earlier = el.querySelector('.earlier');
+    this.$earlier.addEventListener('click', () => this.showEarlier());
     this.$tail = el.querySelector('.tail');
     this.$report = el.querySelector('.chat-report');
     this.$stack = el.querySelector('.stack');
@@ -178,7 +191,8 @@ class ThreadView {
 
   async open(id, q = {}) {
     this.id = id; this.stick = true;
-    const reset = () => { this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.$report.hidden = true; this.$report.innerHTML = ''; this.reportDup = null; };
+    this.turnLimit = TURN_PAGE; this.recall = null; this.nudge = null;
+    const reset = () => { this.$earlier.innerHTML = ''; this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.$report.hidden = true; this.$report.innerHTML = ''; this.reportDup = null; };
     if (!id) {
       reset();
       this.draftAgent = q.agent || this.draftAgent || defaultAgent();
@@ -341,16 +355,23 @@ class ThreadView {
     this.renderHead();
     const turns = new Map();
     for (const it of this.items) { if (!turns.has(it.turn)) turns.set(it.turn, []); turns.get(it.turn).push(it); }
-    const keys = [...turns.keys()].sort((a, b) => a - b);
+    // A long chat shows its last turns; earlier ones on request (a page of TURN_PAGE at a time).
+    const all = [...turns.keys()].sort((a, b) => a - b);
+    const keys = all.slice(-this.turnLimit);
+    const hidden = all.length - keys.length;
+    ui.morph(this.$earlier, hidden ? `<button class="ui-btn quiet sm">Show ${Math.min(hidden, TURN_PAGE)} earlier turn${hidden === 1 ? '' : 's'}</button>` : '');
     const live = this.thread && (this.thread.running || this.thread.status === 'running' || this.thread.status === 'starting' || this.thread.status === 'waiting');
-    const lastTurn = keys[keys.length - 1];
+    const waitingOnly = (its) => its.every((i) => i.kind === 'user' && (i.queued || i.unsent)); // messages queued behind the live turn
+    const lastTurn = keys.findLast((k) => !waitingOnly(turns.get(k)));
     const existing = new Map([...this.$timeline.children].map((c) => [c.dataset.turn, c]));
+    let prev = null;
     for (const k of keys) {
       const its = turns.get(k);
       const isLive = live && k === lastTurn && !its.some((i) => i.kind === 'turn');
       const sig = its.map((i) => `${i.id}:${i.updated}`).join(',') + (isLive ? ':live' : '') + [...this.open_].filter((o) => o.startsWith(`t${k}:`)).join();
       let node = existing.get(String(k));
-      if (!node) { node = document.createElement('section'); node.className = 'turn'; node.dataset.turn = k; this.$timeline.appendChild(node); }
+      if (!node) { node = document.createElement('section'); node.className = 'turn'; node.dataset.turn = k; prev ? prev.after(node) : this.$timeline.prepend(node); }
+      prev = node;
       if (this.turnCache.get(k) !== sig) { ui.morph(node, this.renderTurn(k, its, isLive)); this.turnCache.set(k, sig); if (!isLive) ui.highlight(node); }
       existing.delete(String(k));
     }
@@ -361,6 +382,13 @@ class ThreadView {
     this.renderStack();
     this.renderComposerFoot();
     if (first || this.stick) this.$scroll.scrollTop = this.$scroll.scrollHeight;
+  }
+
+  showEarlier() {
+    const before = this.$scroll.scrollHeight;
+    this.turnLimit += TURN_PAGE; this.stick = false;
+    this.render();
+    this.$scroll.scrollTop += this.$scroll.scrollHeight - before; // keep what was on screen in place
   }
 
   liveLabel() {
@@ -435,10 +463,10 @@ class ThreadView {
 
   renderItem(i, { live, last, k, final } = {}) {
     switch (i.kind) {
-      case 'text': return `<div class="msg-agent ui-prose${final ? ' final' : ''}" data-copy="${i.id}">${ui.markdown(i.text)}${final ? `<div class="msg-actions"><button data-copy-btn="${i.id}" title="Copy">${ui.icon('copy', 'sm')}</button><span class="ui-mono">${ui.time(i.updated)}</span></div>` : ''}</div>`;
+      case 'text': return `<div class="msg-agent ui-prose${final ? ' final' : ''}" data-copy="${i.id}">${live && i.text.length > BIG_TEXT ? `<div class="plain">${ui.esc(i.text)}</div>` : chatMarkdown(i.text)}${final ? `<div class="msg-actions"><button data-copy-btn="${i.id}" title="Copy">${ui.icon('copy', 'sm')}</button><span class="ui-mono">${ui.time(i.updated)}</span></div>` : ''}</div>`;
       case 'thought': {
         const key = `t${k}:th:${i.id}`;
-        return `<details class="row thought" data-key="${key}"${this.open_.has(key) ? ' open' : ''}><summary>${ui.icon('brain', 'sm')}<span class="${live && last ? 'ui-shimmer' : ''}">${live && last ? 'Thinking' : 'Thought'}</span></summary><div class="row-body ui-prose">${ui.markdown(i.text)}</div></details>`;
+        return `<details class="row thought" data-key="${key}"${this.open_.has(key) ? ' open' : ''}><summary>${ui.icon('brain', 'sm')}<span class="${live && last ? 'ui-shimmer' : ''}">${live && last ? 'Thinking' : 'Thought'}</span></summary><div class="row-body ui-prose">${chatMarkdown(i.text)}</div></details>`;
       }
       case 'tool': return this.renderTool(i, k);
       case 'plan': {
@@ -470,7 +498,7 @@ class ThreadView {
     const tg = toolTarget(i);
     const verb = failed ? kind.fail : liveNow ? kind.live : kind.done;
     let deco = '';
-    if (i.toolKind === 'edit' && diffsOf(i).length) { const s = diffStats(i); deco = `<span class="deco"><span class="add-n">+${s.add}</span> <span class="del-n">−${s.del}</span></span>`; }
+    if (i.toolKind === 'edit' && diffsOf(i).some((d) => !d.truncated)) { const s = diffStats(i); deco = `<span class="deco"><span class="add-n">+${s.add}</span> <span class="del-n">−${s.del}</span></span>`; }
     if (!liveNow && i.updated - i.created > 2000) deco += `<span class="deco ui-mono">${ui.duration(i.updated - i.created)}</span>`;
     const target = tg.text ? `<span class="target${tg.mono ? ' mono' : ''}${tg.file ? ' file' : ''}">${ui.esc(String(tg.text).split('\n')[0].slice(0, 160))}</span>${tg.extra ? `<span class="extra">${ui.esc(tg.extra)}</span>` : ''}` : '';
     const key = `t${k}:tool:${i.id}`;
@@ -541,14 +569,56 @@ class ThreadView {
           ${always.map((o) => `<button class="ui-btn sm" data-perm="${p.id}" data-opt="${ui.esc(o.optionId)}">${ui.esc(o.name)}</button>`).join('')}
           ${once.map((o) => `<button class="ui-btn primary sm" data-perm="${p.id}" data-opt="${ui.esc(o.optionId)}">${ui.esc(o.name)}</button>`).join('')}</div>
       </div>`;
-    }).join(''));
+    }).join('') + this.nudgeHtml());
     this.$stack.onclick = async (e) => {
+      const n = e.target.closest('[data-nudge]')?.dataset.nudge;
+      if (n) return this.onNudge(n);
       const b = e.target.closest('[data-perm]');
       if (!b) return;
       b.disabled = true;
       try { await api.post(`api/agent/threads/${this.id}/permissions/${b.dataset.perm}`, { optionId: b.dataset.opt }); }
       catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
     };
+  }
+
+  // A slash command the agent didn't list for chat (Claude's /permissions, /login: terminal-only). Sent
+  // as text it would just be a message, so offer the agent's own terminal in this chat's folder instead.
+  unknownCommand(text) {
+    const cmds = this.thread?.commands || [];
+    const m = /^\/([^\s/]+)(?=\s|$)/.exec(text); // "/home/agent/x is broken" isn't a command
+    return m && cmds.length && !cmds.some((c) => c.name === m[1]) ? m[1] : null;
+  }
+  nudgeHtml() {
+    if (!this.nudge) return '';
+    const name = agentName(this.thread?.agent);
+    return `<div class="nudge">${ui.icon('square-terminal', 'sm')}<span>/${ui.esc(this.nudge.command)} isn't available in chat. Run it in ${ui.esc(name)} in a terminal (a new session in this folder).</span>
+      <button class="ui-btn ghost sm" data-nudge="send">Send anyway</button><button class="ui-btn sm" data-nudge="terminal">Open terminal</button>
+      <button class="ui-icon-btn plain" data-nudge="close" title="Dismiss">${ui.icon('x', 'sm')}</button></div>`;
+  }
+  async onNudge(a) {
+    const { text } = this.nudge;
+    this.nudge = null; this.renderStack();
+    if (a === 'send') return this.send({ text, force: true });
+    if (a === 'terminal') {
+      this.$input.value = ''; this.autosize(); this.saveDraft(); this.updateSend();
+      try {
+        const r = await api.post('api/sessions', { agent: this.thread.agent, dir: home(this.thread.cwd) });
+        this.ctx.go(`#/terminal/${r.session}`);
+      } catch (e) { ui.toast(e.message, { icon: 'circle-alert' }); }
+    }
+    if (a === 'close') this.$input.focus();
+  }
+
+  // ↑/↓ in an empty composer (or one showing a recalled prompt, unedited) step through what was sent here.
+  recallStep(dir) {
+    const sent = [...new Set(this.items.filter((i) => i.kind === 'user' && !i.system && i.text).map((i) => i.text).reverse())];
+    if (!sent.length) return false;
+    const at = this.recall ? this.recall.at + dir : dir === 1 ? 0 : -1;
+    if (at < 0) { if (!this.recall) return false; this.recall = null; this.$input.value = ''; }
+    else { if (at >= sent.length) return true; this.recall = { at, text: sent[at] }; this.$input.value = sent[at]; }
+    this.autosize(); this.updateSend();
+    this.$input.setSelectionRange(this.$input.value.length, this.$input.value.length);
+    return true;
   }
 
   /* ----- Composer ----- */
@@ -560,9 +630,11 @@ class ThreadView {
     this.$input = this.$composer.querySelector('textarea');
     this.$cHead = this.$composer.querySelector('.c-head');
     this.$foot = this.$composer.querySelector('.c-foot');
-    this.$input.addEventListener('input', () => { this.autosize(); this.saveDraft(); this.slashMenu(); this.updateSend(); });
+    this.$input.addEventListener('input', () => { this.recall = null; if (this.nudge) { this.nudge = null; this.renderStack(); } this.autosize(); this.saveDraft(); this.slashMenu(); this.updateSend(); });
     this.$input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.slashOpen) { e.preventDefault(); this.send(); }
+      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.isComposing && !this.slashOpen && !ui.popoverOpen()
+        && (!this.$input.value || this.$input.value === this.recall?.text) && this.recallStep(e.key === 'ArrowUp' ? 1 : -1)) e.preventDefault();
       // (Escape while it works is Stop: main.js's key handler sees it first.)
       if (e.key === 'Escape' && !this.slashOpen) this.$input.blur();
     });
@@ -677,9 +749,10 @@ class ThreadView {
     setTimeout(() => this.$input.focus());
   }
 
-  async send() {
-    const text = this.$input.value.trim();
+  async send({ text = this.$input.value.trim(), force = false } = {}) {
     if (!text) return;
+    if (!force && this.unknownCommand(text)) { this.nudge = { text, command: this.unknownCommand(text) }; this.renderStack(); return; }
+    this.nudge = null; this.recall = null;
     this.$input.value = ''; this.autosize(); this.saveDraft(); this.updateSend();
     try {
       if (!this.id) {
