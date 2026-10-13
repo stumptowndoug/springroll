@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '../store.mjs';
-import { ThreadManager, usableModels } from '../threads.mjs';
+import { ThreadManager, usableModels, mentionBlocks, listFiles } from '../threads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let dir, store, tm, events;
@@ -120,4 +120,72 @@ test('models of providers without a key are hidden, and a usable one is picked t
   assert.equal(usableModels({ ...o, currentModel: 'openrouter/aion/aion-3' }, def, {}).fallbackModel, undefined, 'a usable current model stays');
   assert.equal(usableModels(o, { providerAuth: { auth: [path.join(dir, 'none.json')] } }, {}).models.length, ids.length, 'no keys at all: nothing hidden');
   assert.equal(usableModels(o, {}, {}), o, 'agents without providerAuth are left alone');
+});
+
+test('a queued message can be taken back; one already sent cannot', async () => {
+  const id = await chat('slow');
+  await until(() => store.items(id).some((i) => i.kind === 'text'));
+  await tm.prompt(id, { text: 'never mind' });
+  const q = store.items(id).find((i) => i.text === 'never mind');
+  assert.equal(tm.removeUnsent(id, q.id).text, 'never mind');
+  assert.equal(store.item(q.id), undefined);
+  assert.ok(events.some((e) => e.type === 'removed' && e.id === q.id));
+  const first = store.items(id).find((i) => i.kind === 'user');
+  assert.throws(() => tm.removeUnsent(id, first.id), /already sent/);
+  tm.cancel(id);
+  await turnsEnded(id);
+  assert.equal(store.items(id).filter((i) => i.kind === 'user').length, 1, 'nothing queued was sent');
+});
+
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+test('attached images are kept as files and sent before the text, queued ones too', async () => {
+  const t = store.createThread({ agent: 'fake', cwd: os.tmpdir() });
+  await tm.prompt(t.id, { text: 'look', images: [{ mimeType: 'image/png', data: PNG, name: 'dot.png' }] });
+  await turnsEnded(t.id);
+  const u = store.items(t.id).find((i) => i.kind === 'user');
+  assert.equal(u.images.length, 1);
+  assert.equal(u.images[0].name, 'dot.png');
+  assert.equal(fs.readFileSync(tm.imagePath(u.images[0].file)).toString('base64'), PNG);
+  assert.equal(ends.get(t.id)[0].text, 'saw 1 images, first');
+  assert.equal(store.thread(t.id).options.images, true, 'the agent said it reads images');
+  const slow = await chat('slow');
+  await until(() => store.items(slow).some((i) => i.kind === 'text'));
+  await tm.prompt(slow, { text: '', images: [{ mimeType: 'image/png', data: PNG }, { mimeType: 'image/png', data: PNG }] });
+  tm.cancel(slow);
+  await turnsEnded(slow);
+  assert.equal(store.items(slow).find((i) => i.unsent).images.length, 2, 'a message not sent keeps its images');
+  await assert.rejects(tm.prompt(slow, { text: 'x', images: [{ mimeType: 'text/html', data: 'PGI+' }] }), /PNG, JPEG/);
+  await assert.rejects(tm.prompt(slow, { text: '   ' }), /empty/);
+});
+
+test('@ mentions of files in the chat\'s folder become resource links in place; other @words stay text', () => {
+  const cwd = fs.mkdtempSync(path.join(dir, 'proj-'));
+  fs.mkdirSync(path.join(cwd, 'src'));
+  fs.writeFileSync(path.join(cwd, 'src', 'a.js'), '');
+  fs.mkdirSync(path.join(cwd, 'node_modules'));
+  fs.writeFileSync(path.join(cwd, 'node_modules', 'x.js'), '');
+  const b = mentionBlocks('look at @src/a.js. and @bob, not @../etc/passwd', cwd);
+  assert.deepEqual(b.map((x) => x.type), ['text', 'resource_link', 'text']);
+  assert.equal(b[0].text, 'look at ');
+  assert.equal(b[1].uri, `file://${path.join(cwd, 'src', 'a.js')}`);
+  assert.equal(b[2].text, '. and @bob, not @../etc/passwd');
+  assert.deepEqual(mentionBlocks('plain', cwd), [{ type: 'text', text: 'plain' }]);
+  assert.deepEqual(listFiles(cwd), ['src/a.js'], 'outside git: dependencies are skipped');
+});
+
+test('delegated agents: an agent item in the turn, its own transcript, unknown sessions ignored', async () => {
+  const id = await chat('delegate');
+  await turnsEnded(id);
+  await until(() => store.items(id).find((i) => i.kind === 'agent')?.state === 'completed');
+  const items = store.items(id);
+  const a = items.find((i) => i.kind === 'agent');
+  assert.equal(a.name, 'Explorer');
+  assert.equal(a.task, 'Find the config');
+  assert.ok(a.ended);
+  const mine = items.filter((i) => i.worker === 'c1');
+  assert.deepEqual(mine.map((i) => i.kind), ['tool', 'text']);
+  assert.equal(mine[1].text, 'Found it');
+  assert.ok(!items.some((i) => i.text === 'not mine'));
+  assert.equal(ends.get(id)[0].text, 'Delegated.', "the chat's answer is its own agent's");
+  assert.deepEqual(store.thread(id).commands, [], "a delegated agent's commands aren't the chat's");
 });

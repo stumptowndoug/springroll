@@ -31,6 +31,12 @@
 .report-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .report-head .ui-label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .report-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-user .q-head { display: flex; align-items: center; gap: 6px; }
+.msg-user .q-acts { display: flex; gap: 2px; opacity: 0; transition: opacity var(--fast); }
+.msg-user:hover .q-acts, .q-acts:focus-within { opacity: 1; }
+@media (pointer: coarse) { .msg-user .q-acts { opacity: 1; } }
+.msg-user .q-acts button { padding: 2px 7px; border-radius: 6px; color: var(--muted); font-size: var(--text-xs); }
+.msg-user .q-acts button:hover { background: var(--state-hover); color: var(--fg); }
 .msg-user .q { font-size: var(--text-2xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
 .msg-sys { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: var(--text-sm); }
 .msg-agent { position: relative; max-width: none; }
@@ -53,9 +59,9 @@
 .row .extra { color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .deco { flex: none; color: var(--faint); font-size: var(--text-xs); }
 .row .deco.ui-mono { margin-left: auto; }
-.tool:not(.live):not(.failed):not([open]) > summary { opacity: .55; }
+.tool:not(.live):not([open]) > summary { opacity: .55; }
 .tool:not(.live) > summary:hover { opacity: 1; }
-.tool.failed > summary .ui-icon, .tool.failed .verb { color: var(--danger); }
+.row .deco.fail { color: var(--muted); }
 .row-body { padding: 6px 0 10px 24px; display: grid; gap: 8px; }
 .row-body .args { display: grid; gap: 3px; font-size: var(--text-xs); }
 .row-body .args > div { display: flex; gap: 10px; }
@@ -76,7 +82,10 @@
 .work .facts { color: var(--faint); font-family: var(--font-mono); font-size: var(--text-xs); }
 .work-body { margin: 6px 0 4px 7px; padding: 4px 0 4px 16px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .work-body .msg-agent { color: var(--muted); font-size: var(--text-sm); }
-.danger-text { color: var(--danger); }
+/* What a finished turn changed: one row per file, its diffs on demand */
+.row.change > summary { opacity: .8; }
+.row.change > summary:hover, .row.change[open] > summary { opacity: 1; }
+.row.change .deco { margin-left: auto; font-family: var(--font-mono); }
 
 .plan { background: var(--surface); border-radius: var(--radius); padding: 12px 16px; font-size: var(--text-sm); margin: 4px 0; }
 .plan-head { display: flex; align-items: center; gap: 8px; font-weight: 650; margin-bottom: 8px; }
@@ -90,7 +99,8 @@
 .plan li.in_progress .ui-icon { color: var(--run); }
 .notice { display: flex; gap: 9px; align-items: flex-start; font-size: var(--text-sm); color: var(--muted); padding: 4px 0; }
 .notice .ui-icon { margin-top: 3px; }
-.notice.danger { color: var(--danger); }
+/* The icon carries the tone; the text stays readable. */
+.notice.danger .ui-icon { color: var(--danger); }
 .notice.warn .ui-icon { color: var(--warn); }
 .turn-note { font-size: var(--text-sm); color: var(--faint); }
 .media { max-width: 100%; border-radius: var(--radius-sm); }
@@ -171,3 +181,37 @@
 .sg-card { background: var(--surface-overlay); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 12px; }
 .sg-card > .head { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: var(--text-sm); }
 .sg-card > .ui-btn { justify-self: start; }
+
+/* Code blocks in answers: a copy button in the corner, shown on hover (always on touch) */
+.code-wrap { position: relative; }
+.code-copy { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); background: var(--surface); opacity: 0; transition: opacity var(--fast); }
+.code-wrap:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
+.code-copy:hover { color: var(--fg); background: var(--state-hover); }
+@media (pointer: coarse) { .code-copy { opacity: 1; } }
+
+/* Images attached to a message: thumbnails above the composer's text, and above the message once sent */
+.c-images { display: flex; gap: 8px; flex-wrap: wrap; }
+.c-image { position: relative; width: 56px; height: 56px; }
+.c-image img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; display: block; }
+.c-image button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--fg); color: var(--bg); opacity: 0; transition: opacity var(--fast); }
+.c-image:hover button, .c-image button:focus-visible { opacity: 1; }
+@media (pointer: coarse) { .c-image button { opacity: 1; } }
+.composer.dropping { border-color: var(--accent); }
+.c-foot .c-attach { width: 30px; height: 30px; margin-right: 2px; color: var(--muted); }
+.u-images { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.u-images img { display: block; max-width: 220px; max-height: 160px; border-radius: 12px; object-fit: cover; }
+.msg-user.queued .u-images { opacity: .6; }
+
+/* Delegated agents: one row each in their turn, opening to what that agent did */
+.agent-wrap { margin-left: calc(var(--depth, 0) * 18px); }
+.row.agent > summary .a-icon { flex: none; width: 16px; display: grid; place-items: center; color: var(--faint); }
+.row.agent.completed > summary .a-icon { color: var(--ok); }
+.row.agent.waiting > summary .a-icon { color: var(--warn); }
+.row.agent .a-name { flex: none; color: var(--fg); font-weight: 550; }
+.row.agent .extra { min-width: 0; flex: 1; }
+.row.agent .deco { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.row.agent .a-status { color: var(--muted); }
+.agent-wrap .a-activity { font-size: var(--text-xs); color: var(--muted); padding: 0 0 2px 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.agent .a-body { margin: 2px 0 6px 7px; padding: 4px 0 4px 16px; border-left: 1px solid var(--line); gap: 4px; }
+.row.agent .a-body .msg-agent { color: var(--muted); font-size: var(--text-sm); }
+.row.agent .a-prompt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: var(--text-sm); max-height: 8.5em; overflow: auto; }

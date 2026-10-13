@@ -1,6 +1,6 @@
 // Shared client state and live events for Springroll.
 //   desk events  (/api/events):       views, show, notify, settings, agent, sessions
-//   agent events (/api/agent/events): thread, item, append (streamed text), jobs, signals, deleted
+//   agent events (/api/agent/events): thread, item, append (streamed text), removed (a queued message taken back), jobs, signals, deleted
 export const bus = new EventTarget();
 export const on = (type, fn) => { const h = (e) => fn(e.detail); bus.addEventListener(type, h); return () => bus.removeEventListener(type, h); };
 const fire = (type, detail) => bus.dispatchEvent(new CustomEvent(type, { detail }));
@@ -15,6 +15,10 @@ async function req(method, path, body) {
 export const api = {
   get: (p) => req('GET', p), post: (p, b = {}) => req('POST', p, b), patch: (p, b) => req('PATCH', p, b), del: (p) => req('DELETE', p),
 };
+
+// A limit (rate, usage, quota) is something to wait out, not a breakage: a warning, not an error.
+const LIMIT = /rate[ -]?limit|usage limit|quota|too many requests|\b429\b|overloaded|credit balance|out of credits/i;
+export const errorLevel = (text) => (LIMIT.test(text || '') ? 'warn' : 'danger');
 
 export const state = { views: [], threads: [], agents: [], jobs: [], signals: [], folders: ['~/home'], archived: false };
 

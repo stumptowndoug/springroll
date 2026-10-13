@@ -8,7 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { openStore } from './store.mjs';
-import { ThreadManager } from './threads.mjs';
+import { ThreadManager, listFiles } from './threads.mjs';
 import { Jobs } from './jobs.mjs';
 import { describeCron, nextRun } from './cron.mjs';
 
@@ -258,7 +258,7 @@ const server = http.createServer(async (req, res) => {
       if (b.model && !String(b.origin || '').startsWith('job:')) threads.rememberModel(agent, b.model); // picked in the composer
       if (b.access) store.db.prepare('update threads set access = ? where id = ?').run(b.access === 'ask' ? 'ask' : 'full', t.id);
       if (typeof b.effort === 'string' && b.effort) store.db.prepare('update threads set effort = ? where id = ?').run(b.effort, t.id);
-      if (b.text) await threads.prompt(t.id, { text: b.text, context: b.context });
+      if (b.text || b.images?.length) await threads.prompt(t.id, { text: b.text, context: b.context, images: b.images });
       threads.threadEvent(t.id);
       return json(res, 200, threadOut(store.thread(t.id)));
     }
@@ -269,13 +269,29 @@ const server = http.createServer(async (req, res) => {
     }
     if ((m = route('POST', /^\/threads\/([0-9a-f]+)\/messages$/)(req))) {
       const b = await readBody(req);
-      const r = await threads.prompt(m[1], { text: b.text, context: b.context });
+      const r = await threads.prompt(m[1], { text: b.text, context: b.context, images: b.images });
       store.updateThread(m[1], { last_read: Date.now() });
       if (store.clearThreadNeeds(m[1])) emit({ type: 'signals' }); // the owner answered
       return json(res, 200, r);
     }
     if ((m = route('POST', /^\/threads\/([0-9a-f]+)\/cancel$/)(req))) {
       return json(res, 200, { ok: threads.cancel(m[1]) });
+    }
+    // The files in a chat's folder (for @ mentions): a thread's, or a new chat's (?cwd=~/home).
+    if (req.method === 'GET' && p === '/files') {
+      const dir = path.resolve((url.searchParams.get('cwd') || '~/home').replace(/^~/, HOME));
+      if (dir !== HOME && !dir.startsWith(HOME + path.sep)) return json(res, 400, { error: 'outside home' });
+      return json(res, 200, { cwd: dir, files: listFiles(dir) });
+    }
+    // An image attached to a message (the file name is its content's hash).
+    if ((m = route('GET', /^\/images\/([0-9a-f]{32}\.(png|jpg|gif|webp))$/)(req))) {
+      const f = threads.imagePath(m[1]);
+      if (!f) return json(res, 404, { error: 'no such image' });
+      res.writeHead(200, { 'content-type': { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[m[2]], 'cache-control': 'private, max-age=31536000, immutable' });
+      return fs.createReadStream(f).pipe(res);
+    }
+    if ((m = route('DELETE', /^\/threads\/([0-9a-f]+)\/items\/(\d+)$/)(req))) {
+      return json(res, 200, threads.removeUnsent(m[1], m[2]));
     }
     if ((m = route('POST', /^\/threads\/([0-9a-f]+)\/permissions\/(\d+)$/)(req))) {
       const b = await readBody(req);
@@ -358,7 +374,8 @@ const server = http.createServer(async (req, res) => {
     // An agent with none remembered (never chatted with) is asked: a short session started just for that.
     if ((m = route('GET', /^\/agents\/([a-z0-9_-]+)\/options$/)(req))) {
       const known = store.agentOptions(m[1]);
-      if (known?.models?.length || known?.effort) return json(res, 200, known);
+      // (Remembered before Springroll asked whether it takes images: ask again, once.)
+      if ((known?.models?.length || known?.effort) && known.images !== undefined) return json(res, 200, known);
       const def = readAgents().find((a) => a.id === m[1]);
       const probed = def?.acp ? await threads.probeOptions(m[1]) : null;
       return json(res, 200, probed || known || { models: [], effort: null });

@@ -5,6 +5,43 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-13 · Chat: images, @ files, delegated agents, what changed, quieter failures
+
+Ported from Shep's chat. Most of it is in `views/desk/public/app/thread.js` and `thread.css`, with new
+`app/images.js` and `app/mentions.js`, and `agentd/threads.mjs`, `server.mjs`, `store.mjs`. Tests:
+`agentd/test/chat.test.mjs` (fake agent: `look`, `delegate`).
+
+- **Attach images** by paste, drop or the paperclip (shown only for agents whose adapter says
+  `promptCapabilities.image`; agentd now remembers that per agent, and asks an agent it doesn't know it
+  for once). Up to 6, scaled to a 2000px edge. agentd keeps them as files in `~/data/agentd/images/`
+  (named by content hash, served at `GET /images/<file>`), stores `images: [{file, mimeType, name}]` on
+  the user item, and sends ACP image blocks before the text. Queued messages keep their images.
+- **@ mentions:** `@` in the composer lists the chat folder's files (`GET /files?cwd=`: git's tracked
+  and unignored files, or a short walk). agentd sends `@path` of a file that exists as an ACP
+  `resource_link` in place. The `/` and `@` menus take arrows, Enter and Tab from the text box.
+- **Delegated agents (subagents):** agentd opts in to JetBrains AIR's `nativeSubagentSessions` for
+  `claude` and `codex` (`SUBAGENT_AGENTS`). A `subagent_spawned` update adds an `agent` item to the
+  turn; the delegated agent's own updates (its `sessionId`) become items with `worker: <session>`,
+  which the timeline shows inside that agent's row (state, task, time, what it's doing now). Its
+  commands, settings and usage never touch the chat's. A permission it asks for names it (`by`).
+  Running ones end as `disconnected` when the agent closes or agentd restarts.
+- **Changed files:** a finished turn ends with "Changed N files +a −r"; each file opens to its diffs.
+- **Edit or Remove** a queued (or not sent) message: `DELETE /threads/:id/items/:item` (only unsent
+  user messages), event `removed`.
+- **Quieter failures:** a failed tool reads as ordinary work (its verb, a muted "failed", no longer
+  forced open, no red). Notices carry their tone in the icon only. Errors and harness notices about a
+  limit (rate, usage, quota, 429, overloaded, credits) are warnings; a chat stopped by one shows
+  "Limit reached" with a warn dot, not "Error".
+- **Edit rows name the file** for every agent: Cursor's "Edit `/abs`", Codex's "Read file '…'",
+  Muse's "edit_file: a", or the diff's path for "Editing files".
+- **Copy button** on code blocks in answers.
+- **If you changed this:** these are additive. A machine with its own composer or timeline styles keeps
+  them and takes the new classes (`.c-images`, `.c-attach`, `.u-images`, `.q-acts`, `.code-wrap`,
+  `.changes`, `.agent-wrap`/`.row.agent`). A machine whose `agentd/threads.mjs` diverged must carry
+  over: streams keyed by owner (`threadId\nowner`), the `worker` routing at the top of `onNotification`,
+  `onWorker`/`endWorker`, `saveImages`/`imagePath`, `mentionBlocks`, `removeUnsent`, and
+  `readOptions` keeping `images`.
+
 ## 2026-10-12 · A tidier chat composer; chats always start in ~/home
 
 - **Settings button** is the gear (`settings`, the same icon as Settings in the sidebar) instead of

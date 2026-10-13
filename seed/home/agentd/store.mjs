@@ -74,6 +74,7 @@ export function openStore(dir) {
     maxTurn: db.prepare('select coalesce(max(turn), 0) as t from items where thread_id = ?'),
     deleteThread: db.prepare('delete from threads where id = ?'),
     deleteItems: db.prepare('delete from items where thread_id = ?'),
+    deleteItem: db.prepare('delete from items where id = ?'),
     search: db.prepare(`select distinct t.* from threads t left join items i on i.thread_id = t.id
       where t.title like ? or (i.kind in ('user', 'text') and i.data like ?) order by t.updated desc limit 50`),
     run: db.prepare('select * from runs where id = ?'),
@@ -99,6 +100,7 @@ export function openStore(dir) {
   };
 
   return {
+    dir,
     db,
     setRedactor(fn) { redact = fn; },
     createThread({ agent, cwd, origin = 'chat', title = null, mode = null }) {
@@ -123,6 +125,7 @@ export function openStore(dir) {
     forgetRunThread: (runId) => db.prepare('update runs set thread_id = null where id = ?').run(runId),
     items: (threadId, after = 0) => (after ? q.itemsAfter.all(threadId, after) : q.items.all(threadId)).map(parseItem),
     item: (id) => parseItem(q.item.get(id)),
+    deleteItem: (id) => q.deleteItem.run(id),
     itemByRef: (threadId, ref) => parseItem(q.itemByRef.get(threadId, ref)),
     lastItem: (threadId) => parseItem(q.lastItem.get(threadId)),
     maxTurn: (threadId) => q.maxTurn.get(threadId).t,

@@ -1,6 +1,7 @@
 // Thread manager: runs each thread's agent over ACP, turns ACP updates into
 // timeline items, handles permissions, queued messages and resuming.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -27,6 +28,16 @@ const ASK_MODES = ['default', 'agent', 'auto', 'manual', 'ask', 'ask-first'];
 const MAX_DIFFS = 8;            // diffs kept per tool call
 const MAX_DIFF_LINES = 2000;
 const MAX_IMAGE = 4 * 2 ** 20;   // base64 characters of an image an agent shows
+// Images the owner attaches to a message: how many, and the most base64 characters each (the composer scales them to fit).
+const MAX_PROMPT_IMAGES = 6;
+// Delegated agents (subagents): agents that announce them as sessions of their own when the client opts
+// in, with JetBrains AIR's nativeSubagentSessions (claude-agent-acp, codex-acp).
+const SUBAGENT_CAPS = { _meta: { jetbrains: { air: { version: 1, capabilities: ['nativeSubagentSessions'] } } } };
+const SUBAGENT_AGENTS = new Set(['claude', 'codex']);
+const WORKER_END = new Set(['completed', 'failed', 'cancelled']);
+const str = (v, max = 1000) => (typeof v === 'string' ? v.slice(0, max) : '');
+const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+const LIMIT = /rate[ -]?limit|usage limit|quota|too many requests|\b429\b|overloaded|credit balance|out of credits/i;
 const clip = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) + `\n… (${s.length - MAX_TEXT} more characters)` : s);
 // Output keeps its end: that's where a log says what happened.
 const clipTail = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? `(${s.length - MAX_TEXT} earlier characters) …\n` + s.slice(-MAX_TEXT) : s);
@@ -67,7 +78,7 @@ function readOptions({ configOptions, models, modes }, prev = null) {
   const isModel = (c) => c.category === 'model' || c.id === 'model';
   const isEffort = (c) => c.category === 'thought_level';
   const isMode = (c) => c.category === 'mode' || c.id === 'mode';
-  const o = { models: [], currentModel: null, source: null, effort: null, modes: [], currentMode: null, extra: [] };
+  const o = { models: [], currentModel: null, source: null, effort: null, modes: [], currentMode: null, extra: [], images: !!prev?.images };
   const m = cfg.find(isModel);
   if (m?.options?.length) Object.assign(o, { models: choices(m.options).map((v) => ({ id: v.value, name: v.name, description: v.description })), currentModel: m.currentValue, source: 'config', configId: m.id });
   else if (models?.availableModels?.length) Object.assign(o, { models: models.availableModels.map((v) => ({ id: v.modelId, name: v.name, description: v.description })), currentModel: models.currentModelId, source: 'models' });
@@ -128,7 +139,8 @@ export class ThreadManager {
     this.live = new Map();       // threadId -> { conn, sessionId, loading, last, permissions: Map }
     this.running = new Map();    // threadId -> { started, turn }
     this.cancelled = new Set();  // threads stopped while their agent was still starting
-    this.streams = new Map();    // threadId -> the text item being streamed: { id, kind, turn, messageId, text, sent, dirty, timer }
+    this.streams = new Map();    // "threadId\nowner" -> the text item being streamed: { id, kind, turn, messageId, text, sent, dirty, timer }
+                                 // (owner: '' for the chat's agent, else a delegated agent's session id)
     setInterval(() => this.reapIdle(), 60000).unref();
     // Anything that was mid-turn when agentd stopped is over now.
     for (const t of store.threads()) {
@@ -138,6 +150,7 @@ export class ThreadManager {
         store.updateThread(t.id, { status: 'idle' });
       }
     }
+    for (const a of store.db.prepare(`select id from items where kind = 'agent' and data like '%"state":"running"%'`).all()) this.endWorker(a.id, 'disconnected');
   }
 
   agentDef(id) {
@@ -155,40 +168,43 @@ export class ThreadManager {
 
   itemEvent(item) { if (item) this.emit({ type: 'item', item }); return item; }
 
-  // A new timeline item. Streamed text is written first, so items stay in the order they happened.
-  add(threadId, turn, kind, data, ref = null) {
-    this.flushText(threadId);
+  // A new timeline item. Streamed text (its owner's) is written first, so items stay in the order they happened.
+  add(threadId, turn, kind, data, ref = null, owner = data.worker || '') {
+    this.flushText(threadId, { owner });
     return this.itemEvent(this.store.addItem(threadId, turn, kind, data, ref));
   }
 
   // Streamed text is held in memory and written every FLUSH_MS, not per chunk (a long answer is
   // thousands of chunks). Clients get what was added since the last write ('append'), or the whole
   // item if it changed some other way (a key masked across a chunk boundary).
-  appendText(threadId, turn, kind, text, messageId) {
-    let s = this.streams.get(threadId);
+  appendText(threadId, turn, kind, text, messageId, owner = '') {
+    const key = `${threadId}\n${owner}`;
+    let s = this.streams.get(key);
     const same = s && s.kind === kind && s.turn === turn && (!messageId || !s.messageId || s.messageId === messageId);
     if (!same) {
-      const item = this.add(threadId, turn, kind, { text, messageId });
-      this.streams.set(threadId, { id: item.id, kind, turn, messageId, text, sent: item.text, dirty: false, timer: null });
+      const item = this.add(threadId, turn, kind, { text, messageId, ...(owner ? { worker: owner } : {}) });
+      this.streams.set(key, { id: item.id, kind, turn, messageId, owner, text, sent: item.text, dirty: false, timer: null });
       return;
     }
     s.text += glue(s, messageId, text) + text;
     s.messageId ||= messageId;
     s.dirty = true;
-    if (s.text.length - s.sent.length > FLUSH_CHARS) this.flushText(threadId, { keep: true });
-    else s.timer ||= setTimeout(() => this.flushText(threadId, { keep: true }), FLUSH_MS);
+    if (s.text.length - s.sent.length > FLUSH_CHARS) this.flushText(threadId, { keep: true, owner });
+    else s.timer ||= setTimeout(() => this.flushText(threadId, { keep: true, owner }), FLUSH_MS);
   }
 
-  // Write the streamed text; unless keep, the next chunk starts a new item.
-  flushText(threadId, { keep = false } = {}) {
-    const s = this.streams.get(threadId);
+  // Write the streamed text; unless keep, the next chunk starts a new item. owner: whose stream (all: every one).
+  flushText(threadId, { keep = false, owner = '', all = false } = {}) {
+    if (all) { for (const k of [...this.streams.keys()]) if (k.startsWith(`${threadId}\n`)) this.flushText(threadId, { keep, owner: k.slice(threadId.length + 1) }); return; }
+    const key = `${threadId}\n${owner}`;
+    const s = this.streams.get(key);
     if (!s) return;
     clearTimeout(s.timer);
     s.timer = null;
-    if (!keep) this.streams.delete(threadId);
+    if (!keep) this.streams.delete(key);
     if (!s.dirty) return;
     s.dirty = false;
-    const item = this.store.updateItem(s.id, { text: s.text, messageId: s.messageId });
+    const item = this.store.updateItem(s.id, { text: s.text, messageId: s.messageId, ...(s.owner ? { worker: s.owner } : {}) });
     if (!item) return;
     if (item.text.startsWith(s.sent)) this.emit({ type: 'append', threadId, id: item.id, from: s.sent.length, text: item.text.slice(s.sent.length), updated: item.updated });
     else this.itemEvent(item);
@@ -205,12 +221,13 @@ export class ThreadManager {
     const env = { ...agentEnv(), SPRINGROLL_THREAD: thread.id };
     const conn = new AcpConnection({ command, args, cwd: thread.cwd, env, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
     // early: updates that arrive before session/new returns, held until we know what to drop (Pi's banner).
-    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map(), early: [], usable: (o) => usableModels(o, def, env) };
+    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map(), early: [], usable: (o) => usableModels(o, def, env), workers: new Map() };
     this.live.set(thread.id, live);
     conn.on('notification', (method, params) => this.onNotification(thread.id, method, params));
     conn.on('request', (method, params, reply) => this.onRequest(thread.id, method, params, reply));
     conn.on('close', (err) => {
-      this.flushText(thread.id);
+      this.flushText(thread.id, { all: true });
+      for (const w of live.workers.values()) this.endWorker(w.itemId, 'disconnected');
       if (this.live.get(thread.id) === live) this.live.delete(thread.id);
       for (const p of live.permissions.values()) this.resolvePermissionItem(thread.id, p.itemId, { outcome: 'cancelled' });
       if (this.running.has(thread.id) && !live.stopping) {
@@ -222,7 +239,7 @@ export class ThreadManager {
     const init = await conn.request('initialize', {
       protocolVersion: 1,
       // session.notices: the agent sends warnings as notices rather than bold text in its answer.
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, session: { notices: {} } },
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, session: { notices: {} }, ...(SUBAGENT_AGENTS.has(def.id) ? SUBAGENT_CAPS : {}) },
       clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' },
     });
     live.capabilities = init?.agentCapabilities || {};
@@ -255,9 +272,9 @@ export class ThreadManager {
     const early = live.early;
     live.early = null;
     for (const params of early) this.onNotification(thread.id, 'session/update', params);
-    live.options = live.usable(readOptions(session));
+    live.options = live.usable(readOptions(session, { images: !!live.capabilities.promptCapabilities?.image }));
     const prefs = this.store.agentOptions(thread.agent) || {};
-    if (live.options.models.length || live.options.effort) this.store.setAgentOptions(thread.agent, { ...prefs, models: live.options.models, currentModel: live.options.fallbackModel || live.options.currentModel, effort: live.options.effort });
+    if (live.options.models.length || live.options.effort) this.store.setAgentOptions(thread.agent, { ...prefs, models: live.options.models, currentModel: live.options.fallbackModel || live.options.currentModel, effort: live.options.effort, images: live.options.images });
     const t = this.store.thread(thread.id);
     this.store.updateThread(thread.id, { session_id: session.sessionId });
     await this.applyAccess(thread.id, live, t.access || 'full');
@@ -285,10 +302,10 @@ export class ThreadManager {
     const conn = new AcpConnection({ command, args, cwd, env });
     const timer = setTimeout(() => conn.kill(), PROBE_MS);
     const run = (async () => {
-      await conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' } });
+      const init = await conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' } });
       const o = usableModels(readOptions(await conn.request('session/new', { cwd, mcpServers: [] })), def, env);
       if (!o.models.length && !o.effort) throw new Error('no models offered');
-      const saved = { ...(this.store.agentOptions(agentId) || {}), models: o.models, currentModel: o.fallbackModel || o.currentModel, effort: o.effort };
+      const saved = { ...(this.store.agentOptions(agentId) || {}), models: o.models, currentModel: o.fallbackModel || o.currentModel, effort: o.effort, images: !!init?.agentCapabilities?.promptCapabilities?.image };
       this.store.setAgentOptions(agentId, saved);
       this.probes.delete(agentId);
       return saved;
@@ -364,27 +381,53 @@ export class ThreadManager {
   }
 
   shutdown() {
-    for (const id of [...this.streams.keys()]) this.flushText(id);
+    for (const k of [...this.streams.keys()]) { const [id, owner] = k.split('\n'); this.flushText(id, { owner }); }
     for (const live of this.live.values()) live.conn.kill();
   }
 
   // ---------- Prompting ----------
 
-  async prompt(threadId, { text, context }) {
+  async prompt(threadId, { text = '', context, images }) {
     const thread = this.store.thread(threadId);
     if (!thread) throw new Error('no such thread');
-    if (!text?.trim()) throw new Error('empty message');
-    if (!thread.title) this.store.updateThread(threadId, { title: titleFrom(text) });
+    images = this.saveImages(images);
+    if (!text?.trim() && !images) throw new Error('empty message');
+    if (!thread.title) this.store.updateThread(threadId, { title: text.trim() ? titleFrom(text) : 'Image' });
+    const msg = { text, context, ...(images ? { images } : {}) };
     if (this.running.has(threadId)) {
       // Queue it: sent when the current turn ends.
-      this.add(threadId, this.running.get(threadId).turn + 1, 'user', { text, context, queued: true });
+      this.add(threadId, this.running.get(threadId).turn + 1, 'user', { ...msg, queued: true });
       this.threadEvent(threadId);
       return { queued: true };
     }
     const turn = this.store.maxTurn(threadId) + 1;
-    this.add(threadId, turn, 'user', { text, context });
-    this.run(threadId, turn, [{ text, context }]);
+    this.add(threadId, turn, 'user', msg);
+    this.run(threadId, turn, [msg]);
     return { queued: false };
+  }
+
+  // Attached images are kept as files (named by their content) beside the database, not in the timeline:
+  // a chat stays light to load, and the agent is sent each one as it was.
+  saveImages(images) {
+    if (!Array.isArray(images) || !images.length) return null;
+    if (images.length > MAX_PROMPT_IMAGES) throw new Error(`at most ${MAX_PROMPT_IMAGES} images per message`);
+    const dir = path.join(this.store.dir, 'images');
+    fs.mkdirSync(dir, { recursive: true });
+    return images.map((im) => {
+      const ext = IMAGE_TYPES[im?.mimeType];
+      if (!ext || typeof im.data !== 'string' || !/^[A-Za-z0-9+/]+=*$/.test(im.data)) throw new Error('images must be PNG, JPEG, GIF or WebP');
+      if (im.data.length > MAX_IMAGE) throw new Error('an image is too large to send');
+      const file = `${createHash('sha256').update(im.data).digest('hex').slice(0, 32)}.${ext}`;
+      const p = path.join(dir, file);
+      if (!fs.existsSync(p)) fs.writeFileSync(p, Buffer.from(im.data, 'base64'));
+      return { file, mimeType: im.mimeType, ...(typeof im.name === 'string' ? { name: im.name.slice(0, 120) } : {}) };
+    });
+  }
+
+  imagePath(file) {
+    if (!/^[0-9a-f]{32}\.(png|jpg|gif|webp)$/.test(file)) return null;
+    const p = path.join(this.store.dir, 'images', file);
+    return fs.existsSync(p) ? p : null;
   }
 
   async run(threadId, turn, messages) {
@@ -409,7 +452,12 @@ export class ThreadManager {
       const prompt = [];
       for (const m of messages) {
         if (m.context) prompt.push({ type: 'text', text: contextText(m.context) });
-        prompt.push({ type: 'text', text: m.text });
+        // Images first, then what the owner wrote about them.
+        for (const im of m.images || []) {
+          const p = this.imagePath(im.file);
+          if (p) prompt.push({ type: 'image', mimeType: im.mimeType, data: fs.readFileSync(p).toString('base64') });
+        }
+        if (m.text?.trim()) prompt.push(...mentionBlocks(m.text, this.store.thread(threadId).cwd));
       }
       const res = await live.conn.request('session/prompt', { sessionId: live.sessionId, prompt });
       stopReason = res?.stopReason || 'end_turn';
@@ -430,20 +478,30 @@ export class ThreadManager {
     // Send anything queued while it was working, unless the owner stopped it: Stop means stop.
     const queued = this.store.items(threadId).filter((i) => i.kind === 'user' && i.queued && i.turn > turn);
     if (queued.length && run.cancelled) {
-      for (const q of queued) this.itemEvent(this.store.updateItem(q.id, { text: q.text, context: q.context, unsent: true }));
+      for (const q of queued) this.itemEvent(this.store.updateItem(q.id, { ...message(q), unsent: true }));
     } else if (queued.length) {
-      for (const q of queued) this.store.updateItem(q.id, { text: q.text, context: q.context });
+      for (const q of queued) this.store.updateItem(q.id, message(q));
       const next = this.store.maxTurn(threadId);
       this.store.db.prepare("update items set turn = ? where thread_id = ? and kind = 'user' and turn > ?").run(next, threadId, turn);
       for (const q of queued) this.itemEvent(this.store.item(q.id));
-      this.run(threadId, next, queued.map((q) => ({ text: q.text, context: q.context })));
+      this.run(threadId, next, queued.map(message));
     }
+  }
+
+  // The owner took back a message that hasn't gone to the agent yet (queued, or not sent after a Stop):
+  // to edit it in the composer, or drop it. One already sent stays.
+  removeUnsent(threadId, itemId) {
+    const item = this.store.item(Number(itemId));
+    if (!item || item.threadId !== threadId || item.kind !== 'user' || !(item.queued || item.unsent)) throw new Error('that message was already sent');
+    this.store.deleteItem(item.id);
+    this.emit({ type: 'removed', threadId, id: item.id });
+    return item;
   }
 
   // The turn's final message: the text after the last tool call (the answer,
   // not the narration before the work).
   lastText(threadId, turn) {
-    const items = this.store.items(threadId).filter((i) => i.turn === turn && i.kind !== 'turn');
+    const items = this.store.items(threadId).filter((i) => i.turn === turn && i.kind !== 'turn' && !i.worker);
     let end = items.length;
     while (end > 0 && items[end - 1].kind !== 'text') end--;
     let start = end;
@@ -530,31 +588,43 @@ export class ThreadManager {
     if (live.early) { live.early.push(params); return; }
     live.last = Date.now();
     const u = params.update || {};
-    if (live.banner && u.sessionUpdate === 'agent_message_chunk' && u.content?.text === live.banner) { live.banner = null; return; }
+    // A delegated agent's own session: its updates go in its transcript (items with `worker`), in the
+    // turn it was started in. Sessions nobody announced are ignored.
+    let worker = null;
+    if (params.sessionId && live.sessionId && params.sessionId !== live.sessionId) {
+      worker = live.workers.get(params.sessionId);
+      if (!worker) return;
+    }
+    if (!worker && live.banner && u.sessionUpdate === 'agent_message_chunk' && u.content?.text === live.banner) { live.banner = null; return; }
     const run = this.running.get(threadId);
-    const turn = run ? run.turn : this.store.maxTurn(threadId);
+    const turn = worker ? worker.turn : run ? run.turn : this.store.maxTurn(threadId);
+    const owner = worker?.sessionId || '';
+    const mine = owner ? { worker: owner } : {};
     const chunk = (u.sessionUpdate === 'agent_message_chunk' || u.sessionUpdate === 'agent_thought_chunk') && u.content?.type === 'text';
     // Write pending text first; only a new item (add) ends the message (usage and command updates come mid-message).
-    if (!chunk) this.flushText(threadId, { keep: true });
+    if (!chunk) this.flushText(threadId, { keep: true, owner });
+    if (u.sessionUpdate === 'subagent_spawned' || u.sessionUpdate === 'subagent_state_update') return this.onWorker(threadId, live, worker, turn, u);
+    // A delegated agent's settings and commands are its own business, not the chat's.
+    if (worker && !['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan', 'notice', 'session_info_update'].includes(u.sessionUpdate)) return;
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
       case 'agent_thought_chunk': {
         const kind = u.sessionUpdate === 'agent_message_chunk' ? 'text' : 'thought';
         const c = u.content || {};
         if (c.type === 'text') {
-          if (c.text) this.appendText(threadId, turn, kind, c.text, u.messageId || null);
+          if (c.text) this.appendText(threadId, turn, kind, c.text, u.messageId || null, owner);
         } else if (c.type === 'image' && (c.data?.length || 0) > MAX_IMAGE) {
-          this.add(threadId, turn, 'notice', { level: '', text: `The agent showed an image too large to keep here (${Math.round(c.data.length * 0.75 / 2 ** 20)} MB).` });
+          this.add(threadId, turn, 'notice', { level: '', text: `The agent showed an image too large to keep here (${Math.round(c.data.length * 0.75 / 2 ** 20)} MB).`, ...mine });
         } else if (c.type === 'image' || c.type === 'resource_link') {
-          this.add(threadId, turn, 'media', { content: c });
+          this.add(threadId, turn, 'media', { content: c, ...mine });
         }
         return;
       }
       case 'tool_call':
       case 'tool_call_update': {
-        const ref = 'tool:' + u.toolCallId;
+        const ref = `tool:${owner ? owner + ':' : ''}${u.toolCallId}`;
         const existing = this.store.itemByRef(threadId, ref);
-        const next = { ...(existing || {}), toolCallId: u.toolCallId };
+        const next = { ...(existing || {}), toolCallId: u.toolCallId, ...mine };
         for (const k of ['title', 'status', 'locations']) if (u[k] !== undefined) next[k] = u[k];
         if (u.kind !== undefined) next.toolKind = u.kind;
         if (u.rawInput !== undefined && (Object.keys(u.rawInput || {}).length || !next.rawInput)) next.rawInput = clipRaw(u.rawInput);
@@ -567,9 +637,9 @@ export class ThreadManager {
         return;
       }
       case 'plan': {
-        const ref = 'plan:' + turn;
+        const ref = `plan:${owner ? owner + ':' : ''}${turn}`;
         const existing = this.store.itemByRef(threadId, ref);
-        const data = { entries: u.entries || [] };
+        const data = { entries: u.entries || [], ...mine };
         if (existing) this.itemEvent(this.store.updateItem(existing.id, data));
         else this.add(threadId, turn, 'plan', data, ref);
         return;
@@ -599,13 +669,48 @@ export class ThreadManager {
         if (!title) return;
         const text = u.description?.trim() ? `${title}: ${u.description.trim()}` : title;
         const last = this.store.lastItem(threadId);
-        if (last?.kind === 'notice' && last.turn === turn && last.text === text) return;
-        this.add(threadId, turn, 'notice', { level: u.severity === 'error' ? 'danger' : u.severity === 'warning' ? 'warn' : '', text });
+        if (last?.kind === 'notice' && last.turn === turn && last.text === text && last.worker === mine.worker) return;
+        // A limit (rate, usage, quota) is something to wait out: a warning, whatever severity it came with.
+        this.add(threadId, turn, 'notice', { level: u.severity === 'error' && !LIMIT.test(text) ? 'danger' : u.severity === 'error' || u.severity === 'warning' ? 'warn' : '', text, ...mine });
+        return;
+      }
+      case 'session_info_update': { // a delegated agent's better name
+        const name = str(u.title).trim();
+        const item = worker && name && this.store.item(worker.itemId);
+        if (item) this.itemEvent(this.store.updateItem(item.id, { ...strip(item), name }));
         return;
       }
       default:
         return;
     }
+  }
+
+  // A delegated agent started (by the chat's agent or another delegated one), or finished. It shows as an
+  // 'agent' item in the turn it started in; nested ones name their parent's session.
+  onWorker(threadId, live, worker, turn, u) {
+    const parent = worker?.sessionId || null;
+    const id = str(u.subagentSessionId, 200);
+    if (!id || id === live.sessionId) return;
+    const known = live.workers.get(id);
+    if (u.sessionUpdate === 'subagent_spawned') {
+      if (known) { // announced again: better details, never a new parent
+        const item = known.parent === parent && this.store.item(known.itemId);
+        if (item) this.itemEvent(this.store.updateItem(item.id, { ...strip(item), name: str(u.name) || item.name, task: str(u.task, 4000) || item.task }));
+        return;
+      }
+      const item = this.add(threadId, turn, 'agent', { sessionId: id, parent, name: str(u.name) || 'Agent', task: str(u.task, 4000), prompt: str(u.prompt, MAX_TEXT), state: 'running', ended: null }, `agent:${id}`, parent || '');
+      live.workers.set(id, { sessionId: id, parent, turn, itemId: item.id });
+      return;
+    }
+    if (!known || known.parent !== parent || !WORKER_END.has(u.state)) return;
+    this.flushText(threadId, { owner: id });
+    this.endWorker(known.itemId, u.state);
+  }
+
+  endWorker(itemId, state) {
+    const item = this.store.item(itemId);
+    if (!item || item.state !== 'running') return;
+    this.itemEvent(this.store.updateItem(itemId, { ...strip(item), state, ended: Date.now() }));
   }
 
   onRequest(threadId, method, params, reply) {
@@ -618,7 +723,10 @@ export class ThreadManager {
       const allow = options.find((o) => o.kind === 'allow_once') || options.find((o) => o.kind === 'allow_always') || options[0];
       if (allow) return reply.respond({ outcome: { outcome: 'selected', optionId: allow.optionId } });
     }
-    const item = this.add(threadId, turn, 'permission', { toolCall: params.toolCall, options, outcome: null }, 'perm:' + reply.id);
+    // Asked by a delegated agent: say which.
+    const w = params.sessionId && live?.workers.get(params.sessionId);
+    const by = w ? this.store.item(w.itemId)?.name : null;
+    const item = this.add(threadId, turn, 'permission', { toolCall: params.toolCall, options, outcome: null, ...(by ? { by } : {}) }, 'perm:' + reply.id, '');
     live?.permissions.set(reply.id, { reply, itemId: item.id });
     this.store.updateThread(threadId, { status: 'waiting' });
     const t = this.threadEvent(threadId);
@@ -658,6 +766,51 @@ function glue(s, messageId, text) {
   const ticks = (s.text.slice(s.text.lastIndexOf('\n') + 1).match(/`/g) || []).length;
   return fences % 2 || ticks % 2 ? '' : '\n\n';
 }
+
+// `@path` mentions of files in the chat's folder go to the agent as resource links, in place (the way
+// editors send them); other @words stay text.
+export function mentionBlocks(text, cwd) {
+  const blocks = [];
+  let last = 0;
+  for (const m of text.matchAll(/(^|\s)@(\S+)/g)) {
+    const rel = m[2].replace(/[.,;:!?)\]]+$/, ''); // "see @a.js." : the period isn't part of it
+    const abs = path.resolve(cwd, rel);
+    if (!abs.startsWith(cwd + path.sep)) continue;
+    try { if (!fs.statSync(abs).isFile()) continue; } catch { continue; }
+    const at = m.index + m[1].length;
+    if (at > last) blocks.push({ type: 'text', text: text.slice(last, at) });
+    blocks.push({ type: 'resource_link', uri: `file://${encodeURI(abs)}`, name: path.basename(rel) });
+    last = at + 1 + rel.length;
+  }
+  if (last < text.length || !blocks.length) blocks.push({ type: 'text', text: text.slice(last) });
+  return blocks;
+}
+
+// The files in a folder, for the composer's @ picker: git's tracked and unignored files, or (outside a
+// repo) a short walk that skips dependencies and hidden folders.
+const MAX_FILES = 20000;
+export function listFiles(dir) {
+  try {
+    const out = execFileSync('git', ['-C', dir, 'ls-files', '-co', '--exclude-standard', '-z'], { encoding: 'utf8', maxBuffer: 64 * 2 ** 20, stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.split('\0').filter(Boolean).slice(0, MAX_FILES);
+  } catch {}
+  const files = [];
+  const walk = (rel, depth) => {
+    let entries;
+    try { entries = fs.readdirSync(path.join(dir, rel), { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (files.length >= MAX_FILES) return;
+      if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === '__pycache__') continue;
+      const p = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { if (depth < 6) walk(p, depth + 1); } else if (e.isFile()) files.push(p);
+    }
+  };
+  walk('', 0);
+  return files;
+}
+
+// What a user item says: its text, context and images (not whether it's queued).
+const message = (i) => ({ text: i.text, context: i.context, ...(i.images ? { images: i.images } : {}) });
 
 // Item columns that shouldn't be written back into an item's data.
 function strip(o) {
