@@ -1,5 +1,5 @@
 // Springroll shell: router, sidebar, View frames, the ask panel, launcher and shortcuts.
-import { api, state, on, connect, loadThreads, loadAgents, loadJobs, loadFolders, agentName } from './api.js';
+import { api, state, on, connect, loadThreads, loadAgents, loadJobs, loadFolders, agentName, errorLevel } from './api.js';
 import * as Home from './home.js';
 import * as Thread from './thread.js';
 import * as Jobs from './jobs.js';
@@ -211,7 +211,7 @@ function appMenu(anchor, v) {
 export function threadGlyph(t) {
   if (t.status === 'waiting') return '<span class="ui-dot warn" title="Needs you"></span>';
   if (t.status === 'running' || t.status === 'starting' || t.running) return '<span class="spin" title="Working"></span>';
-  if (t.status === 'error') return '<span class="ui-dot danger" title="Error"></span>';
+  if (t.status === 'error') return errorLevel(t.error) === 'warn' ? '<span class="ui-dot warn" title="Limit reached"></span>' : '<span class="ui-dot danger" title="Error"></span>';
   if (t.unread) return '<span class="ui-dot accent" title="Unread"></span>';
   return '';
 }

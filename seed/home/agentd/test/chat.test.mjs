@@ -172,3 +172,20 @@ test('@ mentions of files in the chat\'s folder become resource links in place; 
   assert.deepEqual(mentionBlocks('plain', cwd), [{ type: 'text', text: 'plain' }]);
   assert.deepEqual(listFiles(cwd), ['src/a.js'], 'outside git: dependencies are skipped');
 });
+
+test('delegated agents: an agent item in the turn, its own transcript, unknown sessions ignored', async () => {
+  const id = await chat('delegate');
+  await turnsEnded(id);
+  await until(() => store.items(id).find((i) => i.kind === 'agent')?.state === 'completed');
+  const items = store.items(id);
+  const a = items.find((i) => i.kind === 'agent');
+  assert.equal(a.name, 'Explorer');
+  assert.equal(a.task, 'Find the config');
+  assert.ok(a.ended);
+  const mine = items.filter((i) => i.worker === 'c1');
+  assert.deepEqual(mine.map((i) => i.kind), ['tool', 'text']);
+  assert.equal(mine[1].text, 'Found it');
+  assert.ok(!items.some((i) => i.text === 'not mine'));
+  assert.equal(ends.get(id)[0].text, 'Delegated.', "the chat's answer is its own agent's");
+  assert.deepEqual(store.thread(id).commands, [], "a delegated agent's commands aren't the chat's");
+});

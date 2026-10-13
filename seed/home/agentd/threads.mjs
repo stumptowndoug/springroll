@@ -30,6 +30,12 @@ const MAX_DIFF_LINES = 2000;
 const MAX_IMAGE = 4 * 2 ** 20;   // base64 characters of an image an agent shows
 // Images the owner attaches to a message: how many, and the most base64 characters each (the composer scales them to fit).
 const MAX_PROMPT_IMAGES = 6;
+// Delegated agents (subagents): agents that announce them as sessions of their own when the client opts
+// in, with JetBrains AIR's nativeSubagentSessions (claude-agent-acp, codex-acp).
+const SUBAGENT_CAPS = { _meta: { jetbrains: { air: { version: 1, capabilities: ['nativeSubagentSessions'] } } } };
+const SUBAGENT_AGENTS = new Set(['claude', 'codex']);
+const WORKER_END = new Set(['completed', 'failed', 'cancelled']);
+const str = (v, max = 1000) => (typeof v === 'string' ? v.slice(0, max) : '');
 const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
 const LIMIT = /rate[ -]?limit|usage limit|quota|too many requests|\b429\b|overloaded|credit balance|out of credits/i;
 const clip = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) + `\n… (${s.length - MAX_TEXT} more characters)` : s);
@@ -133,7 +139,8 @@ export class ThreadManager {
     this.live = new Map();       // threadId -> { conn, sessionId, loading, last, permissions: Map }
     this.running = new Map();    // threadId -> { started, turn }
     this.cancelled = new Set();  // threads stopped while their agent was still starting
-    this.streams = new Map();    // threadId -> the text item being streamed: { id, kind, turn, messageId, text, sent, dirty, timer }
+    this.streams = new Map();    // "threadId\nowner" -> the text item being streamed: { id, kind, turn, messageId, text, sent, dirty, timer }
+                                 // (owner: '' for the chat's agent, else a delegated agent's session id)
     setInterval(() => this.reapIdle(), 60000).unref();
     // Anything that was mid-turn when agentd stopped is over now.
     for (const t of store.threads()) {
@@ -143,6 +150,7 @@ export class ThreadManager {
         store.updateThread(t.id, { status: 'idle' });
       }
     }
+    for (const a of store.db.prepare(`select id from items where kind = 'agent' and data like '%"state":"running"%'`).all()) this.endWorker(a.id, 'disconnected');
   }
 
   agentDef(id) {
@@ -160,40 +168,43 @@ export class ThreadManager {
 
   itemEvent(item) { if (item) this.emit({ type: 'item', item }); return item; }
 
-  // A new timeline item. Streamed text is written first, so items stay in the order they happened.
-  add(threadId, turn, kind, data, ref = null) {
-    this.flushText(threadId);
+  // A new timeline item. Streamed text (its owner's) is written first, so items stay in the order they happened.
+  add(threadId, turn, kind, data, ref = null, owner = data.worker || '') {
+    this.flushText(threadId, { owner });
     return this.itemEvent(this.store.addItem(threadId, turn, kind, data, ref));
   }
 
   // Streamed text is held in memory and written every FLUSH_MS, not per chunk (a long answer is
   // thousands of chunks). Clients get what was added since the last write ('append'), or the whole
   // item if it changed some other way (a key masked across a chunk boundary).
-  appendText(threadId, turn, kind, text, messageId) {
-    let s = this.streams.get(threadId);
+  appendText(threadId, turn, kind, text, messageId, owner = '') {
+    const key = `${threadId}\n${owner}`;
+    let s = this.streams.get(key);
     const same = s && s.kind === kind && s.turn === turn && (!messageId || !s.messageId || s.messageId === messageId);
     if (!same) {
-      const item = this.add(threadId, turn, kind, { text, messageId });
-      this.streams.set(threadId, { id: item.id, kind, turn, messageId, text, sent: item.text, dirty: false, timer: null });
+      const item = this.add(threadId, turn, kind, { text, messageId, ...(owner ? { worker: owner } : {}) });
+      this.streams.set(key, { id: item.id, kind, turn, messageId, owner, text, sent: item.text, dirty: false, timer: null });
       return;
     }
     s.text += glue(s, messageId, text) + text;
     s.messageId ||= messageId;
     s.dirty = true;
-    if (s.text.length - s.sent.length > FLUSH_CHARS) this.flushText(threadId, { keep: true });
-    else s.timer ||= setTimeout(() => this.flushText(threadId, { keep: true }), FLUSH_MS);
+    if (s.text.length - s.sent.length > FLUSH_CHARS) this.flushText(threadId, { keep: true, owner });
+    else s.timer ||= setTimeout(() => this.flushText(threadId, { keep: true, owner }), FLUSH_MS);
   }
 
-  // Write the streamed text; unless keep, the next chunk starts a new item.
-  flushText(threadId, { keep = false } = {}) {
-    const s = this.streams.get(threadId);
+  // Write the streamed text; unless keep, the next chunk starts a new item. owner: whose stream (all: every one).
+  flushText(threadId, { keep = false, owner = '', all = false } = {}) {
+    if (all) { for (const k of [...this.streams.keys()]) if (k.startsWith(`${threadId}\n`)) this.flushText(threadId, { keep, owner: k.slice(threadId.length + 1) }); return; }
+    const key = `${threadId}\n${owner}`;
+    const s = this.streams.get(key);
     if (!s) return;
     clearTimeout(s.timer);
     s.timer = null;
-    if (!keep) this.streams.delete(threadId);
+    if (!keep) this.streams.delete(key);
     if (!s.dirty) return;
     s.dirty = false;
-    const item = this.store.updateItem(s.id, { text: s.text, messageId: s.messageId });
+    const item = this.store.updateItem(s.id, { text: s.text, messageId: s.messageId, ...(s.owner ? { worker: s.owner } : {}) });
     if (!item) return;
     if (item.text.startsWith(s.sent)) this.emit({ type: 'append', threadId, id: item.id, from: s.sent.length, text: item.text.slice(s.sent.length), updated: item.updated });
     else this.itemEvent(item);
@@ -210,12 +221,13 @@ export class ThreadManager {
     const env = { ...agentEnv(), SPRINGROLL_THREAD: thread.id };
     const conn = new AcpConnection({ command, args, cwd: thread.cwd, env, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
     // early: updates that arrive before session/new returns, held until we know what to drop (Pi's banner).
-    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map(), early: [], usable: (o) => usableModels(o, def, env) };
+    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map(), early: [], usable: (o) => usableModels(o, def, env), workers: new Map() };
     this.live.set(thread.id, live);
     conn.on('notification', (method, params) => this.onNotification(thread.id, method, params));
     conn.on('request', (method, params, reply) => this.onRequest(thread.id, method, params, reply));
     conn.on('close', (err) => {
-      this.flushText(thread.id);
+      this.flushText(thread.id, { all: true });
+      for (const w of live.workers.values()) this.endWorker(w.itemId, 'disconnected');
       if (this.live.get(thread.id) === live) this.live.delete(thread.id);
       for (const p of live.permissions.values()) this.resolvePermissionItem(thread.id, p.itemId, { outcome: 'cancelled' });
       if (this.running.has(thread.id) && !live.stopping) {
@@ -227,7 +239,7 @@ export class ThreadManager {
     const init = await conn.request('initialize', {
       protocolVersion: 1,
       // session.notices: the agent sends warnings as notices rather than bold text in its answer.
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, session: { notices: {} } },
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, session: { notices: {} }, ...(SUBAGENT_AGENTS.has(def.id) ? SUBAGENT_CAPS : {}) },
       clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' },
     });
     live.capabilities = init?.agentCapabilities || {};
@@ -369,7 +381,7 @@ export class ThreadManager {
   }
 
   shutdown() {
-    for (const id of [...this.streams.keys()]) this.flushText(id);
+    for (const k of [...this.streams.keys()]) { const [id, owner] = k.split('\n'); this.flushText(id, { owner }); }
     for (const live of this.live.values()) live.conn.kill();
   }
 
@@ -489,7 +501,7 @@ export class ThreadManager {
   // The turn's final message: the text after the last tool call (the answer,
   // not the narration before the work).
   lastText(threadId, turn) {
-    const items = this.store.items(threadId).filter((i) => i.turn === turn && i.kind !== 'turn');
+    const items = this.store.items(threadId).filter((i) => i.turn === turn && i.kind !== 'turn' && !i.worker);
     let end = items.length;
     while (end > 0 && items[end - 1].kind !== 'text') end--;
     let start = end;
@@ -576,31 +588,43 @@ export class ThreadManager {
     if (live.early) { live.early.push(params); return; }
     live.last = Date.now();
     const u = params.update || {};
-    if (live.banner && u.sessionUpdate === 'agent_message_chunk' && u.content?.text === live.banner) { live.banner = null; return; }
+    // A delegated agent's own session: its updates go in its transcript (items with `worker`), in the
+    // turn it was started in. Sessions nobody announced are ignored.
+    let worker = null;
+    if (params.sessionId && live.sessionId && params.sessionId !== live.sessionId) {
+      worker = live.workers.get(params.sessionId);
+      if (!worker) return;
+    }
+    if (!worker && live.banner && u.sessionUpdate === 'agent_message_chunk' && u.content?.text === live.banner) { live.banner = null; return; }
     const run = this.running.get(threadId);
-    const turn = run ? run.turn : this.store.maxTurn(threadId);
+    const turn = worker ? worker.turn : run ? run.turn : this.store.maxTurn(threadId);
+    const owner = worker?.sessionId || '';
+    const mine = owner ? { worker: owner } : {};
     const chunk = (u.sessionUpdate === 'agent_message_chunk' || u.sessionUpdate === 'agent_thought_chunk') && u.content?.type === 'text';
     // Write pending text first; only a new item (add) ends the message (usage and command updates come mid-message).
-    if (!chunk) this.flushText(threadId, { keep: true });
+    if (!chunk) this.flushText(threadId, { keep: true, owner });
+    if (u.sessionUpdate === 'subagent_spawned' || u.sessionUpdate === 'subagent_state_update') return this.onWorker(threadId, live, worker, turn, u);
+    // A delegated agent's settings and commands are its own business, not the chat's.
+    if (worker && !['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan', 'notice', 'session_info_update'].includes(u.sessionUpdate)) return;
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
       case 'agent_thought_chunk': {
         const kind = u.sessionUpdate === 'agent_message_chunk' ? 'text' : 'thought';
         const c = u.content || {};
         if (c.type === 'text') {
-          if (c.text) this.appendText(threadId, turn, kind, c.text, u.messageId || null);
+          if (c.text) this.appendText(threadId, turn, kind, c.text, u.messageId || null, owner);
         } else if (c.type === 'image' && (c.data?.length || 0) > MAX_IMAGE) {
-          this.add(threadId, turn, 'notice', { level: '', text: `The agent showed an image too large to keep here (${Math.round(c.data.length * 0.75 / 2 ** 20)} MB).` });
+          this.add(threadId, turn, 'notice', { level: '', text: `The agent showed an image too large to keep here (${Math.round(c.data.length * 0.75 / 2 ** 20)} MB).`, ...mine });
         } else if (c.type === 'image' || c.type === 'resource_link') {
-          this.add(threadId, turn, 'media', { content: c });
+          this.add(threadId, turn, 'media', { content: c, ...mine });
         }
         return;
       }
       case 'tool_call':
       case 'tool_call_update': {
-        const ref = 'tool:' + u.toolCallId;
+        const ref = `tool:${owner ? owner + ':' : ''}${u.toolCallId}`;
         const existing = this.store.itemByRef(threadId, ref);
-        const next = { ...(existing || {}), toolCallId: u.toolCallId };
+        const next = { ...(existing || {}), toolCallId: u.toolCallId, ...mine };
         for (const k of ['title', 'status', 'locations']) if (u[k] !== undefined) next[k] = u[k];
         if (u.kind !== undefined) next.toolKind = u.kind;
         if (u.rawInput !== undefined && (Object.keys(u.rawInput || {}).length || !next.rawInput)) next.rawInput = clipRaw(u.rawInput);
@@ -613,9 +637,9 @@ export class ThreadManager {
         return;
       }
       case 'plan': {
-        const ref = 'plan:' + turn;
+        const ref = `plan:${owner ? owner + ':' : ''}${turn}`;
         const existing = this.store.itemByRef(threadId, ref);
-        const data = { entries: u.entries || [] };
+        const data = { entries: u.entries || [], ...mine };
         if (existing) this.itemEvent(this.store.updateItem(existing.id, data));
         else this.add(threadId, turn, 'plan', data, ref);
         return;
@@ -645,14 +669,48 @@ export class ThreadManager {
         if (!title) return;
         const text = u.description?.trim() ? `${title}: ${u.description.trim()}` : title;
         const last = this.store.lastItem(threadId);
-        if (last?.kind === 'notice' && last.turn === turn && last.text === text) return;
+        if (last?.kind === 'notice' && last.turn === turn && last.text === text && last.worker === mine.worker) return;
         // A limit (rate, usage, quota) is something to wait out: a warning, whatever severity it came with.
-        this.add(threadId, turn, 'notice', { level: u.severity === 'error' && !LIMIT.test(text) ? 'danger' : u.severity === 'error' || u.severity === 'warning' ? 'warn' : '', text });
+        this.add(threadId, turn, 'notice', { level: u.severity === 'error' && !LIMIT.test(text) ? 'danger' : u.severity === 'error' || u.severity === 'warning' ? 'warn' : '', text, ...mine });
+        return;
+      }
+      case 'session_info_update': { // a delegated agent's better name
+        const name = str(u.title).trim();
+        const item = worker && name && this.store.item(worker.itemId);
+        if (item) this.itemEvent(this.store.updateItem(item.id, { ...strip(item), name }));
         return;
       }
       default:
         return;
     }
+  }
+
+  // A delegated agent started (by the chat's agent or another delegated one), or finished. It shows as an
+  // 'agent' item in the turn it started in; nested ones name their parent's session.
+  onWorker(threadId, live, worker, turn, u) {
+    const parent = worker?.sessionId || null;
+    const id = str(u.subagentSessionId, 200);
+    if (!id || id === live.sessionId) return;
+    const known = live.workers.get(id);
+    if (u.sessionUpdate === 'subagent_spawned') {
+      if (known) { // announced again: better details, never a new parent
+        const item = known.parent === parent && this.store.item(known.itemId);
+        if (item) this.itemEvent(this.store.updateItem(item.id, { ...strip(item), name: str(u.name) || item.name, task: str(u.task, 4000) || item.task }));
+        return;
+      }
+      const item = this.add(threadId, turn, 'agent', { sessionId: id, parent, name: str(u.name) || 'Agent', task: str(u.task, 4000), prompt: str(u.prompt, MAX_TEXT), state: 'running', ended: null }, `agent:${id}`, parent || '');
+      live.workers.set(id, { sessionId: id, parent, turn, itemId: item.id });
+      return;
+    }
+    if (!known || known.parent !== parent || !WORKER_END.has(u.state)) return;
+    this.flushText(threadId, { owner: id });
+    this.endWorker(known.itemId, u.state);
+  }
+
+  endWorker(itemId, state) {
+    const item = this.store.item(itemId);
+    if (!item || item.state !== 'running') return;
+    this.itemEvent(this.store.updateItem(itemId, { ...strip(item), state, ended: Date.now() }));
   }
 
   onRequest(threadId, method, params, reply) {
@@ -665,7 +723,10 @@ export class ThreadManager {
       const allow = options.find((o) => o.kind === 'allow_once') || options.find((o) => o.kind === 'allow_always') || options[0];
       if (allow) return reply.respond({ outcome: { outcome: 'selected', optionId: allow.optionId } });
     }
-    const item = this.add(threadId, turn, 'permission', { toolCall: params.toolCall, options, outcome: null }, 'perm:' + reply.id);
+    // Asked by a delegated agent: say which.
+    const w = params.sessionId && live?.workers.get(params.sessionId);
+    const by = w ? this.store.item(w.itemId)?.name : null;
+    const item = this.add(threadId, turn, 'permission', { toolCall: params.toolCall, options, outcome: null, ...(by ? { by } : {}) }, 'perm:' + reply.id, '');
     live?.permissions.set(reply.id, { reply, itemId: item.id });
     this.store.updateThread(threadId, { status: 'waiting' });
     const t = this.threadEvent(threadId);

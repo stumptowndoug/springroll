@@ -16,6 +16,10 @@ export const api = {
   get: (p) => req('GET', p), post: (p, b = {}) => req('POST', p, b), patch: (p, b) => req('PATCH', p, b), del: (p) => req('DELETE', p),
 };
 
+// A limit (rate, usage, quota) is something to wait out, not a breakage: a warning, not an error.
+const LIMIT = /rate[ -]?limit|usage limit|quota|too many requests|\b429\b|overloaded|credit balance|out of credits/i;
+export const errorLevel = (text) => (LIMIT.test(text || '') ? 'warn' : 'danger');
+
 export const state = { views: [], threads: [], agents: [], jobs: [], signals: [], folders: ['~/home'], archived: false };
 
 export async function loadThreads() {

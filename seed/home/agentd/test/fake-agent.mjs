@@ -6,11 +6,13 @@
 //   ask      asks permission, then says which option it got
 //   bigdiff  an edit with 10 diffs, the first 3000 lines long
 //   bigimage an image of 5 MB
+//   delegate starts a delegated agent (session c1) that reads a file and answers, while the root answers too;
+//            a session nobody announced says something that must not show
 //   look     says how many images came with the prompt, and whether they came before the text
 import readline from 'node:readline';
 
 const send = (o) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...o }) + '\n');
-const update = (u) => send({ method: 'session/update', params: { sessionId: 's1', update: u } });
+const update = (u, sessionId = 's1') => send({ method: 'session/update', params: { sessionId, update: u } });
 const say = (text, messageId) => update({ sessionUpdate: 'agent_message_chunk', ...(messageId ? { messageId } : {}), content: { type: 'text', text } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const waiting = new Map();
@@ -53,6 +55,16 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
     const big = Array.from({ length: 3000 }, (_, i) => `line ${i}`).join('\n');
     const content = [{ type: 'diff', path: '/tmp/big.txt', oldText: '', newText: big }, ...Array.from({ length: 9 }, (_, i) => ({ type: 'diff', path: `/tmp/f${i}`, oldText: 'a', newText: 'b' }))];
     update({ sessionUpdate: 'tool_call', toolCallId: 't3', title: 'Edit', kind: 'edit', status: 'completed', content });
+    return done();
+  }
+  if (/delegate/.test(text)) {
+    update({ sessionUpdate: 'subagent_spawned', subagentSessionId: 'c1', name: 'Explorer', task: 'Find the config', prompt: 'Look around' });
+    update({ sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Read', kind: 'read', status: 'completed', rawInput: { path: '/tmp/a' } }, 'c1');
+    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Found it' } }, 'c1');
+    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'not mine' } }, 'zz');
+    say('Delegated.');
+    update({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'child-only' }] }, 'c1');
+    update({ sessionUpdate: 'subagent_state_update', subagentSessionId: 'c1', state: 'completed' });
     return done();
   }
   if (/look/.test(text)) {

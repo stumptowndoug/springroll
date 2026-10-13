@@ -201,3 +201,17 @@
 .u-images { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .u-images img { display: block; max-width: 220px; max-height: 160px; border-radius: 12px; object-fit: cover; }
 .msg-user.queued .u-images { opacity: .6; }
+
+/* Delegated agents: one row each in their turn, opening to what that agent did */
+.agent-wrap { margin-left: calc(var(--depth, 0) * 18px); }
+.row.agent > summary .a-icon { flex: none; width: 16px; display: grid; place-items: center; color: var(--faint); }
+.row.agent.completed > summary .a-icon { color: var(--ok); }
+.row.agent.waiting > summary .a-icon { color: var(--warn); }
+.row.agent .a-name { flex: none; color: var(--fg); font-weight: 550; }
+.row.agent .extra { min-width: 0; flex: 1; }
+.row.agent .deco { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.row.agent .a-status { color: var(--muted); }
+.agent-wrap .a-activity { font-size: var(--text-xs); color: var(--muted); padding: 0 0 2px 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.agent .a-body { margin: 2px 0 6px 7px; padding: 4px 0 4px 16px; border-left: 1px solid var(--line); gap: 4px; }
+.row.agent .a-body .msg-agent { color: var(--muted); font-size: var(--text-sm); }
+.row.agent .a-prompt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: var(--text-sm); max-height: 8.5em; overflow: auto; }
