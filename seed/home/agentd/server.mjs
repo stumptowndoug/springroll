@@ -8,7 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { openStore } from './store.mjs';
-import { ThreadManager } from './threads.mjs';
+import { ThreadManager, listFiles } from './threads.mjs';
 import { Jobs } from './jobs.mjs';
 import { describeCron, nextRun } from './cron.mjs';
 
@@ -276,6 +276,12 @@ const server = http.createServer(async (req, res) => {
     }
     if ((m = route('POST', /^\/threads\/([0-9a-f]+)\/cancel$/)(req))) {
       return json(res, 200, { ok: threads.cancel(m[1]) });
+    }
+    // The files in a chat's folder (for @ mentions): a thread's, or a new chat's (?cwd=~/home).
+    if (req.method === 'GET' && p === '/files') {
+      const dir = path.resolve((url.searchParams.get('cwd') || '~/home').replace(/^~/, HOME));
+      if (dir !== HOME && !dir.startsWith(HOME + path.sep)) return json(res, 400, { error: 'outside home' });
+      return json(res, 200, { cwd: dir, files: listFiles(dir) });
     }
     // An image attached to a message (the file name is its content's hash).
     if ((m = route('GET', /^\/images\/([0-9a-f]{32}\.(png|jpg|gif|webp))$/)(req))) {

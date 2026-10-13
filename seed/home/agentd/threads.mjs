@@ -445,7 +445,7 @@ export class ThreadManager {
           const p = this.imagePath(im.file);
           if (p) prompt.push({ type: 'image', mimeType: im.mimeType, data: fs.readFileSync(p).toString('base64') });
         }
-        if (m.text?.trim()) prompt.push({ type: 'text', text: m.text });
+        if (m.text?.trim()) prompt.push(...mentionBlocks(m.text, this.store.thread(threadId).cwd));
       }
       const res = await live.conn.request('session/prompt', { sessionId: live.sessionId, prompt });
       stopReason = res?.stopReason || 'end_turn';
@@ -704,6 +704,48 @@ function glue(s, messageId, text) {
   const fences = (s.text.match(/^\s*(```|~~~)/gm) || []).length;
   const ticks = (s.text.slice(s.text.lastIndexOf('\n') + 1).match(/`/g) || []).length;
   return fences % 2 || ticks % 2 ? '' : '\n\n';
+}
+
+// `@path` mentions of files in the chat's folder go to the agent as resource links, in place (the way
+// editors send them); other @words stay text.
+export function mentionBlocks(text, cwd) {
+  const blocks = [];
+  let last = 0;
+  for (const m of text.matchAll(/(^|\s)@(\S+)/g)) {
+    const rel = m[2].replace(/[.,;:!?)\]]+$/, ''); // "see @a.js." : the period isn't part of it
+    const abs = path.resolve(cwd, rel);
+    if (!abs.startsWith(cwd + path.sep)) continue;
+    try { if (!fs.statSync(abs).isFile()) continue; } catch { continue; }
+    const at = m.index + m[1].length;
+    if (at > last) blocks.push({ type: 'text', text: text.slice(last, at) });
+    blocks.push({ type: 'resource_link', uri: `file://${encodeURI(abs)}`, name: path.basename(rel) });
+    last = at + 1 + rel.length;
+  }
+  if (last < text.length || !blocks.length) blocks.push({ type: 'text', text: text.slice(last) });
+  return blocks;
+}
+
+// The files in a folder, for the composer's @ picker: git's tracked and unignored files, or (outside a
+// repo) a short walk that skips dependencies and hidden folders.
+const MAX_FILES = 20000;
+export function listFiles(dir) {
+  try {
+    const out = execFileSync('git', ['-C', dir, 'ls-files', '-co', '--exclude-standard', '-z'], { encoding: 'utf8', maxBuffer: 64 * 2 ** 20, stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.split('\0').filter(Boolean).slice(0, MAX_FILES);
+  } catch {}
+  const files = [];
+  const walk = (rel, depth) => {
+    let entries;
+    try { entries = fs.readdirSync(path.join(dir, rel), { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (files.length >= MAX_FILES) return;
+      if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === '__pycache__') continue;
+      const p = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { if (depth < 6) walk(p, depth + 1); } else if (e.isFile()) files.push(p);
+    }
+  };
+  walk('', 0);
+  return files;
 }
 
 // What a user item says: its text, context and images (not whether it's queued).

@@ -3,6 +3,7 @@
 import { api, state, on, chatAgents, agentName, defaultAgent, upsertThread } from './api.js';
 import { signinPanel, terminalSetup } from './signin.js';
 import { promptImage, imageFiles, MAX_PROMPT_IMAGES } from './images.js';
+import { mentionAt, rankFiles, folderFiles } from './mentions.js';
 
 let page = null, panel = null, pageCtx = null;
 
@@ -26,7 +27,7 @@ export function focusPanel() { panel?.$input?.focus(); }
 export function stopOnEscape(target) {
   if (!target || target.isContentEditable) return false; // renaming
   const v = [panel, page].find((x) => x?.el.contains(target));
-  if (!v || v.slashOpen || !v.showing() || !v.working()) return false;
+  if (!v || v.menuOpen() || !v.showing() || !v.working()) return false;
   v.stop();
   return true;
 }
@@ -766,13 +767,19 @@ class ThreadView {
     this.$input = this.$composer.querySelector('textarea');
     this.$cHead = this.$composer.querySelector('.c-head');
     this.$foot = this.$composer.querySelector('.c-foot');
-    this.$input.addEventListener('input', () => { this.recall = null; if (this.nudge) { this.nudge = null; this.renderStack(); } this.autosize(); this.saveDraft(); this.slashMenu(); this.updateSend(); });
+    this.$input.addEventListener('input', () => { this.recall = null; if (this.nudge) { this.nudge = null; this.renderStack(); } this.autosize(); this.saveDraft(); if (!this.slashMenu()) this.mentionMenu(); this.updateSend(); });
     this.$input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.slashOpen) { e.preventDefault(); this.send(); }
-      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.isComposing && !this.slashOpen && !ui.popoverOpen()
+      // A / or @ menu open: arrows move in it, Enter or Tab picks (typing stays in the text box).
+      if (this.menuOpen() && ['ArrowUp', 'ArrowDown', 'Enter', 'Tab'].includes(e.key) && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        this.menuEl.dispatchEvent(new KeyboardEvent('keydown', { key: e.key === 'Tab' ? 'Enter' : e.key }));
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.menuOpen()) { e.preventDefault(); this.send(); }
+      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.isComposing && !this.menuOpen() && !ui.popoverOpen()
         && (!this.$input.value || this.$input.value === this.recall?.text) && this.recallStep(e.key === 'ArrowUp' ? 1 : -1)) e.preventDefault();
       // (Escape while it works is Stop: main.js's key handler sees it first.)
-      if (e.key === 'Escape' && !this.slashOpen) this.$input.blur();
+      if (e.key === 'Escape' && !this.menuOpen()) this.$input.blur();
     });
     this.$composer.addEventListener('click', (e) => { if (e.target === this.$composer) this.$input.focus(); });
     this.$foot.addEventListener('click', (e) => this.onFootClick(e));
@@ -899,19 +906,45 @@ class ThreadView {
     if (b.dataset.pick) this.pickMenu(b, b.dataset.pick);
   }
 
+  // The composer's / and @ menus: a list above it while the text box keeps the keys.
+  menuOpen() { if (this.menu && !ui.popoverOpen()) this.menu = null; return !!this.menu; }
+  closeMenu(kind) { if (this.menu === kind) { ui.closePopover(); this.menu = null; } }
+  openMenu(kind, options, onSelect) {
+    this.menu = kind;
+    this.menuEl = ui.combobox(this.$composer, {
+      options, search: false, width: 420,
+      onSelect: (v) => { this.menu = null; onSelect(v); this.autosize(); this.saveDraft(); this.$input.focus(); this.updateSend(); },
+    });
+    setTimeout(() => this.$input.focus());
+  }
+
+  // "/" at the start: the agent's commands. True while the text is a command being typed.
   slashMenu() {
     const v = this.$input.value;
     const cmds = this.thread?.commands || [];
-    if (!/^\/\S*$/.test(v) || !cmds.length) { if (this.slashOpen) { ui.closePopover(); this.slashOpen = false; } return; }
+    if (!/^\/\S*$/.test(v) || !cmds.length) { this.closeMenu('slash'); return false; }
     const q = v.slice(1).toLowerCase();
     const opts = cmds.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 30).map((c) => ({ value: c.name, label: '/' + c.name, desc: c.description }));
-    if (!opts.length) return;
-    this.slashOpen = true;
-    ui.combobox(this.$composer, {
-      options: opts, search: false, width: 420,
-      onSelect: (name) => { this.slashOpen = false; this.$input.value = `/${name} `; this.$input.focus(); this.updateSend(); },
+    if (!opts.length) { this.closeMenu('slash'); return true; }
+    this.openMenu('slash', opts, (name) => { this.$input.value = `/${name} `; });
+    return true;
+  }
+
+  // "@" and a name: files in the chat's folder. The agent gets a mentioned file as a link to it.
+  async mentionMenu() {
+    const m = mentionAt(this.$input.value, this.$input.selectionStart);
+    if (!m) { this.closeMenu('mention'); return; }
+    const files = await folderFiles(this.thread?.cwd || (this.mode === 'panel' ? '~/home' : this.draftCwd));
+    const now = mentionAt(this.$input.value, this.$input.selectionStart);
+    if (!now || now.start !== m.start || now.query !== m.query) return; // typed on meanwhile
+    const hits = rankFiles(files, m.query);
+    if (!hits.length) { this.closeMenu('mention'); return; }
+    this.openMenu('mention', hits.map((f) => ({ value: f, label: f.slice(f.lastIndexOf('/') + 1), desc: f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : undefined, icon: 'file-text' })), (f) => {
+      const v = this.$input.value, end = m.start + 1 + m.query.length;
+      this.$input.value = `${v.slice(0, m.start)}@${f} ${v.slice(end).replace(/^ /, '')}`;
+      const caret = m.start + f.length + 2;
+      this.$input.setSelectionRange(caret, caret);
     });
-    setTimeout(() => this.$input.focus());
   }
 
   async send({ text = this.$input.value.trim(), force = false } = {}) {
