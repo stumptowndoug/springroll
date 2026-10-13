@@ -131,6 +131,20 @@ function diffStats(item) {
   for (const d of diffsOf(item).filter((x) => !x.truncated)) for (const [op] of lineDiff(d.oldText, d.newText)) { if (op === 'add') add++; if (op === 'del') del++; }
   return { add, del };
 }
+// The files a turn changed, in the order it first touched them, with their diffs and line counts.
+// Failed edits didn't change anything.
+function turnChanges(items) {
+  const byPath = new Map();
+  for (const i of items) {
+    if (i.kind !== 'tool' || i.status === 'failed') continue;
+    for (const d of diffsOf(i)) if (d.path) byPath.set(d.path, [...(byPath.get(d.path) || []), d]);
+  }
+  return [...byPath].map(([path, diffs]) => {
+    let add = 0, del = 0;
+    for (const d of diffs.filter((x) => !x.truncated)) for (const [op] of lineDiff(d.oldText, d.newText)) { if (op === 'add') add++; if (op === 'del') del++; }
+    return { path, diffs, add, del };
+  });
+}
 function renderDiff(d) {
   if (d.truncated) return `<div class="ui-diff"><div class="path"><a class="diff-file" href="#/v/files#p=${encodeURIComponent(d.path)}" title="Open in Files">${ui.esc(home(d.path))}</a><span class="stats ui-faint">Large change, not shown</span></div></div>`;
   const ops = lineDiff(d.oldText, d.newText);
@@ -451,11 +465,31 @@ class ThreadView {
     html += danger.map((i) => this.renderItem(i, { k })).join('');
     // A closing message that is the report itself (no report was published) shows once: in the card below.
     html += final.filter((i) => !this.reportDup?.has(i.id)).map((i) => this.renderItem(i, { k, final: true })).join('');
+    html += this.renderChanges(k, its);
     if (end.stopReason === 'cancelled') html += `<div class="turn-note">Stopped.</div>`;
     if (end.stopReason === 'interrupted') html += `<div class="turn-note">${ui.esc(end.note || 'Interrupted.')}</div>`;
     if (end.stopReason === 'error' && end.error) html += this.renderItem({ kind: 'notice', level: errorLevel(end.error), text: end.error });
     if (end.stopReason === 'max_tokens' || end.stopReason === 'max_turn_requests') html += `<div class="turn-note">Stopped early (${end.stopReason.replace(/_/g, ' ')}). Say "continue" to keep going.</div>`;
     return html;
+  }
+
+  // A finished turn's files, folded like its work: "Changed 3 files +40 −12"; each opens to its diffs.
+  renderChanges(k, its) {
+    const changes = turnChanges(its);
+    if (!changes.length) return '';
+    const key = `t${k}:changes`;
+    const add = changes.reduce((n, c) => n + c.add, 0), del = changes.reduce((n, c) => n + c.del, 0);
+    const cwd = this.thread?.cwd ? this.thread.cwd.replace(/\/$/, '') + '/' : null;
+    const rel = (p) => (cwd && p.startsWith(cwd) ? p.slice(cwd.length) : home(p));
+    const stats = (c) => `<span class="add-n">+${c.add}</span> <span class="del-n">−${c.del}</span>`;
+    return `<details class="work changes" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
+      <summary>${ui.icon('chevron-right', 'sm')}<span>Changed ${changes.length} file${changes.length === 1 ? '' : 's'}</span><span class="facts">${stats({ add, del })}</span></summary>
+      <div class="work-body">${changes.map((c) => {
+        const ck = `t${k}:chg:${c.path}`;
+        const open = this.open_.has(ck);
+        return `<details class="row change" data-key="${ui.esc(ck)}"${open ? ' open' : ''}><summary>${ui.icon('file-diff', 'sm')}<span class="target file">${ui.esc(rel(c.path))}</span><span class="deco">${c.diffs.every((d) => d.truncated) ? 'large change' : stats(c)}</span></summary>
+          <div class="row-body">${open ? c.diffs.map(renderDiff).join('') : ''}</div></details>`;
+      }).join('')}</div></details>`;
   }
 
   renderUser(u) {
@@ -565,6 +599,20 @@ class ThreadView {
     }
     const sug = e.target.closest('[data-suggest]');
     if (sug) { this.$input.value = sug.dataset.suggest.replace(/…$/, ' '); this.autosize(); this.$input.focus(); return; }
+    const chg = e.target.closest('details.change > summary');
+    if (chg) {
+      const d = chg.parentElement, key = d.dataset.key;
+      setTimeout(() => {
+        if (d.open) {
+          this.open_.add(key);
+          const [, k, path] = key.match(/^t(\d+):chg:(.*)$/) || [];
+          const c = turnChanges(this.items.filter((x) => String(x.turn) === k)).find((x) => x.path === path);
+          if (c) d.querySelector('.row-body').innerHTML = c.diffs.map(renderDiff).join('');
+        } else this.open_.delete(key);
+        this.turnCache.clear();
+      });
+      return;
+    }
     const sum = e.target.closest('details.tool > summary');
     if (sum) {
       const d = sum.parentElement, key = d.dataset.key;
