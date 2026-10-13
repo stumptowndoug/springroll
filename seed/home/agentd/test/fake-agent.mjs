@@ -6,6 +6,7 @@
 //   ask      asks permission, then says which option it got
 //   bigdiff  an edit with 10 diffs, the first 3000 lines long
 //   bigimage an image of 5 MB
+//   look     says how many images came with the prompt, and whether they came before the text
 import readline from 'node:readline';
 
 const send = (o) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...o }) + '\n');
@@ -18,12 +19,12 @@ let nextId = 1000, cancelled = false;
 readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
   if (m.id != null && !m.method) return waiting.get(m.id)?.(m.result);
-  if (m.method === 'initialize') return send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false } } });
+  if (m.method === 'initialize') return send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false, promptCapabilities: { image: true } } } });
   if (m.method === 'session/new') return send({ id: m.id, result: { sessionId: 's1', configOptions: [{ id: 'model', category: 'model', type: 'select', name: 'Model', currentValue: 'small', options: [{ value: 'small', name: 'Small' }, { value: 'big', name: 'Big' }] }] } });
   if (m.method === 'session/cancel') { cancelled = true; return; }
   if (m.method !== 'session/prompt') return;
   cancelled = false;
-  const text = m.params.prompt.map((p) => p.text).join(' ');
+  const text = m.params.prompt.map((p) => p.text || '').join(' ');
   const done = (stopReason = 'end_turn') => send({ id: m.id, result: { stopReason } });
   if (/hang/.test(text)) return say('working');
   if (/slow/.test(text)) {
@@ -52,6 +53,11 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
     const big = Array.from({ length: 3000 }, (_, i) => `line ${i}`).join('\n');
     const content = [{ type: 'diff', path: '/tmp/big.txt', oldText: '', newText: big }, ...Array.from({ length: 9 }, (_, i) => ({ type: 'diff', path: `/tmp/f${i}`, oldText: 'a', newText: 'b' }))];
     update({ sessionUpdate: 'tool_call', toolCallId: 't3', title: 'Edit', kind: 'edit', status: 'completed', content });
+    return done();
+  }
+  if (/look/.test(text)) {
+    const kinds = m.params.prompt.map((p) => p.type);
+    say(`saw ${kinds.filter((k) => k === 'image').length} images${kinds.indexOf('image') < kinds.indexOf('text') ? ', first' : ''}`);
     return done();
   }
   if (/bigimage/.test(text)) {

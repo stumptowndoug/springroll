@@ -1,6 +1,7 @@
 // Thread manager: runs each thread's agent over ACP, turns ACP updates into
 // timeline items, handles permissions, queued messages and resuming.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -27,6 +28,10 @@ const ASK_MODES = ['default', 'agent', 'auto', 'manual', 'ask', 'ask-first'];
 const MAX_DIFFS = 8;            // diffs kept per tool call
 const MAX_DIFF_LINES = 2000;
 const MAX_IMAGE = 4 * 2 ** 20;   // base64 characters of an image an agent shows
+// Images the owner attaches to a message: how many, and the most base64 characters each (the composer scales them to fit).
+const MAX_PROMPT_IMAGES = 6;
+const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+const LIMIT = /rate[ -]?limit|usage limit|quota|too many requests|\b429\b|overloaded|credit balance|out of credits/i;
 const clip = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) + `\n… (${s.length - MAX_TEXT} more characters)` : s);
 // Output keeps its end: that's where a log says what happened.
 const clipTail = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? `(${s.length - MAX_TEXT} earlier characters) …\n` + s.slice(-MAX_TEXT) : s);
@@ -67,7 +72,7 @@ function readOptions({ configOptions, models, modes }, prev = null) {
   const isModel = (c) => c.category === 'model' || c.id === 'model';
   const isEffort = (c) => c.category === 'thought_level';
   const isMode = (c) => c.category === 'mode' || c.id === 'mode';
-  const o = { models: [], currentModel: null, source: null, effort: null, modes: [], currentMode: null, extra: [] };
+  const o = { models: [], currentModel: null, source: null, effort: null, modes: [], currentMode: null, extra: [], images: !!prev?.images };
   const m = cfg.find(isModel);
   if (m?.options?.length) Object.assign(o, { models: choices(m.options).map((v) => ({ id: v.value, name: v.name, description: v.description })), currentModel: m.currentValue, source: 'config', configId: m.id });
   else if (models?.availableModels?.length) Object.assign(o, { models: models.availableModels.map((v) => ({ id: v.modelId, name: v.name, description: v.description })), currentModel: models.currentModelId, source: 'models' });
@@ -255,9 +260,9 @@ export class ThreadManager {
     const early = live.early;
     live.early = null;
     for (const params of early) this.onNotification(thread.id, 'session/update', params);
-    live.options = live.usable(readOptions(session));
+    live.options = live.usable(readOptions(session, { images: !!live.capabilities.promptCapabilities?.image }));
     const prefs = this.store.agentOptions(thread.agent) || {};
-    if (live.options.models.length || live.options.effort) this.store.setAgentOptions(thread.agent, { ...prefs, models: live.options.models, currentModel: live.options.fallbackModel || live.options.currentModel, effort: live.options.effort });
+    if (live.options.models.length || live.options.effort) this.store.setAgentOptions(thread.agent, { ...prefs, models: live.options.models, currentModel: live.options.fallbackModel || live.options.currentModel, effort: live.options.effort, images: live.options.images });
     const t = this.store.thread(thread.id);
     this.store.updateThread(thread.id, { session_id: session.sessionId });
     await this.applyAccess(thread.id, live, t.access || 'full');
@@ -285,10 +290,10 @@ export class ThreadManager {
     const conn = new AcpConnection({ command, args, cwd, env });
     const timer = setTimeout(() => conn.kill(), PROBE_MS);
     const run = (async () => {
-      await conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' } });
+      const init = await conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' } });
       const o = usableModels(readOptions(await conn.request('session/new', { cwd, mcpServers: [] })), def, env);
       if (!o.models.length && !o.effort) throw new Error('no models offered');
-      const saved = { ...(this.store.agentOptions(agentId) || {}), models: o.models, currentModel: o.fallbackModel || o.currentModel, effort: o.effort };
+      const saved = { ...(this.store.agentOptions(agentId) || {}), models: o.models, currentModel: o.fallbackModel || o.currentModel, effort: o.effort, images: !!init?.agentCapabilities?.promptCapabilities?.image };
       this.store.setAgentOptions(agentId, saved);
       this.probes.delete(agentId);
       return saved;
@@ -370,21 +375,47 @@ export class ThreadManager {
 
   // ---------- Prompting ----------
 
-  async prompt(threadId, { text, context }) {
+  async prompt(threadId, { text = '', context, images }) {
     const thread = this.store.thread(threadId);
     if (!thread) throw new Error('no such thread');
-    if (!text?.trim()) throw new Error('empty message');
-    if (!thread.title) this.store.updateThread(threadId, { title: titleFrom(text) });
+    images = this.saveImages(images);
+    if (!text?.trim() && !images) throw new Error('empty message');
+    if (!thread.title) this.store.updateThread(threadId, { title: text.trim() ? titleFrom(text) : 'Image' });
+    const msg = { text, context, ...(images ? { images } : {}) };
     if (this.running.has(threadId)) {
       // Queue it: sent when the current turn ends.
-      this.add(threadId, this.running.get(threadId).turn + 1, 'user', { text, context, queued: true });
+      this.add(threadId, this.running.get(threadId).turn + 1, 'user', { ...msg, queued: true });
       this.threadEvent(threadId);
       return { queued: true };
     }
     const turn = this.store.maxTurn(threadId) + 1;
-    this.add(threadId, turn, 'user', { text, context });
-    this.run(threadId, turn, [{ text, context }]);
+    this.add(threadId, turn, 'user', msg);
+    this.run(threadId, turn, [msg]);
     return { queued: false };
+  }
+
+  // Attached images are kept as files (named by their content) beside the database, not in the timeline:
+  // a chat stays light to load, and the agent is sent each one as it was.
+  saveImages(images) {
+    if (!Array.isArray(images) || !images.length) return null;
+    if (images.length > MAX_PROMPT_IMAGES) throw new Error(`at most ${MAX_PROMPT_IMAGES} images per message`);
+    const dir = path.join(this.store.dir, 'images');
+    fs.mkdirSync(dir, { recursive: true });
+    return images.map((im) => {
+      const ext = IMAGE_TYPES[im?.mimeType];
+      if (!ext || typeof im.data !== 'string' || !/^[A-Za-z0-9+/]+=*$/.test(im.data)) throw new Error('images must be PNG, JPEG, GIF or WebP');
+      if (im.data.length > MAX_IMAGE) throw new Error('an image is too large to send');
+      const file = `${createHash('sha256').update(im.data).digest('hex').slice(0, 32)}.${ext}`;
+      const p = path.join(dir, file);
+      if (!fs.existsSync(p)) fs.writeFileSync(p, Buffer.from(im.data, 'base64'));
+      return { file, mimeType: im.mimeType, ...(typeof im.name === 'string' ? { name: im.name.slice(0, 120) } : {}) };
+    });
+  }
+
+  imagePath(file) {
+    if (!/^[0-9a-f]{32}\.(png|jpg|gif|webp)$/.test(file)) return null;
+    const p = path.join(this.store.dir, 'images', file);
+    return fs.existsSync(p) ? p : null;
   }
 
   async run(threadId, turn, messages) {
@@ -409,7 +440,12 @@ export class ThreadManager {
       const prompt = [];
       for (const m of messages) {
         if (m.context) prompt.push({ type: 'text', text: contextText(m.context) });
-        prompt.push({ type: 'text', text: m.text });
+        // Images first, then what the owner wrote about them.
+        for (const im of m.images || []) {
+          const p = this.imagePath(im.file);
+          if (p) prompt.push({ type: 'image', mimeType: im.mimeType, data: fs.readFileSync(p).toString('base64') });
+        }
+        if (m.text?.trim()) prompt.push({ type: 'text', text: m.text });
       }
       const res = await live.conn.request('session/prompt', { sessionId: live.sessionId, prompt });
       stopReason = res?.stopReason || 'end_turn';
@@ -430,14 +466,24 @@ export class ThreadManager {
     // Send anything queued while it was working, unless the owner stopped it: Stop means stop.
     const queued = this.store.items(threadId).filter((i) => i.kind === 'user' && i.queued && i.turn > turn);
     if (queued.length && run.cancelled) {
-      for (const q of queued) this.itemEvent(this.store.updateItem(q.id, { text: q.text, context: q.context, unsent: true }));
+      for (const q of queued) this.itemEvent(this.store.updateItem(q.id, { ...message(q), unsent: true }));
     } else if (queued.length) {
-      for (const q of queued) this.store.updateItem(q.id, { text: q.text, context: q.context });
+      for (const q of queued) this.store.updateItem(q.id, message(q));
       const next = this.store.maxTurn(threadId);
       this.store.db.prepare("update items set turn = ? where thread_id = ? and kind = 'user' and turn > ?").run(next, threadId, turn);
       for (const q of queued) this.itemEvent(this.store.item(q.id));
-      this.run(threadId, next, queued.map((q) => ({ text: q.text, context: q.context })));
+      this.run(threadId, next, queued.map(message));
     }
+  }
+
+  // The owner took back a message that hasn't gone to the agent yet (queued, or not sent after a Stop):
+  // to edit it in the composer, or drop it. One already sent stays.
+  removeUnsent(threadId, itemId) {
+    const item = this.store.item(Number(itemId));
+    if (!item || item.threadId !== threadId || item.kind !== 'user' || !(item.queued || item.unsent)) throw new Error('that message was already sent');
+    this.store.deleteItem(item.id);
+    this.emit({ type: 'removed', threadId, id: item.id });
+    return item;
   }
 
   // The turn's final message: the text after the last tool call (the answer,
@@ -600,7 +646,8 @@ export class ThreadManager {
         const text = u.description?.trim() ? `${title}: ${u.description.trim()}` : title;
         const last = this.store.lastItem(threadId);
         if (last?.kind === 'notice' && last.turn === turn && last.text === text) return;
-        this.add(threadId, turn, 'notice', { level: u.severity === 'error' ? 'danger' : u.severity === 'warning' ? 'warn' : '', text });
+        // A limit (rate, usage, quota) is something to wait out: a warning, whatever severity it came with.
+        this.add(threadId, turn, 'notice', { level: u.severity === 'error' && !LIMIT.test(text) ? 'danger' : u.severity === 'error' || u.severity === 'warning' ? 'warn' : '', text });
         return;
       }
       default:
@@ -658,6 +705,9 @@ function glue(s, messageId, text) {
   const ticks = (s.text.slice(s.text.lastIndexOf('\n') + 1).match(/`/g) || []).length;
   return fences % 2 || ticks % 2 ? '' : '\n\n';
 }
+
+// What a user item says: its text, context and images (not whether it's queued).
+const message = (i) => ({ text: i.text, context: i.context, ...(i.images ? { images: i.images } : {}) });
 
 // Item columns that shouldn't be written back into an item's data.
 function strip(o) {

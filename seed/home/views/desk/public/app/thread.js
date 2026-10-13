@@ -2,6 +2,7 @@
 // (#/t/<id>, #/new) and in the side panel ("Chat about this").
 import { api, state, on, chatAgents, agentName, defaultAgent, upsertThread } from './api.js';
 import { signinPanel, terminalSetup } from './signin.js';
+import { promptImage, imageFiles, MAX_PROMPT_IMAGES } from './images.js';
 
 let page = null, panel = null, pageCtx = null;
 
@@ -38,16 +39,16 @@ export async function startChat({ text, agent, cwd, context }) {
 
 /* ---------- Presentation of tool calls ---------- */
 const KIND = {
-  execute: { icon: 'square-terminal', live: 'Running', done: 'Ran', fail: 'Command failed:' },
-  read: { icon: 'file-text', live: 'Reading', done: 'Read', fail: "Couldn't read" },
-  edit: { icon: 'file-pen-line', live: 'Editing', done: 'Edited', fail: 'Edit failed:' },
-  delete: { icon: 'trash-2', live: 'Deleting', done: 'Deleted', fail: "Couldn't delete" },
-  move: { icon: 'folder-input', live: 'Moving', done: 'Moved', fail: "Couldn't move" },
-  search: { icon: 'search', live: 'Searching', done: 'Searched', fail: 'Search failed:' },
-  fetch: { icon: 'globe', live: 'Fetching', done: 'Fetched', fail: "Couldn't fetch" },
-  think: { icon: 'brain', live: 'Thinking', done: 'Thought', fail: 'Thinking failed' },
-  switch_mode: { icon: 'sliders-horizontal', live: 'Switching mode', done: 'Switched mode', fail: "Couldn't switch mode" },
-  other: { icon: 'wrench', live: 'Using', done: 'Used', fail: 'Failed:' },
+  execute: { icon: 'square-terminal', live: 'Running', done: 'Ran' },
+  read: { icon: 'file-text', live: 'Reading', done: 'Read' },
+  edit: { icon: 'file-pen-line', live: 'Editing', done: 'Edited' },
+  delete: { icon: 'trash-2', live: 'Deleting', done: 'Deleted' },
+  move: { icon: 'folder-input', live: 'Moving', done: 'Moved' },
+  search: { icon: 'search', live: 'Searching', done: 'Searched' },
+  fetch: { icon: 'globe', live: 'Fetching', done: 'Fetched' },
+  think: { icon: 'brain', live: 'Thinking', done: 'Thought' },
+  switch_mode: { icon: 'sliders-horizontal', live: 'Switching mode', done: 'Switched mode' },
+  other: { icon: 'wrench', live: 'Using', done: 'Used' },
 };
 const LIVE = new Set(['pending', 'in_progress']);
 const home = (p) => String(p || '').replace(/^\/home\/[^/]+/, '~');
@@ -70,12 +71,29 @@ function toolTarget(item) {
   const k = item.toolKind || 'other';
   const path = i.file_path || i.path || i.notebook_path || item.locations?.[0]?.path;
   if (k === 'execute') return { text: i.command || (Array.isArray(i.cmd) ? i.cmd.join(' ') : i.cmd) || stripTicks(item.title), mono: true };
-  if (k === 'read' || k === 'edit' || k === 'delete' || k === 'move') return { text: path ? home(path) : stripTicks(item.title), file: true };
+  if (k === 'read' || k === 'edit' || k === 'delete' || k === 'move') return { text: fileTarget(item, path), file: true };
   if (k === 'search') return { text: i.pattern || i.query || stripTicks(item.title), mono: !!i.pattern, extra: path ? `in ${home(path)}` : '' };
   if (k === 'fetch') return { text: i.url || i.query || stripTicks(item.title) };
   return { text: stripTicks(item.title || item.tool || 'tool') };
 }
+// A limit (rate, usage, quota) is something to wait out, not a breakage: a warning.
+const LIMIT = /rate[ -]?limit|usage limit|quota|too many requests|\b429\b|overloaded|credit balance|out of credits/i;
+const errorLevel = (text) => (LIMIT.test(text) ? 'warn' : 'danger');
 const stripTicks = (s) => String(s || '').replace(/^`|`$/g, '');
+// The file a file tool works on. Without a path in its input, each agent's title says it its own way:
+// "Edit `/abs/a.sql`" (Cursor), "Read file '/abs/a.sql'" (Codex), "edit_file: a.sql" (Muse), or just
+// "Editing files" / "Running edit_file" (Codex, Antigravity), when the file is only in its diff.
+function fileTarget(item, path) {
+  path ||= diffsOf(item).find((d) => d.path)?.path;
+  if (path) return home(path);
+  const title = String(item.title || '').trim();
+  const quoted = title.match(/^(?:edit|write|create|read|view|delete)(?: file)?\s+[`'"]([^`'"]+)[`'"]$/i);
+  if (quoted) return home(quoted[1]);
+  const prefixed = title.match(/^[a-z][a-z0-9_]*:\s+(.+)$/);
+  if (prefixed) return home(prefixed[1]);
+  if (/^(?:editing files?|running [a-z_]+|run [a-z_]+\?)$/i.test(title)) return '';
+  return stripTicks(title);
+}
 
 // A new chat has no session yet: offer the models and effort levels its agent offered last time.
 const agentOpts = new Map(); // agent id -> options | Promise
@@ -132,10 +150,11 @@ const TURN_PAGE = 50;       // turns shown at first, and per "Show earlier"
 const BIG_TEXT = 24000;     // a message this long streams as plain text, formatted once it's done
 
 // Agent text as Markdown. Images from other sites become links: loading one would tell that site
-// whatever the agent put in its address (text from an email it read, say).
+// whatever the agent put in its address (text from an email it read, say). Code blocks get a copy button.
 function chatMarkdown(text) {
   return ui.markdown(text).replace(/<img alt="([^"]*)" src="(https?:[^"]*)">/g, (_, alt, src) =>
-    `<a class="img-link" href="${src}" target="_blank" rel="noopener">${ui.icon('image', 'sm')}${alt || 'Image'}</a>`);
+    `<a class="img-link" href="${src}" target="_blank" rel="noopener">${ui.icon('image', 'sm')}${alt || 'Image'}</a>`)
+    .replace(/<pre[ >][\s\S]*?<\/pre>/g, (pre) => `<div class="code-wrap">${pre}<button class="code-copy" data-code-copy title="Copy code">${ui.icon('copy', 'sm')}</button></div>`);
 }
 
 /* ---------- The view ---------- */
@@ -144,6 +163,7 @@ class ThreadView {
     this.el = el; this.ctx = ctx; this.mode = mode; this.context = context; this.onCreated = onCreated; this.onClose = onClose;
     this.id = null; this.thread = null; this.items = []; this.open_ = new Set(); this.turnCache = new Map();
     this.draftAgent = null; this.draftCwd = '~/home'; this.draftAccess = 'full'; this.draftModel = null; this.draftEffort = null;
+    this.attached = []; // images to send with the next message: { mimeType, data, name, url }
     el.innerHTML = `
       <div class="thread ${mode}">
         <header class="thread-head"></header>
@@ -163,6 +183,7 @@ class ThreadView {
     this.off = [
       on('agent:item', (ev) => { if (ev.item.threadId === this.id) this.upsert(ev.item); }),
       on('agent:append', (ev) => { if (ev.threadId === this.id) this.append(ev); }),
+      on('agent:removed', (ev) => { if (ev.threadId === this.id) { this.items = this.items.filter((i) => i.id !== ev.id); this.turnCache.clear(); this.schedule(); } }),
       on('agent:reconnect', () => this.refresh()),
       on('agent:thread', (ev) => { if (ev.thread.id === this.id) { this.thread = ev.thread; this.schedule(); } }),
       on('agents', () => { this.renderComposerFoot(); if (!this.thread) this.renderStack(); }),
@@ -421,7 +442,7 @@ class ThreadView {
       const tools = work.filter((i) => i.kind === 'tool');
       const edits = tools.filter((i) => i.toolKind === 'edit').length;
       const failed = tools.filter((i) => i.status === 'failed').length;
-      const facts = [tools.length ? `${tools.length} step${tools.length === 1 ? '' : 's'}` : null, edits ? `${edits} edit${edits === 1 ? '' : 's'}` : null, failed ? `<span class="danger-text">${failed} failed</span>` : null].filter(Boolean).join(' · ');
+      const facts = [tools.length ? `${tools.length} step${tools.length === 1 ? '' : 's'}` : null, edits ? `${edits} edit${edits === 1 ? '' : 's'}` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
       const key = `t${k}:work`;
       html += `<details class="work" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
         <summary>${ui.icon('chevron-right', 'sm')}<span>Worked for ${ui.duration(end.durationMs || 0)}</span><span class="facts">${facts}</span></summary>
@@ -432,7 +453,7 @@ class ThreadView {
     html += final.filter((i) => !this.reportDup?.has(i.id)).map((i) => this.renderItem(i, { k, final: true })).join('');
     if (end.stopReason === 'cancelled') html += `<div class="turn-note">Stopped.</div>`;
     if (end.stopReason === 'interrupted') html += `<div class="turn-note">${ui.esc(end.note || 'Interrupted.')}</div>`;
-    if (end.stopReason === 'error' && end.error) html += `<div class="notice danger">${ui.icon('circle-alert', 'sm')}<span>${ui.esc(end.error)}</span></div>`;
+    if (end.stopReason === 'error' && end.error) html += this.renderItem({ kind: 'notice', level: errorLevel(end.error), text: end.error });
     if (end.stopReason === 'max_tokens' || end.stopReason === 'max_turn_requests') html += `<div class="turn-note">Stopped early (${end.stopReason.replace(/_/g, ' ')}). Say "continue" to keep going.</div>`;
     return html;
   }
@@ -451,8 +472,11 @@ class ThreadView {
         <div class="bubble">${ui.esc(u.text.split('\n---\n')[0])}</div></details>`;
     }
     const text = u.text;
-    const tag = u.unsent ? '<span class="q" title="You stopped the agent before this was sent">Not sent</span>' : u.queued ? '<span class="q">Queued</span>' : '';
-    return `<div class="msg-user${u.queued || u.unsent ? ' queued' : ''}">${ctxChip}${tag}<div class="bubble">${ui.esc(text)}</div></div>`;
+    const tag = u.unsent ? '<span class="q" title="You stopped the agent before this was sent">Not sent</span>' : u.queued ? '<span class="q" title="Sent when the agent finishes">Queued</span>' : '';
+    // Not sent yet: take it back into the composer, or drop it.
+    const acts = u.queued || u.unsent ? `<span class="q-acts"><button data-unsent="edit" data-id="${u.id}">Edit</button><button data-unsent="remove" data-id="${u.id}">Remove</button></span>` : '';
+    const imgs = u.images?.length ? `<div class="u-images">${u.images.map((im) => `<a href="api/agent/images/${ui.esc(im.file)}" target="_blank" rel="noopener" title="${ui.esc(im.name || 'Image')}"><img src="api/agent/images/${ui.esc(im.file)}" alt="${ui.esc(im.name || '')}" loading="lazy"></a>`).join('')}</div>` : '';
+    return `<div class="msg-user${u.queued || u.unsent ? ' queued' : ''}">${ctxChip}${tag || acts ? `<div class="q-head">${acts}${tag}</div>` : ''}${imgs}${text?.trim() ? `<div class="bubble">${ui.esc(text)}</div>` : ''}</div>`;
   }
 
   renderItem(i, { live, last, k, final } = {}) {
@@ -474,7 +498,7 @@ class ThreadView {
         const label = !o ? 'Waiting for you to approve' : o.outcome === 'cancelled' ? 'Cancelled' : opt?.kind?.startsWith('reject') ? 'Denied' : 'Approved';
         return `<div class="row perm ${o ? '' : 'pending'}">${ui.icon(o && !opt?.kind?.startsWith('reject') && o.outcome !== 'cancelled' ? 'lock-open' : 'lock', 'sm')}<span>${label}:</span><span class="target">${ui.esc(stripTicks(i.toolCall?.title || 'an action'))}</span></div>`;
       }
-      case 'notice': return `<div class="notice ${i.level || ''}">${ui.icon(i.level === 'danger' ? 'circle-alert' : 'info', 'sm')}<span>${ui.esc(i.text)}</span></div>`;
+      case 'notice': return `<div class="notice ${i.level || ''}">${ui.icon(i.level === 'danger' ? 'circle-alert' : i.level === 'warn' ? 'triangle-alert' : 'info', 'sm')}<span>${ui.esc(i.text)}</span></div>`;
       case 'media': {
         const c = i.content || {};
         if (c.type === 'image' && c.data && /^image\/[\w.+-]+$/.test(c.mimeType || '')) return `<img class="media" src="data:${c.mimeType};base64,${ui.esc(c.data)}" alt="">`;
@@ -488,17 +512,19 @@ class ThreadView {
   renderTool(i, k) {
     const kind = KIND[i.toolKind] || KIND.other;
     const liveNow = LIVE.has(i.status);
+    // A failed step is ordinary work (agents recover from most): its verb, a muted "failed", folded like the rest.
     const failed = i.status === 'failed';
     const tg = toolTarget(i);
-    const verb = failed ? kind.fail : liveNow ? kind.live : kind.done;
+    const verb = liveNow ? kind.live : kind.done;
     let deco = '';
     if (i.toolKind === 'edit' && diffsOf(i).some((d) => !d.truncated)) { const s = diffStats(i); deco = `<span class="deco"><span class="add-n">+${s.add}</span> <span class="del-n">−${s.del}</span></span>`; }
+    if (failed) deco += '<span class="deco fail">failed</span>';
     if (!liveNow && i.updated - i.created > 2000) deco += `<span class="deco ui-mono">${ui.duration(i.updated - i.created)}</span>`;
     const target = tg.text ? `<span class="target${tg.mono ? ' mono' : ''}${tg.file ? ' file' : ''}">${ui.esc(String(tg.text).split('\n')[0].slice(0, 160))}</span>${tg.extra ? `<span class="extra">${ui.esc(tg.extra)}</span>` : ''}` : '';
     const key = `t${k}:tool:${i.id}`;
-    const open = this.open_.has(key) || (failed && !this.open_.has(key + ':closed'));
+    const open = this.open_.has(key);
     return `<details class="row tool${liveNow ? ' live' : ''}${failed ? ' failed' : ''}" data-key="${key}"${open ? ' open' : ''}>
-      <summary>${ui.icon(failed ? 'circle-x' : kind.icon, 'sm')}<span class="verb${liveNow ? ' ui-shimmer' : ''}">${verb}</span>${target}${deco}</summary>
+      <summary>${ui.icon(kind.icon, 'sm')}<span class="verb${liveNow ? ' ui-shimmer' : ''}">${verb}</span>${target}${deco}</summary>
       <div class="row-body">${open ? this.toolBody(i, key) : ''}</div></details>`;
   }
 
@@ -524,6 +550,13 @@ class ThreadView {
   onTimelineClick(e) {
     const all = e.target.closest('[data-all]');
     if (all) { this.open_.add(all.dataset.all + ':all'); this.turnCache.clear(); this.render(); return; }
+    const un = e.target.closest('[data-unsent]');
+    if (un) return this.takeBack(+un.dataset.id, un.dataset.unsent === 'edit');
+    const code = e.target.closest('[data-code-copy]');
+    if (code) {
+      navigator.clipboard?.writeText(code.parentElement.querySelector('pre code')?.textContent || '').then(() => ui.toast('Copied'));
+      return;
+    }
     const copy = e.target.closest('[data-copy-btn]');
     if (copy) {
       const it = this.items.find((x) => x.id === +copy.dataset.copyBtn);
@@ -537,11 +570,23 @@ class ThreadView {
       const d = sum.parentElement, key = d.dataset.key;
       // Render the body lazily on first open.
       setTimeout(() => {
-        if (d.open) { this.open_.add(key); this.open_.delete(key + ':closed'); const it = this.items.find((x) => `t${x.turn}:tool:${x.id}` === key); if (it) d.querySelector('.row-body').innerHTML = this.toolBody(it, key); }
-        else { this.open_.delete(key); this.open_.add(key + ':closed'); }
+        if (d.open) { this.open_.add(key); const it = this.items.find((x) => `t${x.turn}:tool:${x.id}` === key); if (it) d.querySelector('.row-body').innerHTML = this.toolBody(it, key); }
+        else this.open_.delete(key);
         this.turnCache.clear();
       });
     }
+  }
+
+  // A queued (or not sent) message, taken back: Edit puts it in the composer after anything being written there.
+  async takeBack(id, edit) {
+    let it;
+    try { it = await api.del(`api/agent/threads/${this.id}/items/${id}`); }
+    catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); return; }
+    if (!edit) return;
+    const draft = this.$input.value;
+    this.$input.value = draft.trim() ? `${draft.trimEnd()}\n${it.text}` : it.text;
+    this.autosize(); this.saveDraft(); this.updateSend();
+    this.$input.focus();
   }
 
   /* ----- Dock: approvals, queued messages ----- */
@@ -651,7 +696,25 @@ class ThreadView {
     this.$composer.innerHTML = `
       <div class="c-head"></div>
       <textarea rows="1" placeholder="Ask anything, or describe something to build"></textarea>
-      <div class="c-foot"></div>`;
+      <div class="c-foot"></div>
+      <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>`;
+    this.$file = this.$composer.querySelector('input[type=file]');
+    this.$file.addEventListener('change', () => { this.attach(this.$file.files); this.$file.value = ''; });
+    // Images: pasted (text copied along with one still pastes as text), dropped, or picked.
+    this.$composer.addEventListener('paste', (e) => {
+      const files = imageFiles(e.clipboardData?.files);
+      if (!files.length) return;
+      if (!e.clipboardData.getData('text/plain')) e.preventDefault();
+      this.attach(files);
+    });
+    this.$composer.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); this.$composer.classList.add('dropping'); } });
+    this.$composer.addEventListener('dragleave', (e) => { if (!this.$composer.contains(e.relatedTarget)) this.$composer.classList.remove('dropping'); });
+    this.$composer.addEventListener('drop', (e) => {
+      if (!e.dataTransfer?.files?.length) return;
+      e.preventDefault(); this.$composer.classList.remove('dropping');
+      const files = imageFiles(e.dataTransfer.files);
+      if (files.length) this.attach(files); else ui.toast('Only images can be attached', { icon: 'info' });
+    });
     this.$input = this.$composer.querySelector('textarea');
     this.$cHead = this.$composer.querySelector('.c-head');
     this.$foot = this.$composer.querySelector('.c-foot');
@@ -665,7 +728,27 @@ class ThreadView {
     });
     this.$composer.addEventListener('click', (e) => { if (e.target === this.$composer) this.$input.focus(); });
     this.$foot.addEventListener('click', (e) => this.onFootClick(e));
-    this.$cHead.addEventListener('click', (e) => { if (e.target.closest('[data-drop-ctx]')) { this.context = null; this.renderComposerFoot(); } });
+    this.$cHead.addEventListener('click', (e) => {
+      if (e.target.closest('[data-drop-ctx]')) { this.context = null; this.renderComposerFoot(); }
+      const x = e.target.closest('[data-unattach]');
+      if (x) { const [im] = this.attached.splice(+x.dataset.unattach, 1); if (im) URL.revokeObjectURL(im.url); this.renderComposerFoot(); this.$input.focus(); }
+    });
+  }
+
+  // Add images to the next message, if this chat's agent reads them.
+  async attach(files) {
+    files = imageFiles(files);
+    if (!files.length) return;
+    const { agentId, opts } = this.settings();
+    if (!opts?.images) { ui.toast(`${agentName(agentId)} can't read images in chat`, { icon: 'info' }); return; }
+    const room = MAX_PROMPT_IMAGES - this.attached.length;
+    if (files.length > room) ui.toast(`Up to ${MAX_PROMPT_IMAGES} images per message`, { icon: 'info' });
+    for (const f of files.slice(0, Math.max(0, room))) {
+      try { this.attached.push(await promptImage(f)); }
+      catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
+    }
+    this.renderComposerFoot();
+    this.$input.focus();
   }
 
   autosize() { this.$input.style.height = 'auto'; this.$input.style.height = Math.min(this.$input.scrollHeight, 280) + 'px'; }
@@ -686,8 +769,9 @@ class ThreadView {
     const { t, agentId, opts, modelId, model, access } = this.settings();
     const running = t && (t.running || ['running', 'starting', 'waiting'].includes(t.status));
     const usage = t?.usage?.size ? Math.round((100 * t.usage.used) / t.usage.size) : null;
-    ui.morph(this.$cHead, this.context?.title
-      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : this.context.view ? 'App' : 'Page')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '');
+    ui.morph(this.$cHead, (this.context?.title
+      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : this.context.view ? 'App' : 'Page')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '')
+      + (this.attached.length ? `<div class="c-images">${this.attached.map((im, n) => `<span class="c-image" title="${ui.esc(im.name || 'Image')}"><img src="${im.url}" alt=""><button data-unattach="${n}" title="Remove">${ui.icon('x', 'xs')}</button></span>`).join('')}</div>` : ''));
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
         // Two buttons at every width, so the row never wraps: agent and model, then everything else.
     const pickers = `<button class="ui-combo c-settings" data-pick="settings" ${t && !opts?.models?.length ? 'disabled ' : ''}title="${t ? 'Model' : 'Agent and model'}">${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(model?.name || modelId || agentName(agentId))}</span>${t && !opts?.models?.length ? '' : ui.icon('chevron-down')}</button>
@@ -695,6 +779,7 @@ class ThreadView {
     ui.morph(this.$foot, `${pickers}
       <div class="ui-spacer"></div>
       ${usage != null ? `<span class="usage ui-mono" title="Context used">${usage}%</span>` : ''}
+      ${opts?.images ? `<button class="ui-icon-btn plain c-attach" data-a="attach" title="Attach images (or paste or drop them)">${ui.icon('paperclip', 'sm')}</button>` : ''}
       ${running ? `<button class="ui-round stop filled c-stop" data-a="stop" title="Stop (Esc)">${ui.icon('square', 'sm')}</button>` : ''}
       ${running ? '' : `<button class="ui-round primary c-send" data-a="send" title="Send (Enter)">${ui.icon('arrow-up')}</button>`}`);
     this.updateSend();
@@ -702,7 +787,7 @@ class ThreadView {
 
   updateSend() {
     const b = this.$foot.querySelector('.c-send');
-    if (b) b.disabled = !this.$input.value.trim();
+    if (b) b.disabled = !this.$input.value.trim() && !this.attached.length;
   }
 
   // ----- Changing a setting (from the composer's two menus) -----
@@ -762,6 +847,7 @@ class ThreadView {
     if (!b) return;
     if (b.dataset.a === 'send') return this.send();
     if (b.dataset.a === 'stop') return this.stop();
+    if (b.dataset.a === 'attach') return this.$file.click();
     if (b.dataset.pick) this.pickMenu(b, b.dataset.pick);
   }
 
@@ -781,24 +867,27 @@ class ThreadView {
   }
 
   async send({ text = this.$input.value.trim(), force = false } = {}) {
-    if (!text) return;
+    const attached = this.attached;
+    if (!text && !attached.length) return;
     if (!force && this.unknownCommand(text)) { this.nudge = { text, command: this.unknownCommand(text) }; this.renderStack(); return; }
     if (this.signinNeeded()) { this.pendingSend = true; this.renderStack(); return; } // sent once signed in
     this.nudge = null; this.recall = null;
-    this.$input.value = ''; this.autosize(); this.saveDraft(); this.updateSend();
+    this.$input.value = ''; this.attached = []; this.autosize(); this.saveDraft(); this.renderComposerFoot();
+    const images = attached.length ? attached.map(({ mimeType, data, name }) => ({ mimeType, data, name })) : undefined;
     try {
       if (!this.id) {
-        const t = await api.post('api/agent/threads', { agent: this.draftAgent || defaultAgent(), cwd: this.mode === 'panel' ? '~/home' : this.draftCwd, text, context: this.context || undefined, access: this.draftAccess, model: this.draftModel || undefined, effort: this.draftEffort || undefined, origin: this.context?.view ? `view:${this.context.view}` : 'chat' });
+        const t = await api.post('api/agent/threads', { agent: this.draftAgent || defaultAgent(), cwd: this.mode === 'panel' ? '~/home' : this.draftCwd, text, images, context: this.context || undefined, access: this.draftAccess, model: this.draftModel || undefined, effort: this.draftEffort || undefined, origin: this.context?.view ? `view:${this.context.view}` : 'chat' });
         try { localStorage.removeItem(this.draftKey()); } catch {}
         upsertThread(t);
         if (this.mode === 'page') this.ctx.go(`#/t/${t.id}`);
         else { this.onCreated?.(t.id); this.open(t.id); }
         return;
       }
-      await api.post(`api/agent/threads/${this.id}/messages`, { text, context: this.mode === 'panel' && this.context ? this.ctx.viewContext() || this.context : undefined });
+      await api.post(`api/agent/threads/${this.id}/messages`, { text, images, context: this.mode === 'panel' && this.context ? this.ctx.viewContext() || this.context : undefined });
       this.stick = true;
+      attached.forEach((im) => URL.revokeObjectURL(im.url));
     } catch (e) {
-      this.$input.value = text; this.autosize();
+      this.$input.value = text; this.attached = attached; this.autosize(); this.renderComposerFoot();
       ui.toast(e.message, { icon: 'circle-alert' });
     }
   }

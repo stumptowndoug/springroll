@@ -121,3 +121,39 @@ test('models of providers without a key are hidden, and a usable one is picked t
   assert.equal(usableModels(o, { providerAuth: { auth: [path.join(dir, 'none.json')] } }, {}).models.length, ids.length, 'no keys at all: nothing hidden');
   assert.equal(usableModels(o, {}, {}), o, 'agents without providerAuth are left alone');
 });
+
+test('a queued message can be taken back; one already sent cannot', async () => {
+  const id = await chat('slow');
+  await until(() => store.items(id).some((i) => i.kind === 'text'));
+  await tm.prompt(id, { text: 'never mind' });
+  const q = store.items(id).find((i) => i.text === 'never mind');
+  assert.equal(tm.removeUnsent(id, q.id).text, 'never mind');
+  assert.equal(store.item(q.id), undefined);
+  assert.ok(events.some((e) => e.type === 'removed' && e.id === q.id));
+  const first = store.items(id).find((i) => i.kind === 'user');
+  assert.throws(() => tm.removeUnsent(id, first.id), /already sent/);
+  tm.cancel(id);
+  await turnsEnded(id);
+  assert.equal(store.items(id).filter((i) => i.kind === 'user').length, 1, 'nothing queued was sent');
+});
+
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+test('attached images are kept as files and sent before the text, queued ones too', async () => {
+  const t = store.createThread({ agent: 'fake', cwd: os.tmpdir() });
+  await tm.prompt(t.id, { text: 'look', images: [{ mimeType: 'image/png', data: PNG, name: 'dot.png' }] });
+  await turnsEnded(t.id);
+  const u = store.items(t.id).find((i) => i.kind === 'user');
+  assert.equal(u.images.length, 1);
+  assert.equal(u.images[0].name, 'dot.png');
+  assert.equal(fs.readFileSync(tm.imagePath(u.images[0].file)).toString('base64'), PNG);
+  assert.equal(ends.get(t.id)[0].text, 'saw 1 images, first');
+  assert.equal(store.thread(t.id).options.images, true, 'the agent said it reads images');
+  const slow = await chat('slow');
+  await until(() => store.items(slow).some((i) => i.kind === 'text'));
+  await tm.prompt(slow, { text: '', images: [{ mimeType: 'image/png', data: PNG }, { mimeType: 'image/png', data: PNG }] });
+  tm.cancel(slow);
+  await turnsEnded(slow);
+  assert.equal(store.items(slow).find((i) => i.unsent).images.length, 2, 'a message not sent keeps its images');
+  await assert.rejects(tm.prompt(slow, { text: 'x', images: [{ mimeType: 'text/html', data: 'PGI+' }] }), /PNG, JPEG/);
+  await assert.rejects(tm.prompt(slow, { text: '   ' }), /empty/);
+});

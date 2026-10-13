@@ -1,6 +1,6 @@
 // Shared client state and live events for Springroll.
 //   desk events  (/api/events):       views, show, notify, settings, agent, sessions
-//   agent events (/api/agent/events): thread, item, append (streamed text), jobs, signals, deleted
+//   agent events (/api/agent/events): thread, item, append (streamed text), removed (a queued message taken back), jobs, signals, deleted
 export const bus = new EventTarget();
 export const on = (type, fn) => { const h = (e) => fn(e.detail); bus.addEventListener(type, h); return () => bus.removeEventListener(type, h); };
 const fire = (type, detail) => bus.dispatchEvent(new CustomEvent(type, { detail }));
