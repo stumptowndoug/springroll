@@ -5,6 +5,21 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-13 · Chat: the agent's narration stays in the chat
+
+- **Narration stays visible:** the agent's text, images, links, notices and approvals stay in the
+  conversation in the order they came, instead of folding into the work row when a tool call follows
+  them. Each run of thoughts, tools and plans *between* them folds into its own row, with its own
+  steps / edits / failed counts. The newest row of a running turn shows the live label and current
+  step; earlier rows read "Worked", or "Thought" when they held only thinking. The last row of a
+  finished turn reads "Worked for <time>"; delegated agents sit after it, before the answer. Only the
+  answer (text after the last row) gets the copy/time row. This also fixes an answer vanishing into
+  the fold when the agent ran one more tool after writing it.
+- Files: `views/desk/public/app/thread.js` (`turnParts` now returns `segments`; new `renderWork` and
+  `renderAgents`), `thread.css`. Work rows are keyed `t<turn>:work:<first item id>`.
+- **If you changed this:** split a turn into a sequence of shown items and folded runs rather than
+  work/answer by the last tool call, and key each row's open state by its first item.
+
 ## 2026-10-13 · Chat: one live work row and reliable following
 
 - **Working → Worked:** thoughts, tools and intermediate narration share one collapsed row from the

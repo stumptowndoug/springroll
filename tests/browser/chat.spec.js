@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 
 const scroll = (page, root = '#chat') => page.locator(`${root} .thread-scroll`);
 const latest = (page, root = '#chat') => page.locator(`${root} .thread-latest`);
-const work = (page) => page.locator('#chat details[data-key="t1:work"]');
+const works = (page) => page.locator('#chat details[data-key^="t1:work:"]');
+const work = (page) => works(page).last();
 const paragraphs = (count) => Array.from({ length: count }, (_, i) => `Paragraph ${i + 1} of the answer. This is enough text to wrap on a phone.`).join('\n\n');
 const add = (page, item, id = 'main') => page.evaluate(async ({ item, id }) => {
   const key = window.chatTest.item(item, id);
@@ -45,30 +46,38 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator('#chat .msg-user')).toBeVisible();
 });
 
-test('live work folds immediately and keeps its row and open state when finished', async ({ page }) => {
+test('narration stays in the chat while each run of work folds, keeping its row and open state when finished', async ({ page }) => {
   await add(page, { kind: 'thought', text: 'First I will check the tests.' });
   await expect(work(page).locator(':scope > summary')).toContainText('WorkingThinking');
   await expect(page.locator('#chat .tail .working')).toHaveCount(0);
+  // Narration stays in the conversation; the thinking before it is done.
   await add(page, { kind: 'text', text: 'I will read the test file.' });
+  await expect(page.locator('#chat .turn > .msg-agent')).toHaveText('I will read the test file.');
+  await expect(work(page).locator('.work-label')).toHaveText('Thought');
+  await expect(page.locator('#chat .tail .working')).toBeVisible();
   const tool = await add(page, { kind: 'tool', toolKind: 'read', title: 'Read tests/chat.test.mjs', status: 'in_progress' });
+  await expect(works(page)).toHaveCount(2);
+  await expect(page.locator('#chat .tail .working')).toHaveCount(0);
   await expect(work(page).locator(':scope > summary')).toContainText('chat.test.mjs');
   await page.evaluate(() => window.chatTest.status({ status: 'waiting' }));
   await expect(work(page).locator('.work-label')).toHaveText('Waiting for you');
   await page.evaluate(() => window.chatTest.status({ status: 'running' }));
   await expect(work(page).locator('.work-label')).toHaveText('Working');
   await expect(work(page).locator('.tool')).toBeHidden();
-  await expect(page.getByText('I will read the test file.', { exact: true })).toBeHidden();
   const row = await work(page).elementHandle();
   await work(page).locator(':scope > summary').click();
   await expect(work(page).locator('.tool')).toBeVisible();
   await add(page, { id: tool, kind: 'tool', toolKind: 'read', title: 'Read tests/chat.test.mjs', status: 'completed' });
   await add(page, { kind: 'text', text: 'All tests pass.' });
-  await expect(page.locator('#chat .turn > .msg-agent')).toHaveText('All tests pass.');
+  await expect(page.locator('#chat .turn > .msg-agent').last()).toHaveText('All tests pass.');
   await page.evaluate(() => window.chatTest.finish());
   await expect(work(page).locator(':scope > summary')).toContainText('Worked for 4s');
+  await expect(works(page).first().locator('.work-label')).toHaveText('Thought');
   expect(await work(page).evaluate((el, before) => el === before, row)).toBe(true);
   await expect(work(page)).toHaveAttribute('open', '');
-  await expect(page.locator('#chat .turn > .msg-agent')).toContainText('All tests pass.');
+  // Only the answer, after the last work, gets the copy row.
+  await expect(page.locator('#chat .turn > .msg-agent').last()).toContainText('All tests pass.');
+  await expect(page.locator('#chat .turn > .msg-agent .msg-actions')).toHaveCount(1);
 });
 
 test('answers, media, notices, approvals and changes stay outside the work fold', async ({ page }) => {

@@ -162,18 +162,19 @@ function renderDiff(d) {
 const TURN_PAGE = 50;       // turns shown at first, and per "Show earlier"
 const BIG_TEXT = 24000;     // a message this long streams as plain text, formatted once it's done
 
-// Use the same groups while running and after completion. Notices and approvals
-// stay visible; the answer includes images and links after the last tool.
+// The agent's text, images, links, notices and approvals stay in the conversation where they came;
+// each run of thoughts, tools and plans between them folds into one work row. Delegated agents are
+// their own row, after the last work.
 function turnParts(items) {
-  const own = items.filter((i) => !i.worker && i.kind !== 'user' && i.kind !== 'turn');
-  const lastTool = own.findLastIndex((i) => i.kind === 'tool');
-  const work = [], answer = [], agents = [];
-  own.forEach((i, n) => {
+  const segments = [], agents = [];
+  for (const i of items) {
+    if (i.worker || i.kind === 'user' || i.kind === 'turn') continue;
     if (i.kind === 'agent') agents.push(i);
-    else if (i.kind === 'notice' || i.kind === 'permission' || (n > lastTool && (i.kind === 'text' || i.kind === 'media'))) answer.push(i);
-    else work.push(i);
-  });
-  return { work, answer, agents };
+    else if (['text', 'media', 'notice', 'permission'].includes(i.kind)) segments.push({ item: i });
+    else if (segments.at(-1)?.work) segments.at(-1).work.push(i);
+    else segments.push({ work: [i] });
+  }
+  return { segments, agents, lastWork: segments.findLastIndex((s) => s.work) };
 }
 
 // Agent text as Markdown. Images from other sites become links: loading one would tell that site
@@ -424,7 +425,7 @@ class ThreadView {
     }
     for (const n of existing.values()) n.remove();
     const elapsed = this.$tail.querySelector('[data-elapsed]')?.textContent || '';
-    const groupedWork = lastTurn != null && !turns.get(lastTurn).some((i) => i.kind === 'turn') && turnParts(turns.get(lastTurn)).work.length > 0;
+    const groupedWork = lastTurn != null && !turns.get(lastTurn).some((i) => i.kind === 'turn') && !!turnParts(turns.get(lastTurn)).segments.at(-1)?.work;
     ui.morph(this.$tail, live && !groupedWork ? `<div class="working"><span class="ui-shimmer">${this.liveLabel()}</span><span class="ui-mono ui-faint" data-elapsed>${elapsed}</span></div>` : '');
     this.tick();
     this.renderStack();
@@ -461,32 +462,15 @@ class ThreadView {
   renderTurn(k, its, live) {
     const users = its.filter((i) => i.kind === 'user');
     const end = its.find((i) => i.kind === 'turn');
-    const { work, answer, agents } = turnParts(its);
+    const { segments, agents, lastWork } = turnParts(its);
     let html = users.map((u) => this.renderUser(u)).join('');
-    if (work.length) {
-      const tools = work.filter((i) => i.kind === 'tool');
-      const edits = tools.filter((i) => i.toolKind === 'edit').length;
-      const failed = tools.filter((i) => i.status === 'failed').length;
-      const facts = [tools.length ? `${tools.length} step${tools.length === 1 ? '' : 's'}` : null, edits ? `${edits} edit${edits === 1 ? '' : 's'}` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
-      const key = `t${k}:work`;
-      const last = work[work.length - 1], kind = KIND[last.toolKind] || KIND.other;
-      const status = last.kind === 'tool' ? `${LIVE.has(last.status) ? kind.live : kind.done} ${toolTarget(last).text || ''}` : last.kind === 'thought' ? 'Thinking' : last.kind === 'plan' ? 'Planning' : 'Working';
-      const icon = last.kind === 'tool' ? kind.icon : last.kind === 'thought' ? 'brain' : last.kind === 'plan' ? 'list-todo' : 'message-square';
-      const label = live ? (this.thread?.stopping ? 'Stopping' : this.thread?.status === 'waiting' ? 'Waiting for you' : 'Working') : end ? `Worked for ${ui.duration(end.durationMs || 0)}` : 'Work';
-      html += `<details class="work" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
-        <summary>${ui.icon('chevron-right', 'sm')}<span class="work-label${live ? ' ui-shimmer' : ''}">${label}</span>${live ? `<span class="work-status">${ui.icon(icon, 'sm')}<span>${ui.esc(status.split('\n')[0].slice(0, 160))}</span></span>` : ''}<span class="facts">${facts}</span></summary>
-        <div class="work-body">${work.map((i, n) => this.renderItem(i, { live, last: n === work.length - 1, k, its })).join('')}</div></details>`;
-    }
-    if (agents.length) {
-      const key = `t${k}:agents`;
-      const running = agents.filter((a) => a.state === 'running').length, failed = agents.filter((a) => a.state === 'failed').length;
-      const facts = [running ? `${running} running` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
-      html += `<details class="work agents" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
-        <summary>${ui.icon('chevron-right', 'sm')}<span>${agents.length} agent${agents.length === 1 ? '' : 's'}</span><span class="facts">${facts}</span></summary>
-        <div class="work-body">${agents.map((a) => this.renderAgent(a, k, its)).join('')}</div></details>`;
-    }
-    // A closing message that is the report itself (no report was published) shows once: in the card below.
-    html += answer.filter((i) => !this.reportDup?.has(i.id)).map((i) => this.renderItem(i, { live, k, final: !!end })).join('');
+    if (lastWork === -1) html += this.renderAgents(k, agents, its);
+    segments.forEach((s, n) => {
+      // A closing message that is the report itself (no report was published) shows once: in the card below.
+      if (s.item) html += this.reportDup?.has(s.item.id) ? '' : this.renderItem(s.item, { live, k, final: !!end && n > lastWork });
+      else html += this.renderWork(k, s.work, { live: live && n === segments.length - 1, end: n === lastWork ? end : null });
+      if (n === lastWork) html += this.renderAgents(k, agents, its);
+    });
     if (!end) return html;
     html += this.renderChanges(k, its);
     if (end.stopReason === 'cancelled') html += `<div class="turn-note">Stopped.</div>`;
@@ -494,6 +478,34 @@ class ThreadView {
     if (end.stopReason === 'error' && end.error) html += this.renderItem({ kind: 'notice', level: errorLevel(end.error), text: end.error });
     if (end.stopReason === 'max_tokens' || end.stopReason === 'max_turn_requests') html += `<div class="turn-note">Stopped early (${end.stopReason.replace(/_/g, ' ')}). Say "continue" to keep going.</div>`;
     return html;
+  }
+
+  // One run of thoughts and tools between the agent's messages, folded to a row. The newest row of a
+  // running turn says what it's doing; the last row of a finished turn carries the turn's time.
+  renderWork(k, work, { live, end }) {
+    const tools = work.filter((i) => i.kind === 'tool');
+    const edits = tools.filter((i) => i.toolKind === 'edit').length;
+    const failed = tools.filter((i) => i.status === 'failed').length;
+    const facts = [tools.length ? `${tools.length} step${tools.length === 1 ? '' : 's'}` : null, edits ? `${edits} edit${edits === 1 ? '' : 's'}` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
+    const key = `t${k}:work:${work[0].id}`;
+    const last = work[work.length - 1], kind = KIND[last.toolKind] || KIND.other;
+    const status = last.kind === 'tool' ? `${LIVE.has(last.status) ? kind.live : kind.done} ${toolTarget(last).text || ''}` : last.kind === 'thought' ? 'Thinking' : last.kind === 'plan' ? 'Planning' : 'Working';
+    const icon = last.kind === 'tool' ? kind.icon : last.kind === 'thought' ? 'brain' : last.kind === 'plan' ? 'list-todo' : 'message-square';
+    const label = live ? (this.thread?.stopping ? 'Stopping' : this.thread?.status === 'waiting' ? 'Waiting for you' : 'Working')
+      : end ? `Worked for ${ui.duration(end.durationMs || 0)}` : work.every((i) => i.kind === 'thought') ? 'Thought' : 'Worked';
+    return `<details class="work" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
+      <summary>${ui.icon('chevron-right', 'sm')}<span class="work-label${live ? ' ui-shimmer' : ''}">${label}</span>${live ? `<span class="work-status">${ui.icon(icon, 'sm')}<span>${ui.esc(status.split('\n')[0].slice(0, 160))}</span></span>` : ''}<span class="facts">${facts}</span></summary>
+      <div class="work-body">${work.map((i, n) => this.renderItem(i, { live, last: n === work.length - 1, k })).join('')}</div></details>`;
+  }
+
+  renderAgents(k, agents, its) {
+    if (!agents.length) return '';
+    const key = `t${k}:agents`;
+    const running = agents.filter((a) => a.state === 'running').length, failed = agents.filter((a) => a.state === 'failed').length;
+    const facts = [running ? `${running} running` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
+    return `<details class="work agents" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
+      <summary>${ui.icon('chevron-right', 'sm')}<span>${agents.length} agent${agents.length === 1 ? '' : 's'}</span><span class="facts">${facts}</span></summary>
+      <div class="work-body">${agents.map((a) => this.renderAgent(a, k, its)).join('')}</div></details>`;
   }
 
   // A delegated agent: one row (state, name, task, time; while it runs, what it's doing), opening to its

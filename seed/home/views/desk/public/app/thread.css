@@ -76,7 +76,7 @@
 .perm.pending .ui-icon { color: var(--warn); }
 .perm .target { opacity: .7; }
 
-/* The same work row while running and after completion */
+/* A run of work between the agent's messages, the same row while running and after completion */
 .work { font-size: var(--text-sm); color: var(--muted); }
 .work > summary { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; list-style: none; cursor: pointer; padding: 4px 10px 4px 6px; margin-left: -6px; border-radius: var(--radius-pill); }
 .work > summary::-webkit-details-marker { display: none; }
@@ -92,7 +92,6 @@
 .work > summary > .facts { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-body { margin: 6px 0 4px 7px; padding: 4px 0 4px 16px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .work:not([open]) > .work-body { display: none; }
-.work-body .msg-agent { color: var(--muted); font-size: var(--text-sm); }
 /* What a finished turn changed: one row per file, its diffs on demand */
 .row.change > summary { opacity: .8; }
 .row.change > summary:hover, .row.change[open] > summary { opacity: 1; }
