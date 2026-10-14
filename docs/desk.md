@@ -42,8 +42,10 @@ agentd normalizes ACP updates into timeline items: `user`, `text`,
 `permission`, `media`, `notice`, `turn` (stopReason, duration). Springroll
 renders them bb-style:
 
-- A completed turn folds into **"Worked for 41s · 6 steps · 2 edits"**; the
-  final answer stays visible below it (the agent's last message is the
+- The agent's messages stay in the conversation; each run of thoughts and
+  tools between them folds into a row ("Worked · 4 steps · 1 edit"). The last
+  row of a finished turn reads **"Worked for 41s · 6 steps · 2 edits"**, and
+  the final answer stays visible below it (the agent's last message is the
   answer; AGENTS.md asks agents to end with it).
 - While live: each tool call is one line with a present-tense shimmering
   label ("Running npm test"); finished steps fade; a "Working 12s" line.

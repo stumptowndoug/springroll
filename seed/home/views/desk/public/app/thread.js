@@ -4,6 +4,7 @@ import { api, state, on, chatAgents, agentName, defaultAgent, upsertThread, erro
 import { signinPanel, terminalSetup } from './signin.js';
 import { promptImage, imageFiles, MAX_PROMPT_IMAGES } from './images.js';
 import { mentionAt, rankFiles, folderFiles } from './mentions.js';
+import { followOutput } from './follow-output.js';
 
 let page = null, panel = null, pageCtx = null;
 
@@ -161,6 +162,21 @@ function renderDiff(d) {
 const TURN_PAGE = 50;       // turns shown at first, and per "Show earlier"
 const BIG_TEXT = 24000;     // a message this long streams as plain text, formatted once it's done
 
+// The agent's text, images, links, notices and approvals stay in the conversation where they came;
+// each run of thoughts, tools and plans between them folds into one work row. Delegated agents are
+// their own row, after the last work.
+function turnParts(items) {
+  const segments = [], agents = [];
+  for (const i of items) {
+    if (i.worker || i.kind === 'user' || i.kind === 'turn') continue;
+    if (i.kind === 'agent') agents.push(i);
+    else if (['text', 'media', 'notice', 'permission'].includes(i.kind)) segments.push({ item: i });
+    else if (segments.at(-1)?.work) segments.at(-1).work.push(i);
+    else segments.push({ work: [i] });
+  }
+  return { segments, agents, lastWork: segments.findLastIndex((s) => s.work) };
+}
+
 // Agent text as Markdown. Images from other sites become links: loading one would tell that site
 // whatever the agent put in its address (text from an email it read, say). Code blocks get a copy button.
 function chatMarkdown(text) {
@@ -179,11 +195,17 @@ class ThreadView {
     el.innerHTML = `
       <div class="thread ${mode}">
         <header class="thread-head"></header>
-        <div class="thread-scroll"><div class="earlier"></div><div class="timeline"></div><article class="chat-report" hidden></article><div class="tail"></div></div>
+        <div class="thread-scroll-area">
+          <div class="thread-scroll" tabindex="0" aria-label="Chat messages"><div class="thread-content"><div class="earlier"></div><div class="timeline"></div><article class="chat-report" hidden></article><div class="tail"></div></div></div>
+          <button type="button" class="ui-btn sm thread-latest" hidden>${ui.icon('arrow-down', 'sm')}Latest</button>
+        </div>
         <div class="dock"><div class="stack"></div><div class="composer"></div></div>
       </div>`;
     this.$head = el.querySelector('.thread-head');
     this.$scroll = el.querySelector('.thread-scroll');
+    this.$latest = el.querySelector('.thread-latest');
+    this.follow = followOutput(this.$scroll, el.querySelector('.thread-content'), (following) => { this.$latest.hidden = following; });
+    this.$latest.addEventListener('click', () => { this.$scroll.focus({ preventScroll: true }); this.follow.follow(); });
     this.$timeline = el.querySelector('.timeline');
     this.$earlier = el.querySelector('.earlier');
     this.$earlier.addEventListener('click', () => this.showEarlier());
@@ -206,18 +228,17 @@ class ThreadView {
       if (k) e.target.open ? this.open_.add(k) : this.open_.delete(k);
     }, true);
     this.$timeline.addEventListener('click', (e) => this.onTimelineClick(e));
-    this.$scroll.addEventListener('scroll', () => { this.stick = this.$scroll.scrollHeight - this.$scroll.scrollTop - this.$scroll.clientHeight < 80; });
     this.ticker = setInterval(() => this.tick(), 1000);
   }
 
-  destroy() { this.off.forEach((f) => f()); clearInterval(this.ticker); this.sgPanel?.panel.stop(); this.el.innerHTML = ''; }
+  destroy() { this.off.forEach((f) => f()); this.follow.destroy(); cancelAnimationFrame(this.raf); clearTimeout(this.readTimer); clearInterval(this.ticker); this.sgPanel?.panel.stop(); this.el.innerHTML = ''; }
   showing() { return this.el.getClientRects().length > 0; }
   working() { const t = this.thread; return !!t && !t.stopping && (t.running || ['running', 'starting', 'waiting'].includes(t.status)); }
   stop() { if (this.id) api.post(`api/agent/threads/${this.id}/cancel`).catch(() => {}); }
   focusComposer() { this.$input?.focus(); }
 
   async open(id, q = {}) {
-    this.id = id; this.stick = true;
+    this.id = id; this.follow.follow();
     this.turnLimit = TURN_PAGE; this.recall = null; this.nudge = null;
     const reset = () => { this.$earlier.innerHTML = ''; this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.$report.hidden = true; this.$report.innerHTML = ''; this.reportDup = null; };
     if (!id) {
@@ -395,7 +416,7 @@ class ThreadView {
     for (const k of keys) {
       const its = turns.get(k);
       const isLive = live && k === lastTurn && !its.some((i) => i.kind === 'turn');
-      const sig = its.map((i) => `${i.id}:${i.updated}`).join(',') + (isLive ? ':live' : '') + [...this.open_].filter((o) => o.startsWith(`t${k}:`)).join();
+      const sig = its.map((i) => `${i.id}:${i.updated}`).join(',') + (isLive ? `:live:${this.thread.status}:${!!this.thread.stopping}` : '') + [...this.open_].filter((o) => o.startsWith(`t${k}:`)).join();
       let node = existing.get(String(k));
       if (!node) { node = document.createElement('section'); node.className = 'turn'; node.dataset.turn = k; prev ? prev.after(node) : this.$timeline.prepend(node); }
       prev = node;
@@ -404,16 +425,17 @@ class ThreadView {
     }
     for (const n of existing.values()) n.remove();
     const elapsed = this.$tail.querySelector('[data-elapsed]')?.textContent || '';
-    ui.morph(this.$tail, live ? `<div class="working"><span class="ui-shimmer">${this.liveLabel()}</span><span class="ui-mono ui-faint" data-elapsed>${elapsed}</span></div>` : '');
+    const groupedWork = lastTurn != null && !turns.get(lastTurn).some((i) => i.kind === 'turn') && !!turnParts(turns.get(lastTurn)).segments.at(-1)?.work;
+    ui.morph(this.$tail, live && !groupedWork ? `<div class="working"><span class="ui-shimmer">${this.liveLabel()}</span><span class="ui-mono ui-faint" data-elapsed>${elapsed}</span></div>` : '');
     this.tick();
     this.renderStack();
     this.renderComposerFoot();
-    if (first || this.stick) this.$scroll.scrollTop = this.$scroll.scrollHeight;
+    if (first) this.follow.follow(); else this.follow.pin();
   }
 
   showEarlier() {
     const before = this.$scroll.scrollHeight;
-    this.turnLimit += TURN_PAGE; this.stick = false;
+    this.follow.pause(); this.turnLimit += TURN_PAGE;
     this.render();
     this.$scroll.scrollTop += this.$scroll.scrollHeight - before; // keep what was on screen in place
   }
@@ -440,46 +462,50 @@ class ThreadView {
   renderTurn(k, its, live) {
     const users = its.filter((i) => i.kind === 'user');
     const end = its.find((i) => i.kind === 'turn');
-    // The chat's agent's items; delegated agents' own (with `worker`) show inside their agent's row.
-    const agent = its.filter((i) => i.kind !== 'user' && i.kind !== 'turn' && !i.worker);
+    const { segments, agents, lastWork } = turnParts(its);
     let html = users.map((u) => this.renderUser(u)).join('');
-    if (!agent.length && !end) return html;
-    if (live || !end) return html + agent.map((i, n) => this.renderItem(i, { live, last: n === agent.length - 1, k, its })).join('');
-    // Completed: fold the work, keep the answer; delegated agents get a fold of their own.
-    const agents = agent.filter((i) => i.kind === 'agent');
-    let s = agent.length;
-    while (s > 0 && agent[s - 1].kind === 'text') s--;
-    let final = agent.slice(s), work = agent.slice(0, s).filter((i) => i.kind !== 'agent');
-    if (!final.length) { const t = work.findLastIndex((i) => i.kind === 'text'); if (t >= 0) { final = [work[t]]; work = work.filter((_, n) => n !== t); } }
-    const hasWork = work.some((i) => i.kind !== 'text');
-    const danger = work.filter((i) => i.kind === 'notice' && i.level === 'danger');
-    if (hasWork) {
-      const tools = work.filter((i) => i.kind === 'tool');
-      const edits = tools.filter((i) => i.toolKind === 'edit').length;
-      const failed = tools.filter((i) => i.status === 'failed').length;
-      const facts = [tools.length ? `${tools.length} step${tools.length === 1 ? '' : 's'}` : null, edits ? `${edits} edit${edits === 1 ? '' : 's'}` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
-      const key = `t${k}:work`;
-      html += `<details class="work" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
-        <summary>${ui.icon('chevron-right', 'sm')}<span>Worked for ${ui.duration(end.durationMs || 0)}</span><span class="facts">${facts}</span></summary>
-        <div class="work-body">${work.map((i) => this.renderItem(i, { k })).join('')}</div></details>`;
-    } else html += work.map((i) => this.renderItem(i, { k })).join('');
-    html += danger.map((i) => this.renderItem(i, { k })).join('');
-    if (agents.length) {
-      const key = `t${k}:agents`;
-      const running = agents.filter((a) => a.state === 'running').length, failed = agents.filter((a) => a.state === 'failed').length;
-      const facts = [running ? `${running} running` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
-      html += `<details class="work agents" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
-        <summary>${ui.icon('chevron-right', 'sm')}<span>${agents.length} agent${agents.length === 1 ? '' : 's'}</span><span class="facts">${facts}</span></summary>
-        <div class="work-body">${agents.map((a) => this.renderAgent(a, k, its)).join('')}</div></details>`;
-    }
-    // A closing message that is the report itself (no report was published) shows once: in the card below.
-    html += final.filter((i) => !this.reportDup?.has(i.id)).map((i) => this.renderItem(i, { k, final: true })).join('');
+    if (lastWork === -1) html += this.renderAgents(k, agents, its);
+    segments.forEach((s, n) => {
+      // A closing message that is the report itself (no report was published) shows once: in the card below.
+      if (s.item) html += this.reportDup?.has(s.item.id) ? '' : this.renderItem(s.item, { live, k, final: !!end && n > lastWork });
+      else html += this.renderWork(k, s.work, { live: live && n === segments.length - 1, end: n === lastWork ? end : null });
+      if (n === lastWork) html += this.renderAgents(k, agents, its);
+    });
+    if (!end) return html;
     html += this.renderChanges(k, its);
     if (end.stopReason === 'cancelled') html += `<div class="turn-note">Stopped.</div>`;
     if (end.stopReason === 'interrupted') html += `<div class="turn-note">${ui.esc(end.note || 'Interrupted.')}</div>`;
     if (end.stopReason === 'error' && end.error) html += this.renderItem({ kind: 'notice', level: errorLevel(end.error), text: end.error });
     if (end.stopReason === 'max_tokens' || end.stopReason === 'max_turn_requests') html += `<div class="turn-note">Stopped early (${end.stopReason.replace(/_/g, ' ')}). Say "continue" to keep going.</div>`;
     return html;
+  }
+
+  // One run of thoughts and tools between the agent's messages, folded to a row. The newest row of a
+  // running turn says what it's doing; the last row of a finished turn carries the turn's time.
+  renderWork(k, work, { live, end }) {
+    const tools = work.filter((i) => i.kind === 'tool');
+    const edits = tools.filter((i) => i.toolKind === 'edit').length;
+    const failed = tools.filter((i) => i.status === 'failed').length;
+    const facts = [tools.length ? `${tools.length} step${tools.length === 1 ? '' : 's'}` : null, edits ? `${edits} edit${edits === 1 ? '' : 's'}` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
+    const key = `t${k}:work:${work[0].id}`;
+    const last = work[work.length - 1], kind = KIND[last.toolKind] || KIND.other;
+    const status = last.kind === 'tool' ? `${LIVE.has(last.status) ? kind.live : kind.done} ${toolTarget(last).text || ''}` : last.kind === 'thought' ? 'Thinking' : last.kind === 'plan' ? 'Planning' : 'Working';
+    const icon = last.kind === 'tool' ? kind.icon : last.kind === 'thought' ? 'brain' : last.kind === 'plan' ? 'list-todo' : 'message-square';
+    const label = live ? (this.thread?.stopping ? 'Stopping' : this.thread?.status === 'waiting' ? 'Waiting for you' : 'Working')
+      : end ? `Worked for ${ui.duration(end.durationMs || 0)}` : work.every((i) => i.kind === 'thought') ? 'Thought' : 'Worked';
+    return `<details class="work" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
+      <summary>${ui.icon('chevron-right', 'sm')}<span class="work-label${live ? ' ui-shimmer' : ''}">${label}</span>${live ? `<span class="work-status">${ui.icon(icon, 'sm')}<span>${ui.esc(status.split('\n')[0].slice(0, 160))}</span></span>` : ''}<span class="facts">${facts}</span></summary>
+      <div class="work-body">${work.map((i, n) => this.renderItem(i, { live, last: n === work.length - 1, k })).join('')}</div></details>`;
+  }
+
+  renderAgents(k, agents, its) {
+    if (!agents.length) return '';
+    const key = `t${k}:agents`;
+    const running = agents.filter((a) => a.state === 'running').length, failed = agents.filter((a) => a.state === 'failed').length;
+    const facts = [running ? `${running} running` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
+    return `<details class="work agents" data-key="${key}"${this.open_.has(key) ? ' open' : ''}>
+      <summary>${ui.icon('chevron-right', 'sm')}<span>${agents.length} agent${agents.length === 1 ? '' : 's'}</span><span class="facts">${facts}</span></summary>
+      <div class="work-body">${agents.map((a) => this.renderAgent(a, k, its)).join('')}</div></details>`;
   }
 
   // A delegated agent: one row (state, name, task, time; while it runs, what it's doing), opening to its
@@ -614,6 +640,15 @@ class ThreadView {
   }
 
   onTimelineClick(e) {
+    // Native `toggle` is delivered later. Record disclosure intent now so a
+    // streaming frame between the click and that event can't close it again.
+    const summary = e.target.closest('details[data-key] > summary');
+    if (summary && !e.target.closest('a, button, input')) {
+      e.preventDefault();
+      const d = summary.parentElement;
+      d.open = !d.open;
+      if (d.open) this.open_.add(d.dataset.key); else this.open_.delete(d.dataset.key);
+    }
     const all = e.target.closest('[data-all]');
     if (all) { this.open_.add(all.dataset.all + ':all'); this.turnCache.clear(); this.render(); return; }
     const un = e.target.closest('[data-unsent]');
@@ -1002,7 +1037,7 @@ class ThreadView {
         return;
       }
       await api.post(`api/agent/threads/${this.id}/messages`, { text, images, context: this.mode === 'panel' && this.context ? this.ctx.viewContext() || this.context : undefined });
-      this.stick = true;
+      this.follow.follow();
       attached.forEach((im) => URL.revokeObjectURL(im.url));
     } catch (e) {
       this.$input.value = text; this.attached = attached; this.autosize(); this.renderComposerFoot();
