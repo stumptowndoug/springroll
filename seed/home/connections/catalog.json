@@ -89,11 +89,35 @@
     "test": "curl -fsS -H \"Authorization: Bearer $OPENAI_API_KEY\" https://api.openai.com/v1/models | jq -r '.data | length | tostring + \" models available\"'"
   },
   {
-    "id": "brave", "name": "Brave Search", "icon": "search", "category": "AI",
+    "id": "brave", "name": "Brave Search", "icon": "search", "category": "Web",
     "description": "Web search for agents and Views.",
     "fields": [{ "key": "BRAVE_API_KEY", "label": "API key", "secret": true }],
     "help": "Get a key at https://api-dashboard.search.brave.com (there's a free tier).",
     "test": "curl -fsS -H \"X-Subscription-Token: $BRAVE_API_KEY\" 'https://api.search.brave.com/res/v1/web/search?q=springroll&count=1' | jq -r '\"Search works\"'"
+  },
+  {
+    "id": "firecrawl", "name": "Firecrawl", "icon": "flame", "category": "Web",
+    "description": "Search the web and turn any page or site into clean Markdown for agents: scrape, crawl, map, extract.",
+    "fields": [{ "key": "FIRECRAWL_API_KEY", "label": "API key", "secret": true, "placeholder": "fc-…" }],
+    "help": "Sign up at https://www.firecrawl.dev and copy the key from https://www.firecrawl.dev/app/api-keys (the free tier has a small monthly credit). Agents use the `firecrawl` CLI (`firecrawl search …`, `firecrawl scrape <url>`); see skills/web.",
+    "test": "set -o pipefail; curl -fsS -H \"Authorization: Bearer $FIRECRAWL_API_KEY\" https://api.firecrawl.dev/v2/team/credit-usage | jq -r '\"Connected · \" + (.data.remainingCredits | tostring) + \" credits left\"'",
+    "after": "export PATH=$HOME/.npm-global/bin:$PATH; command -v firecrawl >/dev/null || npm i -g firecrawl-cli >/dev/null 2>&1; true"
+  },
+  {
+    "id": "kernel", "name": "Kernel", "icon": "app-window", "category": "Web",
+    "description": "Cloud browsers for agents, with stealth and captcha solving; watch and take over in the Browser app.",
+    "fields": [{ "key": "KERNEL_API_KEY", "label": "API key", "secret": true }],
+    "help": "Sign up at https://www.kernel.sh and create a key at https://dashboard.onkernel.com (the free tier includes $5 a month of browser time). Becomes the default for `browser start`; you pay while a browser runs, and idle ones stop after 15 minutes.",
+    "test": "set -o pipefail; curl -fsS -H \"Authorization: Bearer $KERNEL_API_KEY\" https://api.onkernel.com/browsers | jq -r '\"Connected · \" + (if type == \"array\" then length else 0 end | tostring) + \" browsers running\"'",
+    "after": "export PATH=$HOME/.npm-global/bin:$PATH; command -v agent-browser >/dev/null || npm i -g agent-browser >/dev/null 2>&1; true"
+  },
+  {
+    "id": "browserbase", "name": "Browserbase", "icon": "app-window-mac", "category": "Web",
+    "description": "Cloud browsers for agents, a second provider for when a site blocks the first.",
+    "fields": [{ "key": "BROWSERBASE_API_KEY", "label": "API key", "secret": true, "placeholder": "bb_live_…" }],
+    "help": "Sign up at https://www.browserbase.com and copy the key from Settings → API keys. Used with `browser start --via browserbase`; proxies and captcha solving (`--stealth`) need a paid plan.",
+    "test": "set -o pipefail; curl -fsS -H \"X-BB-API-Key: $BROWSERBASE_API_KEY\" 'https://api.browserbase.com/v1/sessions?status=RUNNING' | jq -r '\"Connected · \" + (length | tostring) + \" browsers running\"'",
+    "after": "export PATH=$HOME/.npm-global/bin:$PATH; command -v agent-browser >/dev/null || npm i -g agent-browser >/dev/null 2>&1; true"
   },
   {
     "id": "cloudflare", "name": "Cloudflare", "icon": "cloud", "category": "Infrastructure",

@@ -294,6 +294,14 @@ and review its result yourself. For a full plan/delegate/audit run, follow
 `skills/orchestrate/SKILL.md`. To show the owner a dev server, run
 `preview <port>`.
 
+## The web
+
+To find, read or act on websites, follow `skills/web/SKILL.md`: web search, Firecrawl
+(`firecrawl search|scrape|crawl`, pages as Markdown) or a real browser. `browser start` starts
+one (on this machine, through the owner's home internet, or a Kernel/Browserbase cloud browser) and agents drive it with
+`agent-browser --session <name> …`; the owner watches and takes over (sign-ins, 2FA, captchas) in
+the Browser app. Ask them there instead of asking for passwords.
+
 ## Heavy work
 
 This machine is meant to stay small. Work that needs lots of memory or CPU
@@ -351,6 +359,7 @@ to `LOCAL.md`: what and why. That's how updates know to keep it.
 - `focus`: what the owner is looking at in Springroll right now.
 - `add-view <template>` / `add-view --list`: install a View template.
 - `preview <port>`: open a local dev server in Springroll (private).
+- `browser start|list|stop`: a real browser for agents, watched in the Browser app (see The web).
 - `backup [--keep N]`, `restore <file>`: machine state.
 - `springroll-upstream`: refresh the `upstream` branch and show what's new.
 - `sprite …`, `sprite-job start|status|logs|wait|stop`: heavy work on Sprites.

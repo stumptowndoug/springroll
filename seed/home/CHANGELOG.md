@@ -42,6 +42,35 @@ Ported from Shep's chat. Most of it is in `views/desk/public/app/thread.js` and 
   `onWorker`/`endWorker`, `saveImages`/`imagePath`, `mentionBlocks`, `removeUnsent`, and
   `readOptions` keeping `images`.
 
+## 2026-10-14 · A real browser for agents, watched (and taken over) in the Browser app
+
+- **Browser app** (`views/browser/`, port 8103): agents start a browser with `browser start` and drive
+  it with Vercel's `agent-browser` (`agent-browser --session <name> …`); the app shows it live and
+  sends the owner's clicks, scrolls and keys back, so they can sign in, enter a 2FA code or pass a
+  captcha and hand it back. Works on a phone. Chat on a browser hands it to an agent.
+- **Ways to browse**, set up from the app: **this machine** (headless Chromium, ready out of the box;
+  `ensure.sh` installs agent-browser and Chromium when missing), **home internet** (optional, one
+  click: a second, userspace tailscaled used only by the browser exits through a device at the
+  owner's home, so sites see their home address; checked before and during use, with a fallback for
+  signed-out browsing; sign-ins never leave home), **Kernel** and **Browserbase** (cloud browsers;
+  Connect opens their connection).
+- Sign-ins (browser profiles) live in `~/.config/springroll/browser/`, so backups encrypt them.
+- **Connections:** a **Web** category: Brave (moved from AI), **Firecrawl**, **Kernel**, **Browserbase**.
+- **`skills/web`**: when to search, scrape (Firecrawl) or browse, which route to use and what it costs,
+  and how jobs use the browser. `AGENTS.md` gets a short "The web" section and the `browser` command.
+- **Installer** now links and starts the services apps ship with (`views/*/*.service`, not just
+  Springroll's own), in the background, as restore already did. A unit that isn't for every machine
+  says so with a `Condition` (`tailscale-browser.service` runs only once home internet is set up).
+- **`~/.config/springroll/env` sets `XDG_RUNTIME_DIR`** when the shell didn't (`sudo -u`, ssh): user
+  systemd and per-user sockets (agent-browser's sessions) are then the same from every shell. The
+  installer adds it to new machines; an existing one can add
+  `export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}` to that file.
+- Files: `views/browser/`, `bin/browser`, `skills/web/SKILL.md`, `connections/catalog.json`,
+  `AGENTS.md`, `install.sh`, `tests/fresh-install.sh`.
+- **If you changed this:** a machine that already built its own Browser app (this is where it came
+  from) keeps its `LOCAL.md` line and takes these files as they are. Never put launch options in
+  `~/.agent-browser/config.json`: `connect` would launch a browser of its own instead of attaching.
+
 ## 2026-10-12 · A tidier chat composer; chats always start in ~/home
 
 - **Settings button** is the gear (`settings`, the same icon as Settings in the sidebar) instead of

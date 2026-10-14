@@ -130,6 +130,23 @@ API: `views/desk/files.mjs` (`/api/files/*`, runs as the agent user). Raw
 files are served with a sandbox CSP so an HTML or SVG file can't run as the
 Springroll. `show <file>[:line]` opens a file from the shell.
 
+## Browser
+
+A system View (sidebar → Apps → Browser) with a real browser agents drive and the owner watches.
+Agents run `browser start [name] [--profile P]` and then `agent-browser --session <name> …` (Vercel's
+CLI: snapshot with @refs, click, fill, read, screenshot); the View streams the page (agent-browser's
+screencast, painted on a canvas) and sends the owner's mouse, scroll and keys back, so a sign-in,
+2FA code or captcha is a hand-off, not a dead end. Chat on a browser gives it to an agent.
+
+Where the browser runs is a route, set up from the View (Ways to browse): this machine (headless
+Chromium, free; sites see the server's data-center address), **home internet** (the same browser
+through a second, userspace tailscaled that exits at a device in the owner's home, so sites see
+their home address; nothing else on the machine is routed; checked before and every 3 minutes
+during use), or a cloud browser (Kernel, Browserbase; keys in Keys). `browser start` follows the
+owner's settings: home first, their fallback for signed-out browsing; a profile (sign-ins) never
+leaves home. Profiles live in `~/.config/springroll/browser/`, encrypted in backups.
+`skills/web` tells agents which tool and route to use; `views/browser/README.md` has the API.
+
 ## Design system
 
 Kit v2 (`views/desk/public/ui/`): Springroll's quiet language. Seven-color

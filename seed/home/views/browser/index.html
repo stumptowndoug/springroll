@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Browser</title>
+<link rel="stylesheet" href="/ui/theme.css">
+<script src="/ui/desk.js"></script>
+<style>
+[hidden] { display: none !important; }
+/* Layout only; every look comes from the kit. */
+#addr { flex: 1 1 320px; min-width: 0; }
+#addr input { width: 100%; }
+#pick { width: auto; max-width: 200px; }
+#stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--surface-recessed); padding: var(--gap); position: relative; }
+#screen { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); outline: none; touch-action: none; user-select: none; -webkit-user-drag: none; cursor: default; }
+#screen:focus-visible { box-shadow: 0 0 0 2px var(--accent), var(--shadow-lg); }
+#note { position: absolute; left: 50%; bottom: calc(var(--gap) + 6px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: var(--radius-control); background: var(--surface-overlay); box-shadow: var(--shadow-lg); font-size: var(--text-xs); white-space: nowrap; }
+#meta { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: var(--text-xs); flex: none; }
+#start .ui-field { margin-bottom: var(--gap); }
+#start .row { display: flex; gap: var(--gap); flex-wrap: wrap; }
+#start .row > .ui-field { flex: 1 1 200px; }
+#ways { margin-top: 36px; }
+#ways .ui-row, #homeSet .ui-row { cursor: default; align-items: center; }
+#ways .ui-row .sub, #homeSet .ui-row .sub { white-space: normal; }
+.ctl { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
+.ctl .ui-status { margin-right: 4px; white-space: nowrap; }
+#homeSet { margin-top: var(--gap); }
+#homeSet select { width: auto; }
+@media (max-width: 520px) { .ctl .lbl { display: none; } }
+@media (max-width: 720px) {
+  #addr { order: 9; flex-basis: 100%; }
+  .ui-toolbar { flex-wrap: wrap; }
+  #stage { padding: 0; }
+  #screen { border-radius: 0; box-shadow: none; }
+}
+</style></head>
+<body class="ui-app">
+<div class="ui-toolbar" id="bar" hidden>
+  <select id="pick" aria-label="Browser"></select>
+  <button class="ui-icon-btn" id="back" data-icon="arrow-left" title="Back"></button>
+  <button class="ui-icon-btn" id="reload" data-icon="rotate-cw" title="Reload"></button>
+  <form class="ui-search" id="addr"><i data-icon="globe" data-icon-size="sm"></i><input id="url" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="Go to a page"></form>
+  <button class="ui-icon-btn" id="typeBtn" data-icon="keyboard" title="Type text into the page"></button>
+  <button class="ui-btn sm primary" id="chat" data-icon="message-square">Chat</button>
+  <button class="ui-icon-btn" id="more" data-icon="ellipsis" title="More"></button>
+</div>
+<div class="ui-menu" id="moreMenu">
+  <button data-icon="plus" id="newBtn">New browser…</button>
+  <button data-icon="external-link" id="liveBtn">Provider live view</button>
+  <hr><button class="danger" data-icon="square" id="stopBtn">Stop browser</button>
+</div>
+
+<div id="viewer" class="ui-fill" style="display:flex;flex-direction:column;overflow:hidden" hidden>
+  <div id="stage"><canvas id="screen" width="1280" height="800" tabindex="0" role="img" aria-label="The browser's screen"></canvas><div id="note" hidden></div></div>
+  <div id="meta" class="ui-muted"></div>
+</div>
+
+<main id="home" class="ui-fill" hidden><div class="ui-page narrow">
+  <div class="ui-heading"><div><div class="ui-eyebrow">Browser</div><h1 class="ui-display">Browser.</h1></div></div>
+  <p class="ui-lede">A real browser agents drive while you watch. Click into it to sign in or get past a check, then hand it back.</p>
+  <div id="empty"></div>
+  <form id="start" hidden>
+    <div class="ui-section"><div class="ui-label">New browser</div>
+      <div class="row">
+        <div class="ui-field"><label>Runs on</label><select id="via"></select><span class="hint" id="viaHint"></span></div>
+        <div class="ui-field"><label>Profile</label><input id="profile" placeholder="default" autocomplete="off"><span class="hint">Keeps sign-ins, e.g. “reddit”.</span></div>
+      </div>
+      <div class="ui-field"><label>Open</label><input id="startUrl" placeholder="https://…" inputmode="url" autocomplete="off"></div>
+      <div style="display:flex;gap:8px"><button class="ui-btn primary" id="go" data-icon="play">Start</button><button class="ui-btn ghost" type="button" id="cancel" hidden>Cancel</button></div>
+    </div>
+  </form>
+  <section class="ui-section" id="ways">
+    <div class="ui-label">Ways to browse</div>
+    <div class="ui-group" id="parts"><div class="ui-row"><span class="ui-shimmer">Checking</span></div></div>
+    <div class="ui-group" id="homeSet" hidden>
+      <div class="ui-row"><div class="body"><span class="title">Home internet by default</span><span class="sub">New browsers go through home unless an agent asks for another way.</span></div>
+        <span class="ctl"><input type="checkbox" class="ui-switch" id="homeOn" aria-label="Use home internet by default"></span></div>
+      <div class="ui-row"><div class="body"><span class="title">If home is down</span><span class="sub">For signed-out browsing. Browsers with your sign-ins (a profile) always wait for home.</span></div>
+        <span class="ctl"><select id="homeFb" aria-label="If home internet is down"><option value="stop">Don’t start</option><option value="kernel">Use Kernel</option><option value="local">Use this server</option></select></span></div>
+    </div>
+  </section>
+  <div class="ui-menu" id="homeMenu"><button data-icon="refresh-cw" id="homeCheck">Check again</button><hr><button class="danger" data-icon="trash-2" id="homeRemove">Remove home internet</button></div>
+</div></main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => ui.esc(s);
+const VIA = { home: 'Home internet', local: 'This server', kernel: 'Kernel', browserbase: 'Browserbase' };
+let sessions = [], cur = null, ws = null, vp = { w: 1280, h: 800 }, backends = [], starting = false;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function load() {
+  try { sessions = await api('api/sessions'); }
+  catch (e) { sessions = []; showHome(`<div class="ui-empty"><i data-icon="globe-lock"></i><span class="title">Couldn’t reach the browser service</span><p>${esc(e.message)}</p><button class="ui-btn" onclick="load()" data-icon="refresh-cw">Try again</button></div>`); return; }
+  const want = location.hash.slice(1);
+  const s = sessions.find((x) => x.name === want) || sessions.find((x) => x.name === cur?.name) || sessions[0];
+  if (s) open(s); else showHome();
+}
+
+function showHome(html) {
+  close(); cur = null;
+  $('bar').hidden = true; $('viewer').hidden = true; $('home').hidden = false;
+  $('empty').innerHTML = html ?? `<div class="ui-empty"><i data-icon="orbit"></i><span class="title">No browser running</span><p>Ask an agent to look something up, or start one and sign in yourself.</p>
+    <div style="display:flex;gap:8px;justify-content:center"><button class="ui-btn primary" id="emptyStart" data-icon="play">Start a browser</button><button class="ui-btn" id="emptyAsk" data-icon="message-square">Ask an agent</button></div></div>`;
+  $('start').hidden = true;
+  loadParts();
+  ui.hydrate?.($('empty'));
+  $('emptyStart')?.addEventListener('click', () => showStart());
+  $('emptyAsk')?.addEventListener('click', () => desk.ask('Use the browser to '));
+  desk.context?.({ label: 'Browser', note: 'The Browser app: nothing running. Start one with `browser start [--via home|local|kernel|browserbase] [--profile P]` (home route: `browser home status|on|off`), drive it with `agent-browser --session <name> …`.' });
+}
+
+async function showStart(fromViewer) {
+  close();
+  $('bar').hidden = true; $('viewer').hidden = true; $('home').hidden = false;
+  $('empty').innerHTML = ''; $('start').hidden = false; $('cancel').hidden = !fromViewer;
+  backends = await api('api/backends').catch(() => []);
+  const ready = backends.filter((b) => b.ready).map((b) => b.via);
+  loadParts();
+  $('via').innerHTML = backends.map((b) => `<option value="${b.via}"${b.ready ? '' : ' disabled'}>${VIA[b.via]}${b.ready ? '' : b.key ? ` (needs ${b.key})` : ' (unavailable)'}</option>`).join('');
+  const home = backends.find((b) => b.via === 'home');
+  $('via').value = home?.ready && home.enabled ? 'home' : ready.includes('kernel') ? 'kernel' : ready.includes('browserbase') ? 'browserbase' : ready.includes('home') ? 'home' : 'local';
+  hint();
+}
+function hint() {
+  const home = backends.find((b) => b.via === 'home');
+  $('viaHint').textContent = { home: home?.ready ? `Runs here; sites see your home address (${home.ip}).` : home?.reason || '', local: 'Free, headless, on this machine. Sites see a data-center address.', kernel: 'Cloud, with stealth proxy and captcha solving. Bills while running.', browserbase: 'Cloud. Bills while running.' }[$('via').value] || '';
+}
+$('via').addEventListener('change', hint);
+
+// ---- Ways to browse: each part's state, one-click setup, Chat; home internet's settings ----
+const STATE = { ready: ['ok', 'Ready'], needs: ['warn', 'Needs you'], installing: ['run', 'Installing'], off: ['', 'Not set up'] };
+const SETUP_NOTE = {
+  home: 'Home internet for the Browser app: browsers leave from the owner\'s home connection through a device of theirs on Tailscale. Set up with `curl -s -X POST localhost:8103/api/setup/home` (starts tailscale-browser.service and returns an approval link), then the owner turns on Run as exit node on their home device and approves it in Tailscale\'s admin page. Check with `browser home`. Details: views/browser/README.md.',
+  kernel: 'Kernel cloud browsers for the Browser app. Needs KERNEL_API_KEY: `secret request KERNEL_API_KEY "…"`, or the owner connects it in Connections → Kernel.',
+  browserbase: 'Browserbase cloud browsers for the Browser app. Needs BROWSERBASE_API_KEY: `secret request BROWSERBASE_API_KEY "…"`, or Connections → Browserbase.',
+  local: 'The Browser app\'s own browser (headless Chromium on this machine via agent-browser). views/browser/ensure.sh installs it; browser.service logs say if that failed.',
+};
+let partList = [];
+async function loadParts() {
+  try { partList = await api('api/setup'); } catch (e) { $('parts').innerHTML = `<div class="ui-row"><span class="ui-status"><span class="ui-dot danger"></span>${esc(e.message)}</span></div>`; return; }
+  $('parts').innerHTML = partList.map((p) => {
+    const [dot, label] = STATE[p.state] || STATE.off;
+    const act = p.authURL ? `<a class="ui-btn sm primary" href="${esc(p.authURL)}" target="_blank" rel="noopener">Approve</a>`
+      : p.action ? `<button class="ui-btn sm${p.id === 'home' ? ' primary' : ''}" data-act="${p.id}">${esc(p.action)}</button>` : '';
+    return `<div class="ui-row" data-id="${p.id}"><div class="body"><span class="title">${esc(p.title)}</span><span class="sub">${esc(p.detail || '')}</span></div>
+      <span class="ctl"><span class="ui-status" title="${label}">${dot ? `<span class="ui-dot ${dot}"></span>` : ''}<span class="lbl">${label}</span></span>${act}
+      <button class="ui-icon-btn" data-chat="${p.id}" data-icon="message-square" title="Chat about ${esc(p.title)}"></button>
+      ${p.id === 'home' && p.state !== 'off' ? `<button class="ui-icon-btn" data-homemenu data-icon="ellipsis" title="More"></button>` : ''}</span></div>`;
+  }).join('');
+  ui.hydrate?.($('parts'));
+  const home = partList.find((p) => p.id === 'home');
+  $('homeSet').hidden = !home || home.state === 'off';
+  if (home && home.state !== 'off') { $('homeOn').checked = !!home.enabled; $('homeFb').value = home.fallback || 'stop'; }
+}
+$('parts').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.chat) { const p = partList.find((x) => x.id === b.dataset.chat); return desk.askAbout({ key: `browser:setup:${p.id}`, label: `Browser: ${p.title}`, note: `${SETUP_NOTE[p.id]} Now: ${p.state} (${p.detail}).` }); }
+  if (b.dataset.homemenu !== undefined) return ui.openMenu($('homeMenu'), b);
+  const id = b.dataset.act; if (!id) return;
+  if (id === 'kernel' || id === 'browserbase') return desk.go(`#/connections/${id}`);
+  if (id === 'home') {
+    b.disabled = true; b.innerHTML = '<span class="ui-shimmer">Setting up</span>';
+    await api('api/setup/home', {}).catch((err) => ui.toast(err.message, { icon: 'circle-alert' }));
+    loadParts();
+  }
+});
+$('homeCheck').addEventListener('click', () => { ui.closePopover(); loadParts(); });
+$('homeRemove').addEventListener('click', async () => {
+  ui.closePopover();
+  if (!(await ui.confirm('Remove home internet?', { body: 'Browsers stop going through your home connection, and the browser’s Tailscale connection signs out. You can set it up again any time.', ok: 'Remove', danger: true }))) return;
+  await api('api/setup/home/remove', {}).catch((err) => ui.toast(err.message, { icon: 'circle-alert' }));
+  loadParts();
+});
+$('homeOn').addEventListener('change', () => api('api/home', { enabled: $('homeOn').checked }).then(loadParts));
+$('homeFb').addEventListener('change', () => api('api/home', { fallback: $('homeFb').value }).then(loadParts));
+$('cancel').addEventListener('click', () => load());
+$('start').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (starting) return;
+  starting = true; $('go').disabled = true; $('go').innerHTML = `<span class="ui-shimmer">Starting</span>`;
+  try {
+    const name = sessions.some((s) => s.name === 'main') ? `b${Date.now().toString(36).slice(-4)}` : 'main';
+    const s = await api('api/sessions', { name, via: $('via').value, profile: $('profile').value.trim() || undefined, url: $('startUrl').value.trim() || undefined });
+    location.hash = s.name; await load();
+  } catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
+  starting = false; $('go').disabled = false; $('go').innerHTML = `${ui.icon('play')}Start`;
+});
+
+function open(s) {
+  const same = cur?.name === s.name && ws;
+  cur = s;
+  $('home').hidden = true; $('bar').hidden = false; $('viewer').hidden = false;
+  $('pick').innerHTML = sessions.map((x) => `<option value="${esc(x.name)}"${x.name === s.name ? ' selected' : ''}>${esc(x.name)} · ${VIA[x.via]}</option>`).join('');
+  $('pick').hidden = sessions.length < 2;
+  if (document.activeElement !== $('url')) $('url').value = s.url || '';
+  $('liveBtn').hidden = !s.live;
+  meta();
+  if (history.replaceState) history.replaceState(null, '', '#' + s.name);
+  if (!same) { connect(); fitted = ''; setTimeout(fit, 300); }
+}
+function meta() {
+  const s = cur; if (!s) return;
+  $('meta').innerHTML = [VIA[s.via] + (s.exitIP ? ` (${esc(s.exitIP)})` : ''), s.profile && `profile ${esc(s.profile)}`, `since ${ui.time(s.started)}`, esc(s.title || '')].filter(Boolean).join(' · ');
+  desk.context?.({ label: `Browser: ${s.title || s.url || s.name}`, note: noteFor(s) });
+}
+const noteFor = (s) => `A live browser session "${s.name}" (${VIA[s.via]}${s.profile ? `, profile ${s.profile}` : ''}), now on ${s.url || 'a blank page'}${s.title ? ` ("${s.title}")` : ''}. The owner is watching it in the Browser app and may be clicking in it. Drive it with \`agent-browser --session ${s.name} …\` (snapshot -i, click @e1, fill, screenshot, get text). Don't post, buy or delete anything without the owner's yes. Stop it with \`browser stop ${s.name}\` when the work is done.`;
+
+$('pick').addEventListener('change', () => { const s = sessions.find((x) => x.name === $('pick').value); if (s) open(s); });
+$('chat').addEventListener('click', () => cur && desk.askAbout({ key: `browser:${cur.name}`, label: `Browser: ${cur.title || cur.url || cur.name}`, note: noteFor(cur) }));
+$('more').addEventListener('click', () => ui.openMenu($('moreMenu'), $('more')));
+$('newBtn').addEventListener('click', () => { ui.closePopover(); showStart(true); });
+$('liveBtn').addEventListener('click', () => { ui.closePopover(); if (cur?.live) window.open(cur.live, '_blank', 'noopener'); });
+$('stopBtn').addEventListener('click', async () => {
+  ui.closePopover();
+  if (!cur || !(await ui.confirm(`Stop ${cur.name}?`, { body: 'The browser closes. Its profile keeps sign-ins for next time.', ok: 'Stop', danger: true }))) return;
+  await api(`api/sessions/${cur.name}/stop`, {}).catch((e) => ui.toast(e.message, { icon: 'circle-alert' }));
+  cur = null; location.hash = ''; load();
+});
+for (const act of ['back', 'reload']) $(act).addEventListener('click', () => cur && api(`api/sessions/${cur.name}/${act}`, {}).then(update).catch(() => {}));
+$('addr').addEventListener('submit', (e) => {
+  e.preventDefault(); if (!cur) return;
+  api(`api/sessions/${cur.name}/open`, { url: $('url').value.trim() }).then(update).catch((err) => ui.toast(err.message, { icon: 'circle-alert' }));
+  $('screen').focus();
+});
+function update(info) { if (!cur || !info) return; Object.assign(cur, info); $('url').value = cur.url || ''; meta(); }
+
+// ---- Live view: agent-browser's stream through the app server ----
+function close() { if (ws) { ws.onclose = null; ws.close(); ws = null; } }
+function note(text, shimmer) {
+  if (!text && $('note').hidden) return; // frames arrive many times a second: no DOM work when nothing changes
+  $('note').hidden = !text; $('note').innerHTML = shimmer ? `<span class="ui-shimmer">${esc(text)}</span>` : esc(text); }
+function connect() {
+  close();
+  const s = cur; note('Connecting', true);
+  const sock = ws = new WebSocket(new URL(`stream/${s.name}?pacing=ack&maxFps=15`, location.href).href.replace(/^http/, 'ws'));
+  sock.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === 'frame') {
+      vp = { w: m.metadata?.deviceWidth || vp.w, h: m.metadata?.deviceHeight || vp.h };
+      // Decode off-screen, then paint over the last frame in one go: swapping an <img>'s src
+      // blanks it for a moment in some browsers (Safari), which flickers.
+      const bin = atob(m.data), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      createImageBitmap(new Blob([bytes], { type: 'image/jpeg' })).then((bmp) => {
+        const c = $('screen');
+        if (c.width !== bmp.width || c.height !== bmp.height) { c.width = bmp.width; c.height = bmp.height; }
+        c.getContext('2d').drawImage(bmp, 0, 0); bmp.close();
+        note('');
+      }).catch(() => {}).finally(() => sock.readyState === 1 && sock.send(JSON.stringify({ type: 'ack', seq: m.seq })));
+    } else if (m.type === 'url' && m.url) {
+      if (document.activeElement !== $('url')) $('url').value = m.url;
+      cur.url = m.url; clearTimeout(connect.t); connect.t = setTimeout(() => api('api/sessions').then((all) => { sessions = all; const x = all.find((y) => y.name === cur?.name); if (x) update(x); }).catch(() => {}), 800);
+    }
+  };
+  sock.onclose = () => { if (ws !== sock) return; ws = null; note('Disconnected · reconnecting', true); setTimeout(() => cur === s && load(), 2500); };
+}
+
+// Mouse, touch and keys go back to the page. Coordinates are in the page's own pixels.
+const screen = $('screen');
+const at = (e) => { const r = screen.getBoundingClientRect(); return { x: Math.round((e.clientX - r.left) / r.width * vp.w), y: Math.round((e.clientY - r.top) / r.height * vp.h) }; };
+const mods = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
+const send = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
+const BTN = ['left', 'middle', 'right'];
+let touch = null, lastMove = 0;
+screen.addEventListener('contextmenu', (e) => e.preventDefault());
+screen.addEventListener('pointerdown', (e) => {
+  screen.focus(); screen.setPointerCapture(e.pointerId);
+  if (e.pointerType === 'touch') { touch = { ...at(e), y0: e.clientY, x0: e.clientX, moved: false }; return; }
+  send({ type: 'input_mouse', eventType: 'mousePressed', ...at(e), button: BTN[e.button] || 'left', clickCount: e.detail || 1, modifiers: mods(e) });
+});
+screen.addEventListener('pointermove', (e) => {
+  if (touch) { // a drag on a phone scrolls the page
+    const dy = touch.y0 - e.clientY, dx = touch.x0 - e.clientX;
+    if (Math.abs(dy) + Math.abs(dx) > 6) { touch.moved = true; const r = screen.getBoundingClientRect(); send({ type: 'input_mouse', eventType: 'mouseWheel', x: touch.x, y: touch.y, deltaX: dx * vp.w / r.width, deltaY: dy * vp.h / r.height }); touch.y0 = e.clientY; touch.x0 = e.clientX; }
+    return;
+  }
+  const now = performance.now(); if (now - lastMove < 30) return; lastMove = now;
+  send({ type: 'input_mouse', eventType: 'mouseMoved', ...at(e), button: e.buttons ? 'left' : 'none', modifiers: mods(e) });
+});
+screen.addEventListener('pointerup', (e) => {
+  if (touch) { if (!touch.moved) { const p = at(e); send({ type: 'input_mouse', eventType: 'mousePressed', ...p, button: 'left', clickCount: 1 }); send({ type: 'input_mouse', eventType: 'mouseReleased', ...p, button: 'left', clickCount: 1 }); } touch = null; return; }
+  send({ type: 'input_mouse', eventType: 'mouseReleased', ...at(e), button: BTN[e.button] || 'left', clickCount: e.detail || 1, modifiers: mods(e) });
+});
+screen.addEventListener('wheel', (e) => { e.preventDefault(); send({ type: 'input_mouse', eventType: 'mouseWheel', ...at(e), deltaX: e.deltaX, deltaY: e.deltaY, modifiers: mods(e) }); }, { passive: false });
+const key = (type, e) => {
+  const text = type === 'keyDown' && e.key.length === 1 && !e.ctrlKey && !e.metaKey ? e.key : undefined;
+  send({ type: 'input_keyboard', eventType: text || type === 'keyUp' ? type : 'rawKeyDown', key: e.key, code: e.code, text, modifiers: mods(e),
+    windowsVirtualKeyCode: e.keyCode, nativeVirtualKeyCode: e.keyCode });
+};
+screen.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'v') return; e.preventDefault(); key('keyDown', e); });
+screen.addEventListener('keyup', (e) => { e.preventDefault(); key('keyUp', e); });
+const typeText = (t) => { for (const ch of t) { send({ type: 'input_keyboard', eventType: 'keyDown', key: ch, text: ch }); send({ type: 'input_keyboard', eventType: 'keyUp', key: ch }); } };
+document.addEventListener('paste', (e) => { if (document.activeElement !== screen) return; e.preventDefault(); typeText(e.clipboardData.getData('text')); });
+// On a phone there's no keyboard for an image: type into the field that has focus in the page.
+$('typeBtn').addEventListener('click', async () => {
+  const t = await ui.prompt('Type into the page', '', { body: 'Goes into whatever field is selected in the browser. Tap the field first.', ok: 'Type' });
+  if (t) typeText(t);
+});
+
+// The page takes the size of the stage while you watch, so it's 1:1 (and a phone gets the site's
+// phone layout). Agents see the same size.
+let fitT = null, fitted = '';
+new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fit, 400); }).observe($('stage'));
+// Another viewer (a phone, another window) may have resized the page for itself: take it back
+// when you come back to this one or click into the page.
+const refit = () => { fitted = ''; fit(); };
+addEventListener('focus', refit);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refit(); });
+function fit() {
+  if (!cur || $('viewer').hidden) return;
+  const st = getComputedStyle($('stage')), r = $('stage').getBoundingClientRect();
+  const w = Math.round(r.width - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight));
+  const h = Math.round(r.height - parseFloat(st.paddingTop) - parseFloat(st.paddingBottom));
+  const k = `${cur.name}:${w}x${h}`;
+  if (w < 200 || h < 200 || (k === fitted && Math.abs(vp.w - w) < 8 && Math.abs(vp.h - h) < 8)) return;
+  fitted = k;
+  api(`api/sessions/${cur.name}/viewport`, { w, h }).catch(() => {});
+}
+
+addEventListener('hashchange', () => { const s = sessions.find((x) => x.name === location.hash.slice(1)); if (s && s.name !== cur?.name) open(s); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) close(); else if (cur) connect(); });
+setInterval(() => { if (!document.hidden && !starting && $('start').hidden) api('api/sessions').then((all) => {
+  const names = (a) => a.map((x) => x.name).join();
+  if (names(all) !== names(sessions)) { sessions = all; load(); } else { sessions = all; const x = all.find((y) => y.name === cur?.name); if (x) update(x); }
+}).catch(() => {}); }, 15000);
+load();
+</script>
+</body></html>
