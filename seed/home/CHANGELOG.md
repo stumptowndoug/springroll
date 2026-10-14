@@ -5,6 +5,26 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-13 · Chat: one live work row and reliable following
+
+- **Working → Worked:** thoughts, tools and intermediate narration share one collapsed row from the
+  start of a turn. Its summary shows the latest step and counts; finishing relabels the same row and
+  keeps the owner's open/closed choice. Answers (including images and links after the last tool),
+  notices, approvals, delegated agents and changed files stay outside it. The separate Working line
+  shows only until there is work to group. Disclosure clicks are recorded before the next streaming
+  frame, so output arriving during a click can't close a row again.
+- **Follow output:** the chat stays at the end through content and composer resizing. Scrolling up
+  with a wheel, touch, keys or scrollbar pauses following; focusing a control outside the viewport
+  does too. Scrolling back to the end, sending, or pressing **Latest** resumes it. Nested tool output
+  scrolls independently, as do the full-page chat and side panel. Showing earlier turns preserves
+  the reader's position. Each panel removes its observers and listeners when closed.
+- Files: `views/desk/public/app/thread.js`, `thread.css`, new `follow-output.js`. Browser checks live
+  upstream in `tests/browser/` (Chromium, WebKit, phone layouts and native Chromium touch input).
+- **If you changed this:** carry the common live/completed grouping into your timeline, keeping
+  answers and requests outside the fold. The follow controller observes the scroller and its content
+  wrapper, with a separate Latest button; wire up open, send, earlier-history and panel cleanup.
+  Keep your Markdown renderer and long-message limits; those did not change.
+
 ## 2026-10-13 · Chat: images, @ files, delegated agents, what changed, quieter failures
 
 Ported from Shep's chat. Most of it is in `views/desk/public/app/thread.js` and `thread.css`, with new

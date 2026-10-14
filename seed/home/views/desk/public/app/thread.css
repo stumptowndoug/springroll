@@ -10,7 +10,11 @@
 .th-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 6px; color: var(--muted); font-size: var(--text-sm); }
 .th-meta .sep { color: var(--faint); }
 .th-meta .ui-mono { font-size: var(--text-xs); }
+.thread-scroll-area { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .thread-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.thread-content { display: flow-root; }
+.thread-latest { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); box-shadow: var(--shadow); }
+.thread-latest[hidden] { display: none; }
 .timeline, .tail, .chat-report { width: min(760px, 100% - 2 * var(--gutter)); margin-left: auto; margin-right: auto; }
 .timeline { padding-top: 14px; }
 
@@ -72,15 +76,22 @@
 .perm.pending .ui-icon { color: var(--warn); }
 .perm .target { opacity: .7; }
 
-/* Folded work of a completed turn */
+/* The same work row while running and after completion */
 .work { font-size: var(--text-sm); color: var(--muted); }
-.work > summary { display: inline-flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; padding: 4px 10px 4px 6px; margin-left: -6px; border-radius: 999px; }
+.work > summary { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; list-style: none; cursor: pointer; padding: 4px 10px 4px 6px; margin-left: -6px; border-radius: var(--radius-pill); }
 .work > summary::-webkit-details-marker { display: none; }
 .work > summary:hover { background: var(--state-hover); color: var(--fg); }
-.work > summary .ui-icon { transition: transform var(--fast); }
-.work[open] > summary .ui-icon { transform: rotate(90deg); }
+.work > summary > .ui-icon { flex: none; transition: transform var(--fast); }
+.work[open] > summary > .ui-icon { transform: rotate(90deg); }
+.work-label { flex: none; }
+.work-status { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.work-status > .ui-icon { flex: none; }
+.work-status > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-status + .facts { flex: none; }
 .work .facts { color: var(--faint); font-family: var(--font-mono); font-size: var(--text-xs); }
+.work > summary > .facts { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-body { margin: 6px 0 4px 7px; padding: 4px 0 4px 16px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.work:not([open]) > .work-body { display: none; }
 .work-body .msg-agent { color: var(--muted); font-size: var(--text-sm); }
 /* What a finished turn changed: one row per file, its diffs on demand */
 .row.change > summary { opacity: .8; }
