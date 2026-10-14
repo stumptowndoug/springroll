@@ -41,6 +41,11 @@ check "terminal proxied" "curl -fsS localhost:8000/term/ | grep -qi ttyd"
 check "claude installed" "sudo -u agent bash -lc '. ~/.config/springroll/env; claude --version'"
 check "codex installed" "sudo -u agent bash -lc '. ~/.config/springroll/env; codex --version'"
 check "add-view works" "sudo -u agent bash -lc '. ~/.config/springroll/env; add-view --list' | grep -q system"
+# The Browser app's first start installs agent-browser in the background: give it a couple of minutes.
+check "browser app up" "for i in \$(seq 1 60); do curl -fsS localhost:8000/v/browser/api/backends >/dev/null && exit 0; sleep 3; done; exit 1"
+check "browser tools installed" "curl -fsS localhost:8000/v/browser/api/setup | jq -e '.[] | select(.id==\"local\") | .state==\"ready\"'"
+check "browser opens a page" "sudo -u agent bash -lc '. ~/.config/springroll/env; browser start t --via local --url https://example.com >/dev/null && agent-browser --session t get title | grep -q Example; r=\$?; browser stop t >/dev/null; exit \$r'"
+check "home internet off until set up" "! $U systemctl --user is-active tailscale-browser"
 for v in $(docker exec "$NAME" bash -c 'ls /home/agent/home/views | grep -vx desk'); do
   check "view $v serves" "curl -fsS localhost:8000/v/$v/ -o /dev/null"
 done

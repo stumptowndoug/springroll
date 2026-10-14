@@ -133,6 +133,8 @@ install -d -o $U -g $U $H/.config $H/.config/systemd $H/.config/systemd/user $H/
 install -d -o $U -g $U -m 700 $H/.config/springroll
 cat > $H/.config/springroll/env <<'EOF'
 export PATH=$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/home/bin:$PATH
+# Every shell (jobs, sudo -u, ssh) reaches the agent's systemd and per-user sockets the same way.
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 [ -f $HOME/.config/springroll/claude-token ] && export CLAUDE_CODE_OAUTH_TOKEN=$(cat $HOME/.config/springroll/claude-token)
 EOF
 echo "$SEED" > $H/.config/springroll/seed
@@ -166,6 +168,10 @@ as_agent 'for d in ~/.claude/skills ~/.codex/skills ~/.pi/agent/skills; do mkdir
 
 say "== services"
 as_agent 'mkdir -p ~/.config/systemd/user; for u in ~/home/views/desk/desk.service ~/home/views/desk/desk-term.service ~/home/agentd/agentd.service; do systemctl --user link $u >/dev/null; n=$(basename $u); systemctl --user enable $n >/dev/null 2>&1; systemctl --user restart $n; done'
+# Apps that ship with Springroll and run a server (Browser): link and start them, in the background
+# (Browser's first start installs agent-browser). Units that aren't for every machine say so with a
+# Condition (tailscale-browser only runs once home internet is set up).
+as_agent 'for u in ~/home/views/*/*.service; do case $u in */views/desk/*) continue ;; esac; systemctl --user link "$u" >/dev/null 2>&1; grep -q "^\[Install\]" "$u" && systemctl --user enable "$(basename "$u")" >/dev/null 2>&1 && systemctl --user start --no-block "$(basename "$u")" >/dev/null 2>&1; done; true'
 
 say "== views"
 TEMPLATES=$( (grep -v '^#' "$SEED/profiles/$PROFILE.txt"; echo "$WITH" | tr ',' '\n') | sed '/^[[:space:]]*$/d' | sort -u)

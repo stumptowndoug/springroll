@@ -1,0 +1,18 @@
+[Unit]
+Description=Browser app: live view of agents' browsers
+
+[Service]
+# Installs agent-browser and Chromium first on a machine that lacks them (can take a few minutes).
+ExecStartPre=%h/home/views/browser/ensure.sh
+TimeoutStartSec=600
+ExecStart=/usr/bin/node %h/home/views/browser/server.mjs
+Environment=PATH=%h/.npm-global/bin:%h/home/bin:/usr/local/bin:/usr/bin:/bin
+Restart=always
+RestartSec=3
+# The server is small; the browsers it starts run as their own units (browser-<name>).
+MemoryHigh=150M
+MemoryMax=250M
+OOMScoreAdjust=300
+
+[Install]
+WantedBy=default.target
