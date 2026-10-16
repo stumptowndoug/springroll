@@ -690,7 +690,7 @@ class ThreadView {
         <div class="side-transcript">${shown.map((i) => this.renderItem(i, { k: a.turn, its, live: a.state === 'running' })).join('') || (a.state === 'running' ? '' : '<div class="ui-faint">No activity reported.</div>')}</div>
         ${a.state === 'running' && !waiting ? '<div class="side-working"><span class="ui-shimmer">Working</span></div>' : ''}
       </div>
-      ${result ? `<div class="side-foot"><button type="button" class="ui-btn sm" data-side-a="copy">${ui.icon('copy', 'sm')}Copy result</button></div>` : ''}`;
+      ${result ? `<div class="side-actions"><button type="button" class="ui-btn sm" data-side-a="copy">${ui.icon('copy', 'sm')}Copy result</button></div>` : ''}`;
   }
 
   // A background task's output: Claude writes it to a file (read through agentd every 2s while it runs);
