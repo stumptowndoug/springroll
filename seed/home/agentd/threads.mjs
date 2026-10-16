@@ -6,13 +6,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { AcpConnection } from './acp.mjs';
+import { background, watching } from './background.mjs';
+import { PERSONAS_DIR, getPersona, listPersonas, personaText } from './personas.mjs';
 
 const HOME = os.homedir();
+const MEMORY_FILE = path.join(HOME, 'home', 'notes', 'memory.md');
 const MAX_TEXT = 24000;
-const IDLE_MS = 15 * 60 * 1000;
+// Idle chats keep their agent running, so one can keep supervising long work between messages
+// (a refresh cycle, a deploy). The nightly housekeeping job stops what's truly abandoned, and the
+// System watchdog handles memory pressure. A small machine can bring the idle stop back with
+// SPRINGROLL_IDLE_MINUTES in ~/.config/springroll/env (upstream used 15).
+const IDLE_MS = (() => {
+  let env = '';
+  try { env = fs.readFileSync(path.join(os.homedir(), '.config', 'springroll', 'env'), 'utf8'); } catch {}
+  const m = Number(process.env.SPRINGROLL_IDLE_MINUTES || env.match(/^(?:export\s+)?SPRINGROLL_IDLE_MINUTES=["']?(\d+)/m)?.[1]);
+  return m > 0 ? m * 60 * 1000 : 0;
+})();
  // Scopes need the user's systemd manager (present when agentd runs as a user service).
 const SCOPES = (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true; } catch { return false; } })();
 const MEMORY_HIGH = `${Math.round((os.totalmem() / 2 ** 20) * 0.6)}M`;
+// A job run's agent, once its turn is over and nothing it started is still going (a background task, a
+// timer, a subagent, a Monitor before its deadline), is stopped after this long: runs otherwise pile up idle agents (mail triage every few
+// minutes). A reply to the run, or a message from work it supervises, resumes the conversation.
+const JOB_IDLE_MS = 2 * 60 * 1000;
 const START_MS = 60 * 1000;
 // Reading a new agent's models: how long to wait, and how long before trying again after a failure.
 const PROBE_MS = 45 * 1000;
@@ -30,11 +46,22 @@ const MAX_DIFF_LINES = 2000;
 const MAX_IMAGE = 4 * 2 ** 20;   // base64 characters of an image an agent shows
 // Images the owner attaches to a message: how many, and the most base64 characters each (the composer scales them to fit).
 const MAX_PROMPT_IMAGES = 6;
-// Delegated agents (subagents): agents that announce them as sessions of their own when the client opts
-// in, with JetBrains AIR's nativeSubagentSessions (claude-agent-acp, codex-acp).
-const SUBAGENT_CAPS = { _meta: { jetbrains: { air: { version: 1, capabilities: ['nativeSubagentSessions'] } } } };
-const SUBAGENT_AGENTS = new Set(['claude', 'codex']);
+// What claude-agent-acp and codex-acp report when the client opts in with JetBrains AIR's capabilities:
+// delegated agents as sessions of their own (nativeSubagentSessions), and work left running after a tool
+// call returns, from start to end (asyncTasks: a backgrounded command). An AIR client gets Codex's command
+// output only as chunks it asked for (terminal_output_delta).
+const AIR_CAPS = { _meta: { jetbrains: { air: { version: 1, capabilities: ['nativeSubagentSessions', 'asyncTasks'] } }, terminal_output_delta: true } };
+// Cursor announces its subagents the same way (subagent_spawned/state_update) when asked with `_meta.subagents`.
+const AGENT_CAPS = { claude: AIR_CAPS, codex: AIR_CAPS, cursor: { _meta: { subagents: true } } };
+// Agents whose ACP says nothing about work left running in the background (checked 2026-10-16: Cursor
+// backgrounds commands but never reports them; OpenCode and Pi use `&`). Their first prompt asks them not to.
+const FOREGROUND_AGENTS = new Set(['cursor', 'opencode', 'pi']);
+const FOREGROUND_NOTE = "[From Springroll] Nothing tracks work you leave running after your turn ends: the owner can't see it or stop it. Run commands in the foreground and wait for them; hand anything long (hours) to a job (skills/jobs/SKILL.md).";
 const WORKER_END = new Set(['completed', 'failed', 'cancelled']);
+// Command output that comes a chunk at a time (Codex) is written at most this often.
+const OUTPUT_MS = 250;
+// How much of a background task's output file is read for the chat.
+const TASK_OUTPUT_BYTES = 64 * 1024;
 const str = (v, max = 1000) => (typeof v === 'string' ? v.slice(0, max) : '');
 const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
 const LIMIT = /rate[ -]?limit|usage limit|quota|too many requests|\b429\b|overloaded|credit balance|out of credits/i;
@@ -129,19 +156,22 @@ export function agentEnv() {
 }
 
 export class ThreadManager {
-  constructor({ store, agents, emit, notify, mcpServers, cancelMs = CANCEL_MS }) {
+  constructor({ store, agents, emit, notify, mcpServers, cancelMs = CANCEL_MS, memoryFile = MEMORY_FILE, personasDir = PERSONAS_DIR }) {
     this.store = store;
     this.agents = agents;        // () => registry entries
     this.emit = emit;            // (event) => broadcast to clients
     this.notify = notify;        // (thread, text) => phone notification
     this.mcpServers = mcpServers; // () => ACP mcpServers for new sessions
     this.cancelMs = cancelMs;
+    this.memoryFile = memoryFile; // the owner's memory, sent with a fresh session's first prompt
+    this.personasDir = personasDir; // presets for how the agent talks (personas.mjs)
     this.live = new Map();       // threadId -> { conn, sessionId, loading, last, permissions: Map }
     this.running = new Map();    // threadId -> { started, turn }
     this.cancelled = new Set();  // threads stopped while their agent was still starting
     this.streams = new Map();    // "threadId\nowner" -> the text item being streamed: { id, kind, turn, messageId, text, sent, dirty, timer }
                                  // (owner: '' for the chat's agent, else a delegated agent's session id)
-    setInterval(() => this.reapIdle(), 60000).unref();
+    if (IDLE_MS) setInterval(() => this.reapIdle(), 60000).unref();
+    setInterval(() => this.reapJobs(), 60000).unref();
     // Anything that was mid-turn when agentd stopped is over now.
     for (const t of store.threads()) {
       if (t.status === 'running' || t.status === 'waiting' || t.status === 'starting') {
@@ -151,6 +181,7 @@ export class ThreadManager {
       }
     }
     for (const a of store.db.prepare(`select id from items where kind = 'agent' and data like '%"state":"running"%'`).all()) this.endWorker(a.id, 'disconnected');
+    for (const t of store.db.prepare(`select id from items where kind = 'task' and data like '%"state":"running"%'`).all()) this.endTask(this.store.item(t.id), 'disconnected');
   }
 
   agentDef(id) {
@@ -221,13 +252,16 @@ export class ThreadManager {
     const env = { ...agentEnv(), SPRINGROLL_THREAD: thread.id };
     const conn = new AcpConnection({ command, args, cwd: thread.cwd, env, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
     // early: updates that arrive before session/new returns, held until we know what to drop (Pi's banner).
-    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map(), early: [], usable: (o) => usableModels(o, def, env), workers: new Map() };
+    const live = { conn, sessionId: null, loading: false, started: Date.now(), last: Date.now(), permissions: new Map(), early: [], usable: (o) => usableModels(o, def, env), workers: new Map(), outputs: new Map() };
     this.live.set(thread.id, live);
     conn.on('notification', (method, params) => this.onNotification(thread.id, method, params));
     conn.on('request', (method, params, reply) => this.onRequest(thread.id, method, params, reply));
     conn.on('close', (err) => {
       this.flushText(thread.id, { all: true });
       for (const w of live.workers.values()) this.endWorker(w.itemId, 'disconnected');
+      for (const ref of [...live.outputs.keys()]) this.flushOutput(live, ref);
+      // What it left running stopped with it (its scope or process group).
+      for (const t of this.store.items(thread.id)) if (t.kind === 'task' && t.state === 'running') this.endTask(t, 'disconnected');
       if (this.live.get(thread.id) === live) this.live.delete(thread.id);
       for (const p of live.permissions.values()) this.resolvePermissionItem(thread.id, p.itemId, { outcome: 'cancelled' });
       if (this.running.has(thread.id) && !live.stopping) {
@@ -239,7 +273,7 @@ export class ThreadManager {
     const init = await conn.request('initialize', {
       protocolVersion: 1,
       // session.notices: the agent sends warnings as notices rather than bold text in its answer.
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, session: { notices: {} }, ...(SUBAGENT_AGENTS.has(def.id) ? SUBAGENT_CAPS : {}) },
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, session: { notices: {} }, ...(AGENT_CAPS[def.id] || {}) },
       clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' },
     });
     live.capabilities = init?.agentCapabilities || {};
@@ -260,6 +294,7 @@ export class ThreadManager {
     if (!session) {
       try {
         session = await conn.request('session/new', { cwd: thread.cwd, mcpServers });
+        live.fresh = true; // its first prompt carries notes/memory.md (memoryText)
       } catch (e) {
         conn.kill();
         if (e.code === -32000 || /auth/i.test(e.message)) throw new Error(`${def.name} isn't signed in. Open Settings → Coding agents to sign in.`);
@@ -365,6 +400,13 @@ export class ThreadManager {
     if (want && want !== o.currentMode) await this.setOption(threadId, 'mode', want, { live });
   }
 
+  // What the chat has going on in the background (background tasks, timers, subagents), as its agent reported it.
+  background(threadId) {
+    const live = this.live.get(threadId);
+    if (!live) return [];
+    return background({ live, items: this.store.items(threadId) });
+  }
+
   reapIdle() {
     for (const [id, live] of this.live) {
       if (!this.running.has(id) && Date.now() - live.last > IDLE_MS) {
@@ -372,6 +414,15 @@ export class ThreadManager {
         this.live.delete(id);
         this.threadEvent(id);
       }
+    }
+  }
+
+  reapJobs(idleMs = JOB_IDLE_MS) {
+    for (const [id, live] of this.live) {
+      if (this.running.has(id) || live.loading || Date.now() - live.last < idleMs) continue;
+      if (!this.store.thread(id)?.origin?.startsWith('job:') || this.background(id).length || watching({ live, items: this.store.items(id) })) continue;
+      this.stop(id);
+      this.threadEvent(id);
     }
   }
 
@@ -393,6 +444,17 @@ export class ThreadManager {
     images = this.saveImages(images);
     if (!text?.trim() && !images) throw new Error('empty message');
     if (!thread.title) this.store.updateThread(threadId, { title: text.trim() ? titleFrom(text) : 'Image' });
+    // `/persona <id>` (or `off`) switches how the agent talks; agentd handles it, the agent never sees it.
+    const pm = !images && text.trim().match(/^\/persona(?:\s+([\w-]+))?$/i);
+    if (pm) {
+      if (pm[1]) this.setPersona(threadId, pm[1]);
+      else {
+        const list = listPersonas(this.personasDir).map((p) => p.id).join(', ');
+        this.add(threadId, this.store.maxTurn(threadId), 'notice', { level: 'info', text: `Persona: ${getPersona(thread.persona, this.personasDir)?.name || 'none'}. Switch with /persona <name> (${list || 'none in ~/home/personas'}), or /persona off.` });
+        this.threadEvent(threadId);
+      }
+      return { queued: false, persona: this.store.thread(threadId).persona || null };
+    }
     const msg = { text, context, ...(images ? { images } : {}) };
     if (this.running.has(threadId)) {
       // Queue it: sent when the current turn ends.
@@ -404,6 +466,20 @@ export class ThreadManager {
     this.add(threadId, turn, 'user', msg);
     this.run(threadId, turn, [msg]);
     return { queued: false };
+  }
+
+  // Switch a chat's persona (null, '', 'off' or 'plain' for none). Its next prompt carries the change.
+  setPersona(threadId, id) {
+    id = !id || ['off', 'plain', 'none'].includes(String(id).toLowerCase()) ? null : String(id).toLowerCase();
+    const p = id && getPersona(id, this.personasDir);
+    if (id && !p) throw new Error(`no persona ${id} (have: ${listPersonas(this.personasDir).map((x) => x.id).join(', ') || 'none'})`);
+    const t = this.store.thread(threadId);
+    if (!t) throw new Error('no such thread');
+    if ((t.persona || null) === id) return t;
+    this.store.updateThread(threadId, { persona: id });
+    this.add(threadId, this.store.maxTurn(threadId), 'notice', { level: 'info', text: p ? `Persona: ${p.name}` : 'Persona off' });
+    this.threadEvent(threadId);
+    return this.store.thread(threadId);
   }
 
   // Attached images are kept as files (named by their content) beside the database, not in the timeline:
@@ -450,6 +526,15 @@ export class ThreadManager {
       this.store.updateThread(threadId, { status: 'running' });
       this.threadEvent(threadId);
       const prompt = [];
+      if (live.fresh) {
+        live.fresh = false;
+        const t = this.store.thread(threadId), mem = memoryText(t.agent, t.cwd, this.memoryFile);
+        if (mem) prompt.push({ type: 'text', text: mem });
+        if (FOREGROUND_AGENTS.has(t.agent)) prompt.push({ type: 'text', text: FOREGROUND_NOTE });
+      }
+      const persona = personaText(this.store.thread(threadId).persona, live.personaSent || null, this.personasDir);
+      live.personaSent = persona.sent;
+      if (persona.text) prompt.push({ type: 'text', text: persona.text });
       for (const m of messages) {
         if (m.context) prompt.push({ type: 'text', text: contextText(m.context) });
         // Images first, then what the owner wrote about them.
@@ -604,6 +689,7 @@ export class ThreadManager {
     // Write pending text first; only a new item (add) ends the message (usage and command updates come mid-message).
     if (!chunk) this.flushText(threadId, { keep: true, owner });
     if (u.sessionUpdate === 'subagent_spawned' || u.sessionUpdate === 'subagent_state_update') return this.onWorker(threadId, live, worker, turn, u);
+    if (u.sessionUpdate?.startsWith('async_task_')) return this.onTask(threadId, turn, owner, u);
     // A delegated agent's settings and commands are its own business, not the chat's.
     if (worker && !['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan', 'notice', 'session_info_update'].includes(u.sessionUpdate)) return;
     switch (u.sessionUpdate) {
@@ -624,7 +710,22 @@ export class ThreadManager {
       case 'tool_call_update': {
         const ref = `tool:${owner ? owner + ':' : ''}${u.toolCallId}`;
         const existing = this.store.itemByRef(threadId, ref);
+        const meta = u._meta || {};
+        const delta = typeof meta.terminal_output_delta?.data === 'string' ? meta.terminal_output_delta.data : '';
+        // Output alone (most of a command's updates): held and written every OUTPUT_MS.
+        if (existing && delta && u.sessionUpdate === 'tool_call_update' && Object.keys(u).every((k) => ['sessionUpdate', 'toolCallId', '_meta'].includes(k)) && Object.keys(meta).length === 1) {
+          const o = live.outputs.get(ref) || { threadId, itemId: existing.id, text: '', timer: null };
+          o.text += delta;
+          o.timer ||= setTimeout(() => this.flushOutput(live, ref), OUTPUT_MS);
+          live.outputs.set(ref, o);
+          return;
+        }
+        const held = this.takeOutput(live, ref);
         const next = { ...(existing || {}), toolCallId: u.toolCallId, ...mine };
+        if (held || delta) next.output = clipTail((next.output || '') + held + delta);
+        if (typeof meta.terminal_exit?.exit_code === 'number') next.exitCode = meta.terminal_exit.exit_code;
+        // The command went on in the background: the call is done, the work isn't (a 'task' item follows it).
+        if (meta.jetbrains?.air?.asyncTasks?.backgrounded === true) next.backgrounded = true;
         for (const k of ['title', 'status', 'locations']) if (u[k] !== undefined) next[k] = u[k];
         if (u.kind !== undefined) next.toolKind = u.kind;
         if (u.rawInput !== undefined && (Object.keys(u.rawInput || {}).length || !next.rawInput)) next.rawInput = clipRaw(u.rawInput);
@@ -705,6 +806,77 @@ export class ThreadManager {
     if (!known || known.parent !== parent || !WORKER_END.has(u.state)) return;
     this.flushText(threadId, { owner: id });
     this.endWorker(known.itemId, u.state);
+  }
+
+  // Work the agent left running after a tool call returned (a backgrounded command), as Claude's and Codex's
+  // adapters report it: a 'task' item in the turn of the call that started it, updated until it ends.
+  onTask(threadId, turn, owner, u) {
+    const id = str(u.asyncTaskId, 200);
+    if (!id) return;
+    const ref = `task:${owner ? owner + ':' : ''}${id}`;
+    const existing = this.store.itemByRef(threadId, ref);
+    if (!existing && u.sessionUpdate !== 'async_task_spawned') return; // never announced
+    const next = { ...(existing || { state: 'running', ended: null }), taskId: id, ...(owner ? { worker: owner } : {}) };
+    for (const k of ['name', 'description', 'taskType', 'toolCallId', 'summary']) if (str(u[k], 4000)) next[k] = str(u[k], 4000);
+    if (typeof u.canStop === 'boolean') next.canStop = u.canStop;
+    if (typeof u.outputFilePath === 'string' && path.isAbsolute(u.outputFilePath)) next.outputFile = u.outputFilePath;
+    if (u.sessionUpdate === 'async_task_state_update' && str(u.state)) {
+      next.state = str(u.state, 40);
+      next.ended = ['running', 'paused'].includes(next.state) ? null : next.ended || Date.now();
+    }
+    if (existing) return this.itemEvent(this.store.updateItem(existing.id, strip(next)));
+    const tool = next.toolCallId && this.store.itemByRef(threadId, `tool:${owner ? owner + ':' : ''}${next.toolCallId}`);
+    this.add(threadId, tool?.turn ?? turn, 'task', strip(next), ref, owner);
+  }
+
+  endTask(item, state) {
+    if (!item || item.state !== 'running') return;
+    this.itemEvent(this.store.updateItem(item.id, { ...strip(item), state, ended: Date.now() }));
+  }
+
+  // Command output held since the last write: written now, or handed to the update that's being written.
+  takeOutput(live, ref) {
+    const o = live.outputs.get(ref);
+    if (!o) return '';
+    clearTimeout(o.timer);
+    live.outputs.delete(ref);
+    return o.text;
+  }
+
+  flushOutput(live, ref) {
+    const o = live.outputs.get(ref);
+    const text = this.takeOutput(live, ref);
+    const item = o && this.store.item(o.itemId);
+    if (item && text) this.itemEvent(this.store.updateItem(item.id, { ...strip(item), output: clipTail((item.output || '') + text) }));
+  }
+
+  // A background task's output so far: the end of its output file (Claude), or what its command streamed (Codex).
+  taskOutput(threadId, taskId) {
+    const items = this.store.items(threadId);
+    const t = items.find((i) => i.kind === 'task' && i.taskId === taskId);
+    if (!t) return null;
+    if (t.outputFile) {
+      try {
+        const fd = fs.openSync(t.outputFile, 'r');
+        try {
+          const size = fs.fstatSync(fd).size, len = Math.min(size, TASK_OUTPUT_BYTES);
+          const buf = Buffer.alloc(len);
+          fs.readSync(fd, buf, 0, len, size - len);
+          return { text: buf.toString('utf8'), truncated: size > len, file: t.outputFile };
+        } finally { fs.closeSync(fd); }
+      } catch { return { text: '', missing: true, file: t.outputFile }; }
+    }
+    const tool = items.find((i) => i.kind === 'tool' && i.toolCallId === t.toolCallId && (i.worker || '') === (t.worker || ''));
+    return { text: tool?.output || '', exitCode: tool?.exitCode ?? null };
+  }
+
+  // Stop a background task: the agent's adapter stops it (and tells the agent).
+  async stopTask(threadId, taskId) {
+    const live = this.live.get(threadId);
+    const t = this.store.items(threadId).find((i) => i.kind === 'task' && i.taskId === taskId && i.state === 'running');
+    if (!live?.sessionId || !t || t.canStop === false) return false;
+    const r = await live.conn.request('_session/async_task/stop', { sessionId: live.sessionId, asyncTaskId: taskId });
+    return r?.stopped !== false;
   }
 
   endWorker(itemId, state) {
@@ -823,6 +995,18 @@ export function titleFrom(text) {
   if (line.length <= 60) return line;
   const cut = line.slice(0, 60);
   return cut.slice(0, cut.lastIndexOf(' ') > 30 ? cut.lastIndexOf(' ') : 60) + '…';
+}
+
+// The owner's memory (~/home/notes/memory.md) for a fresh session. Claude started in ~/home already
+// has it (CLAUDE.md imports it); other agents can't import files, and agents started elsewhere don't
+// read ~/home's instructions at all.
+export function memoryText(agent, cwd, file) {
+  if (!file) return null;
+  const home = path.dirname(path.dirname(file));
+  if (agent === 'claude' && (cwd === home || cwd?.startsWith(home + path.sep))) return null;
+  let text;
+  try { text = fs.readFileSync(file, 'utf8').trim(); } catch { return null; }
+  return text ? `[Memory from Springroll: ${file.replace(HOME, '~')}; what every agent should know about the owner; add lasting facts there, one line each]\n${text}` : null;
 }
 
 function contextText(c) {

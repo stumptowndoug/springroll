@@ -9,6 +9,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { openStore } from './store.mjs';
 import { ThreadManager, listFiles } from './threads.mjs';
+import { listPersonas } from './personas.mjs';
 import { Jobs } from './jobs.mjs';
 import { describeCron, nextRun } from './cron.mjs';
 
@@ -81,13 +82,11 @@ function notify(text) {
 
 const readAgents = () => { try { return JSON.parse(fs.readFileSync(AGENTS, 'utf8')); } catch { return []; } };
 
-function defaultAgent() {
-  try {
-    const s = JSON.parse(fs.readFileSync(path.join(HOME, 'home', 'desk.json'), 'utf8'));
-    if (s.defaultAgent) return s.defaultAgent;
-  } catch {}
-  return 'claude';
-}
+const deskSettings = () => { try { return JSON.parse(fs.readFileSync(path.join(HOME, 'home', 'desk.json'), 'utf8')) || {}; } catch { return {}; } };
+const defaultAgent = () => deskSettings().defaultAgent || 'claude';
+// Settings → Coding agents: the model and effort a new chat with this agent starts on, unless it picks its own.
+// Jobs keep theirs (job.json, else the agent's default).
+const chatDefaults = (agent) => deskSettings().chatDefaults?.[agent] || {};
 
 // Connected services that provide MCP servers (connections/<name>/mcp.json),
 // handed to every new agent session.
@@ -133,7 +132,9 @@ threads.onTurnEnd = (t, r) => {
 
 // ----- Signals (what Today shows) -----
 const HOURS = 3600000;
-const DEFAULT_EXPIRY = { notable: 72 * HOURS, brief: 20 * HOURS };
+// running: long work outside a job run (a cycle, an import) reporting progress; its owner refreshes it
+// as it goes and clears it when done, and it lapses if the work dies without clearing.
+const DEFAULT_EXPIRY = { notable: 72 * HOURS, brief: 20 * HOURS, running: 6 * HOURS };
 
 function sourceOf(t) {
   if (t?.origin?.startsWith('job:')) { const j = jobs.read(t.origin.slice(4)); return j?.title || t.origin.slice(4); }
@@ -149,7 +150,7 @@ function sourceOf(t) {
 //   rev    what it looks like upstream now (updated_at): marked done stays done until rev changes
 //   hours  expiry; notify: false for no phone ping (needs items ping once, when they're new)
 function normalizeSignal(b) {
-  const level = ['needs', 'notable', 'brief'].includes(b.level) ? b.level : 'notable';
+  const level = ['needs', 'notable', 'brief', 'running'].includes(b.level) ? b.level : 'notable';
   const title = String(b.title || '').trim().slice(0, 200);
   if (!title) throw new Error('a signal needs a title');
   const t = b.thread ? store.thread(b.thread) : null;
@@ -245,6 +246,11 @@ const server = http.createServer(async (req, res) => {
     // ----- Threads -----
     if (req.method === 'GET' && p === '/threads') {
       const q = url.searchParams.get('q');
+      // ?origin=job: job runs only, newest first, paged with ?before=<updated>&limit=
+      if (url.searchParams.get('origin') === 'job') {
+        const before = Number(url.searchParams.get('before')) || undefined, limit = Number(url.searchParams.get('limit')) || undefined;
+        return json(res, 200, store.jobThreads({ before, limit }).map(threadOut));
+      }
       const list = q ? store.search(q) : store.threads({ archived: url.searchParams.get('archived') === '1' });
       return json(res, 200, list.map(threadOut));
     }
@@ -254,14 +260,20 @@ const server = http.createServer(async (req, res) => {
       const cwd = path.resolve((b.cwd || '~/home').replace(/^~/, HOME));
       if (!fs.existsSync(cwd)) return json(res, 400, { error: `no folder ${b.cwd}` });
       const t = store.createThread({ agent, cwd, origin: b.origin || 'chat', title: b.title || null });
-      store.updateThread(t.id, { last_read: Date.now(), ...(b.model ? { model: b.model } : {}) });
-      if (b.model && !String(b.origin || '').startsWith('job:')) threads.rememberModel(agent, b.model); // picked in the composer
+      const job = String(b.origin || '').startsWith('job:'), def = job ? {} : chatDefaults(agent);
+      const model = b.model || def.model, effort = (typeof b.effort === 'string' && b.effort) || def.effort;
+      store.updateThread(t.id, { last_read: Date.now(), ...(model ? { model } : {}) });
+      if (b.model && (b.origin || 'chat') === 'chat') threads.rememberModel(agent, b.model); // picked in the composer (not a job's or a background read's)
       if (b.access) store.db.prepare('update threads set access = ? where id = ?').run(b.access === 'ask' ? 'ask' : 'full', t.id);
-      if (typeof b.effort === 'string' && b.effort) store.db.prepare('update threads set effort = ? where id = ?').run(b.effort, t.id);
+      if (effort) store.db.prepare('update threads set effort = ? where id = ?').run(effort, t.id);
+      // A chat starts with the persona picked in the composer, else Settings' default; a job only with its own.
+      const persona = typeof b.persona === 'string' ? b.persona : job ? null : deskSettings().persona?.default;
+      if (persona) try { threads.setPersona(t.id, persona); } catch {}
       if (b.text || b.images?.length) await threads.prompt(t.id, { text: b.text, context: b.context, images: b.images });
       threads.threadEvent(t.id);
       return json(res, 200, threadOut(store.thread(t.id)));
     }
+    if (req.method === 'GET' && p === '/personas') return json(res, 200, listPersonas().map(({ body, ...p }) => p));
     if ((m = route('GET', /^\/threads\/([0-9a-f]+)$/)(req))) {
       const t = store.thread(m[1]);
       if (!t) return json(res, 404, { error: 'no such thread' });
@@ -273,6 +285,18 @@ const server = http.createServer(async (req, res) => {
       store.updateThread(m[1], { last_read: Date.now() });
       if (store.clearThreadNeeds(m[1])) emit({ type: 'signals' }); // the owner answered
       return json(res, 200, r);
+    }
+    if ((m = route('GET', /^\/threads\/([0-9a-f]+)\/background$/)(req))) {
+      return json(res, 200, { items: threads.background(m[1]) });
+    }
+    // Stop a background task ({ task: <id> }): the agent's adapter stops it.
+    if ((m = route('POST', /^\/threads\/([0-9a-f]+)\/background\/stop$/)(req))) {
+      const b = await readBody(req);
+      return json(res, 200, { ok: await threads.stopTask(m[1], String(b.task || '')) });
+    }
+    if ((m = route('GET', /^\/threads\/([0-9a-f]+)\/tasks\/([^/]+)\/output$/)(req))) {
+      const out = threads.taskOutput(m[1], decodeURIComponent(m[2]));
+      return out ? json(res, 200, out) : json(res, 404, { error: 'no such task' });
     }
     if ((m = route('POST', /^\/threads\/([0-9a-f]+)\/cancel$/)(req))) {
       return json(res, 200, { ok: threads.cancel(m[1]) });
@@ -310,6 +334,9 @@ const server = http.createServer(async (req, res) => {
       if (typeof b.effort === 'string' && b.effort) await threads.changeSetting(m[1], 'effort', b.effort);
       if (b.option?.id && typeof b.option.value === 'string') await threads.changeSetting(m[1], b.option.id, b.option.value); // the agent's other settings
       if (b.access) await threads.setAccess(m[1], b.access === 'ask' ? 'ask' : 'full');
+      if (typeof b.persona === 'string' || b.persona === null) {
+        try { threads.setPersona(m[1], b.persona); } catch (e) { return json(res, 400, { error: e.message }); }
+      }
       if (b.archived) threads.stop(m[1]);
       threads.threadEvent(m[1]);
       return json(res, 200, threadOut(store.thread(m[1])));
@@ -329,7 +356,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/jobs') {
       const b = await readBody(req);
       const name = b.name || slug(b.title || 'job');
-      return json(res, 200, await jobs.save(name, { title: b.title, type: b.type || 'agent', schedule: b.schedule || null, agent: b.agent, cwd: b.cwd, prompt: b.prompt, command: b.command, enabled: b.enabled !== false, catchUp: b.catchUp, notify: b.notify, report: b.report, model: b.model || undefined, effort: b.effort || undefined, group: b.group || undefined, timeout: b.timeout || undefined, retries: b.retries || undefined, retryDelay: b.retryDelay || undefined }, { create: true }));
+      return json(res, 200, await jobs.save(name, { title: b.title, type: b.type || 'agent', schedule: b.schedule || null, agent: b.agent, cwd: b.cwd, prompt: b.prompt, command: b.command, enabled: b.enabled !== false, catchUp: b.catchUp, notify: b.notify, report: b.report, timeline: b.timeline || undefined, model: b.model || undefined, effort: b.effort || undefined, group: b.group || undefined, timeout: b.timeout || undefined, retries: b.retries || undefined, retryDelay: b.retryDelay || undefined }, { create: true }));
     }
     if ((m = route('GET', /^\/jobs\/([a-z0-9-]+)$/)(req))) {
       const d = jobs.detail(m[1]);
@@ -337,7 +364,7 @@ const server = http.createServer(async (req, res) => {
     }
     if ((m = route('PATCH', /^\/jobs\/([a-z0-9-]+)$/)(req))) {
       const b = await readBody(req);
-      const allowed = ['title', 'group', 'schedule', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report', 'timeout', 'retries', 'retryDelay', 'keep'];
+      const allowed = ['title', 'group', 'schedule', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report', 'timeline', 'timeout', 'retries', 'retryDelay', 'keep'];
       return json(res, 200, await jobs.save(m[1], Object.fromEntries(Object.entries(b).filter(([k]) => allowed.includes(k)))));
     }
     if ((m = route('DELETE', /^\/jobs\/([a-z0-9-]+)$/)(req))) { await jobs.remove(m[1]); return json(res, 200, { ok: true }); }

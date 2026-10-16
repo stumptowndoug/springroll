@@ -149,7 +149,9 @@ as_agent 'playwright install chromium >/dev/null 2>&1' || true
 if [ "$PM" = apt ]; then $H/.npm-global/bin/playwright install-deps chromium >/dev/null 2>&1 || true
 else warn "Playwright's browser libraries are only auto-installed on Debian/Ubuntu; the agent can add them if screenshots fail"; fi
 as_agent '[ -f ~/.claude.json ] || echo "{\"hasCompletedOnboarding\":true,\"theme\":\"dark\",\"projects\":{\"$HOME/home\":{\"hasTrustDialogAccepted\":true}}}" > ~/.claude.json'
-as_agent '[ -f ~/.claude/settings.json ] || echo "{\"model\":\"opus\",\"permissions\":{\"defaultMode\":\"bypassPermissions\"},\"skipDangerousModePermissionPrompt\":true}" > ~/.claude/settings.json'
+as_agent '[ -f ~/.claude/settings.json ] || echo "{\"model\":\"opus\",\"permissions\":{\"defaultMode\":\"bypassPermissions\"},\"skipDangerousModePermissionPrompt\":true,\"autoMemoryEnabled\":false}" > ~/.claude/settings.json'
+# Memory lives in ~/home/notes/memory.md for every agent (and in backups), not in Claude's own store.
+as_agent 'f=~/.claude/settings.json; jq -e "has(\"autoMemoryEnabled\")" $f >/dev/null 2>&1 || { jq ".autoMemoryEnabled=false" $f > $f.tmp && mv $f.tmp $f; }'
 as_agent '[ -f ~/.config/springroll/ntfy-topic ] || echo "springroll-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d " \n")" > ~/.config/springroll/ntfy-topic'
 as_agent 'chmod 600 ~/.config/springroll/* ; git config --global user.name agent; git config --global user.email agent@$(hostname)'
 

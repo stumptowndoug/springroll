@@ -287,11 +287,14 @@ export class Jobs {
     delete job.name;
     for (const k of ['model', 'effort', 'group', 'timeout', 'retryDelay']) if (!job[k]) delete job[k]; // empty = the default
     if (!Number(job.retries)) delete job.retries; // no retries unless the job asks
+    // timeline: which runs the Timeline lists ("failures", "never"); every run, unless set.
+    if (!job.timeline || job.timeline === 'always') delete job.timeline;
+    else if (!['failures', 'never'].includes(job.timeline)) throw new Error('timeline: use "always", "failures" or "never"');
     for (const k of ['timeout', 'retryDelay']) if (job[k] && !duration(job[k])) throw new Error(`${k}: use a length like "30m" or "2h"`);
     if (job.schedule) parseCron(job.schedule);
     if (job.type === 'command' ? !job.command : !job.prompt) throw new Error(job.type === 'command' ? 'a command job needs a command' : 'a job needs a prompt');
     fs.mkdirSync(dir, { recursive: true });
-    const ordered = Object.fromEntries(['title', 'group', 'type', 'schedule', 'onlyIf', 'trigger', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'keep', 'timeout', 'retries', 'retryDelay', 'enabled', 'catchUp', 'notify', 'report']
+    const ordered = Object.fromEntries(['title', 'group', 'type', 'schedule', 'onlyIf', 'trigger', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'keep', 'timeout', 'retries', 'retryDelay', 'enabled', 'catchUp', 'notify', 'report', 'timeline']
       .filter((k) => job[k] !== undefined).map((k) => [k, job[k]]));
     fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(ordered, null, 2) + '\n');
     if (create && !fs.existsSync(path.join(dir, 'NOTES.md'))) fs.writeFileSync(path.join(dir, 'NOTES.md'), `# ${job.title || name}\n\nNotes the agent keeps between runs.\n`);
@@ -322,6 +325,7 @@ export class Jobs {
     // The job's model and effort (thinking), applied when its session starts; unset = the agent's default.
     if (job.model) this.store.updateThread(thread.id, { model: job.model });
     if (job.effort) this.store.db.prepare('update threads set effort = ? where id = ?').run(job.effort, thread.id);
+    if (job.persona) try { this.threads.setPersona(thread.id, job.persona); } catch {} // jobs speak plainly unless set
     this.store.beginRun(r.id, thread.id);
     const a = { runId: r.id, threadId: thread.id, attempt: r.attempt || 1, agent: true, job };
     this.active.set(name, a);

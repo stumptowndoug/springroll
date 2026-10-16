@@ -30,6 +30,17 @@ Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
   a diff over 24k characters or 2000 lines is kept as `{path, truncated}`, at
   most 8 per tool call; an image over 4 MB becomes a notice. Switching a chat to
   Full access answers its waiting requests (allow once).
+- Background work, only as the agent reports it over ACP (`background.mjs`). Claude and Codex are
+  asked for JetBrains AIR's `nativeSubagentSessions` and `asyncTasks` (plus `terminal_output_delta`,
+  without which an AIR client gets no Codex command output): a delegated agent is an `agent` item;
+  a backgrounded command is a `task` item (`async_task_spawned|progress|state_update`: name,
+  description, the tool call, Claude's output file, state running → completed/failed/stopped) in the
+  turn of the call that started it, which is marked `backgrounded`. Codex's output streams into that
+  call (`output`, written every 250ms). Stop goes to the adapter (`_session/async_task/stop`); a task
+  still running when its agent goes away (or agentd restarts) ends `disconnected`. Nothing is read
+  from processes: Cursor, OpenCode and Pi report none of this (checked 2026-10-16), so their first
+  prompt asks them to work in the foreground. A job run's agent stays while it has a running task, a
+  timer, a subagent, or a Monitor before its deadline (Monitors aren't reported or shown).
 - `jobs.mjs` + `cron.mjs`: jobs in `~/home/jobs/<name>/job.json` (+ the
   agent's `NOTES.md`), five-field cron schedules, skip missed runs unless
   `catchUp: "once"`, never overlapping. Each run is a thread (origin
@@ -40,9 +51,12 @@ Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
 - Connected services' MCP servers (`~/home/connections/<name>/mcp.json`) are
   given to every new session.
 
-API: `GET /threads[?q=]`, `POST /threads {agent, cwd, text, context}`,
+API: `GET /threads[?q=]` (`?origin=job[&before=<ms>&limit=]`: job runs only, paged), `POST /threads {agent, cwd, text, context, model, effort}`
+(a chat without model/effort gets the agent's Settings defaults, `desk.json` `chatDefaults`),
 `GET /threads/:id`, `POST /threads/:id/messages {text}`, `.../cancel`,
 `.../permissions/:itemId {optionId}`, `PATCH /threads/:id {title, archived,
 pinned, read, model, effort, access, option: {id, value}}`, `DELETE /threads/:id`; `GET|POST /jobs`,
 `GET|PATCH|DELETE /jobs/:name`, `POST /jobs/:name/run`, `GET /cron?expr=`;
+`GET /threads/:id/background` (running tasks, timers, subagents), `POST /threads/:id/background/stop {task}`,
+`GET /threads/:id/tasks/:task/output` (`{text, truncated, file}` or `{text, exitCode}`);
 `GET /events` (SSE: `thread`, `item`, `append`, `jobs`, `deleted`).
