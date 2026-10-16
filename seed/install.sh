@@ -153,7 +153,9 @@ as_agent '[ -f ~/.claude/settings.json ] || echo "{\"model\":\"opus\",\"permissi
 # Memory lives in ~/home/notes/memory.md for every agent (and in backups), not in Claude's own store.
 as_agent 'f=~/.claude/settings.json; jq -e "has(\"autoMemoryEnabled\")" $f >/dev/null 2>&1 || { jq ".autoMemoryEnabled=false" $f > $f.tmp && mv $f.tmp $f; }'
 as_agent '[ -f ~/.config/springroll/ntfy-topic ] || echo "springroll-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d " \n")" > ~/.config/springroll/ntfy-topic'
-as_agent 'chmod 600 ~/.config/springroll/* ; git config --global user.name agent; git config --global user.email agent@$(hostname)'
+# Secrets are files (600); folders in there (browser profiles, ssh keys, tailscale-browser) need 700
+# or nothing can open them. An older installer chmod-ed folders to 600 on a re-run: repaired here.
+as_agent 'find ~/.config/springroll -mindepth 1 -maxdepth 1 -type f -exec chmod 600 {} + ; find ~/.config/springroll -mindepth 1 -type d -exec chmod 700 {} + ; git config --global user.name agent; git config --global user.email agent@$(hostname)'
 
 # ---------- Home ----------
 say "== home"

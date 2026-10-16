@@ -50,9 +50,9 @@ own puts a row in the chat with live output and Stop. Work that must outlive the
   puts a card in front of the owner, and you're told when it's saved; then `"$(secret get NAME)"`.
 - **The outside world** isn't yours to break: ask before posting, paying, or deleting anything in
   the owner's accounts the first time, and start new integrations read-only.
-- **Email** is the exception: reply, send and archive with `gmail` when asked, without asking
-  again (unless Connections → Gmail is "Ask me first": then show the exact email and wait for a
-  yes, and pass `--approved`). Never delete mail.
+- **Email**: Connections → Gmail decides. "Ask me first" (the default): show the exact email in
+  the chat, wait for a yes, then pass `--approved`. "Send right away": reply, send and archive with
+  `gmail` when asked, without asking again. Never delete mail.
 
 ## Commands
 

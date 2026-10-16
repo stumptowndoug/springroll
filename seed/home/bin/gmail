@@ -10,8 +10,8 @@
   gmail move <ref> <label>                      label it and take it out of the inbox
 
 <ref> is Mail's id (the number in Mail's API and Home's links) or account:<Message-ID> (from search).
-Replies and new mail go out through Gmail (they land in Sent). If the owner chose "ask me first"
-(Connections → Gmail), sending needs --approved: show them the exact email in the chat first.
+Replies and new mail go out through Gmail (they land in Sent). Unless the owner chose "Send right away"
+(Connections → Gmail; "Ask me first" is the default), sending needs --approved: show them the exact email in the chat first.
 """
 import base64, email, email.policy, email.utils, imaplib, json, os, re, smtplib, ssl, sys, urllib.parse, urllib.request
 from email.message import EmailMessage
@@ -100,7 +100,7 @@ def text_of(m):
     return t.strip()
 
 def policy_ok(c, approved):
-    if (c.get("policy") or {}).get("send", "auto") == "ask" and not approved:
+    if (c.get("policy") or {}).get("send", "ask") != "auto" and not approved:
         die("the owner wants to approve what agents send (Connections → Gmail). Show them the exact email in the chat; when they say yes, run this again with --approved.", 3)
 
 # Read-only jobs: the owner wants sorting jobs never to send, reply, archive or move mail, whatever their prompt says.

@@ -5,6 +5,25 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-16 · Email asks first by default; migrations; installer re-runs keep folders usable
+
+- **Email: "Ask me first" is the default** (`views/desk/google.mjs`, `app/connections.js`, `bin/gmail`,
+  AGENTS.md): until the owner picks "Send right away" in Connections → Gmail, agents show the exact
+  email in the chat and send only after a yes (`--approved`). A saved choice is kept, so a machine
+  whose owner picked Send right away is unchanged; one that never chose now asks first. Say so in
+  the update report.
+- **Migration** (machines that took the Timeline update below; run each, they're safe to repeat):
+  - Claude's own auto memory off, now that `notes/memory.md` is the memory:
+    `f=~/.claude/settings.json; jq -e 'has("autoMemoryEnabled")' $f >/dev/null || { jq '.autoMemoryEnabled=false' $f > $f.tmp && mv $f.tmp $f; }`
+  - The To-dos app's server: `systemctl --user link ~/home/views/todos/todos.service && systemctl --user enable --now todos`
+  - Folders under `~/.config/springroll` back to 700 (an installer re-run had made them 600, which
+    breaks the Browser app's profiles, ssh keys and home internet): `find ~/.config/springroll -mindepth 1 -type d -exec chmod 700 {} +`
+- **Installer:** the last step chmod-ed everything in `~/.config/springroll` to 600, folders too, so
+  re-running `install.sh` (a restore, a repair) broke the browser ("EACCES … profiles/default").
+  Files get 600, folders 700, and a re-run repairs them. Found by updating a test box.
+- `tests/fresh-install.sh` opens a page again after the re-run, so this can't hide behind the last check.
+- **If you changed this:** nothing to carry over; run the migrations.
+
 ## 2026-10-16 · Timeline, Keys, memory and personas, background work, skills, To-dos
 
 Ported from the owner's machine, where each piece ran for a few days first. Big: read the parts
