@@ -1,16 +1,37 @@
 #!/usr/bin/env bash
 # Restore a backup made by `backup` onto this machine:
 #   restore <file.tar.gz> [--force]
+#   restore --offsite <repository> [snapshot]   from the bucket (restic), the latest snapshot by default:
+#        credentials as for restic (or BACKUP_* keys in ~/.config/springroll/secrets.env), the
+#        passphrase as below; see skills/backup/SKILL.md
 # Replaces ~/home (keeping the current one as ~/home.before-restore-<date>),
 # restores ~/data, and decrypts secrets with ~/.config/springroll/backup-passphrase
 # (or $SPRINGROLL_BACKUP_PASSPHRASE). Restarts Springroll afterwards.
 set -euo pipefail
-FILE=${1:?usage: restore <backup.tar.gz> [--force]}
-[ -f "$FILE" ] || { echo "no such file: $FILE" >&2; exit 1; }
+FILE=${1:?usage: restore <backup.tar.gz> | restore --offsite <repository> [snapshot]}
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
-tar -C "$STAGE" -xzf "$FILE"
-SRC=$(find "$STAGE" -mindepth 1 -maxdepth 1 -type d | head -1)
+PASSFILE=~/.config/springroll/backup-passphrase
+: "${SPRINGROLL_BACKUP_PASSPHRASE:=${AGENTOS_BACKUP_PASSPHRASE:-}}" # the old name still works
+if [ "$FILE" = --offsite ]; then
+  REPO=${2:?usage: restore --offsite <repository> [snapshot]}
+  command -v restic >/dev/null || sudo apt-get install -y -qq restic >/dev/null
+  if [ -f ~/.config/springroll/secrets.env ]; then set -a; . ~/.config/springroll/secrets.env; set +a; fi
+  for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION B2_ACCOUNT_ID B2_ACCOUNT_KEY AZURE_ACCOUNT_NAME AZURE_ACCOUNT_KEY AZURE_ACCOUNT_SAS GOOGLE_PROJECT_ID; do
+    b="BACKUP_$v"; [ -n "${!b:-}" ] && export "$v=${!b}"
+  done
+  if [ -n "${BACKUP_GCS_CREDENTIALS:-}" ] && [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+    printf %s "$BACKUP_GCS_CREDENTIALS" > "$STAGE/gcs.json"; export GOOGLE_APPLICATION_CREDENTIALS="$STAGE/gcs.json"
+  fi
+  if [ -z "${SPRINGROLL_BACKUP_PASSPHRASE:-}" ] && [ ! -s "$PASSFILE" ] && [ -t 0 ]; then read -rsp "Backup passphrase: " SPRINGROLL_BACKUP_PASSPHRASE; echo; fi
+  if [ -n "${SPRINGROLL_BACKUP_PASSPHRASE:-}" ]; then export RESTIC_PASSWORD="$SPRINGROLL_BACKUP_PASSPHRASE"; else export RESTIC_PASSWORD_FILE="$PASSFILE"; fi
+  restic -r "$REPO" restore "${3:-latest}" --target "$STAGE/r" -q
+  SRC=$(dirname "$(find "$STAGE/r" -name home.bundle -print -quit)")
+else
+  [ -f "$FILE" ] || { echo "no such file: $FILE" >&2; exit 1; }
+  tar -C "$STAGE" -xzf "$FILE"
+  SRC=$(find "$STAGE" -mindepth 1 -maxdepth 1 -type d | head -1)
+fi
 [ -f "$SRC/home.bundle" ] || { echo "not a Springroll backup" >&2; exit 1; }
 echo "Restoring $(jq -r '.host + " from " + .created' "$SRC/manifest.json")"
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
@@ -29,9 +50,9 @@ if [ -d "$SRC/data" ]; then
   cp -a "$SRC/data/." ~/data/
 fi
 
-if [ -f "$SRC/secrets.tar.gz.enc" ]; then
-  PASSFILE=~/.config/springroll/backup-passphrase
-  : "${SPRINGROLL_BACKUP_PASSPHRASE:=${AGENTOS_BACKUP_PASSPHRASE:-}}" # the old name still works
+if [ -d "$SRC/secrets" ]; then # from the bucket: restic already decrypted them
+  cp -a "$SRC/secrets/." ~/ && echo "Secrets restored"
+elif [ -f "$SRC/secrets.tar.gz.enc" ]; then
   if [ -n "${SPRINGROLL_BACKUP_PASSPHRASE:-}" ]; then PASSARG="env:SPRINGROLL_BACKUP_PASSPHRASE"
   elif [ -s "$PASSFILE" ]; then PASSARG="file:$PASSFILE"
   elif [ -t 0 ]; then read -rsp "Backup passphrase: " SPRINGROLL_BACKUP_PASSPHRASE; echo; export SPRINGROLL_BACKUP_PASSPHRASE; PASSARG="env:SPRINGROLL_BACKUP_PASSPHRASE"

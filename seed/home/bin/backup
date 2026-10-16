@@ -1,53 +1,175 @@
 #!/usr/bin/env bash
-# Back up this machine's state into one file you can move anywhere:
-#   backup [--keep N]       writes ~/backups/springroll-<host>-<date>.tar.gz
-# Contains: ~/home (a git bundle with full history), ~/data (SQLite copied
-# safely while running), and, encrypted with the passphrase in
-# ~/.config/springroll/backup-passphrase, secrets and agent sign-ins. Without a
-# passphrase, secrets are left out (and the backup says so).
-# Restore on a new box: install.sh --restore <file>  (or: restore <file>)
+# Back up this machine's state:
+#   backup [--keep N]          one file you can move anywhere: ~/backups/springroll-<host>-<date>.tar.gz
+#                              (keeps the newest N); and, when off-machine backups are on, the same
+#                              snapshot to the owner's bucket (restic: encrypted, deduplicated)
+#   backup offsite [--json]    off-machine status
+#   backup offsite init <repo> turn it on: gs:<bucket>:/springroll, s3:<url>/<bucket>/springroll,
+#                              b2:<bucket>:springroll, azure:<container>:/springroll, sftp:…, rclone:…
+#   backup offsite off         turn it off (what's in the bucket stays there)
+#   backup snapshots           what's in the bucket
+#   backup verify [file]       restore the newest (or given) local backup into a temp folder and check it
+#   backup verify --offsite    check the bucket (5% of its data) and test-restore the latest snapshot
+#   backup check               both verifies (the off-machine one when it's on): the weekly backup-check job
+# Contains: ~/home (a git bundle with full history), ~/data (SQLite copied safely while running), and
+# secrets and agent sign-ins, encrypted with the passphrase in ~/.config/springroll/backup-passphrase
+# (without one, secrets are left out and the backup says so). Off-machine, restic encrypts all of it
+# with the same passphrase. Bucket credentials are keys named BACKUP_* (skills/backup/SKILL.md).
+# Restore on a new box: install.sh --restore <file>  (or: restore <file> | restore --offsite <repo>)
 set -euo pipefail
+CONF="$HOME/.config/springroll"
+PASS="$CONF/backup-passphrase"
+SETTINGS="$HOME/home/desk.json"
+OUT_DIR="$HOME/backups"
+CACHE="$HOME/.cache/springroll-backup"
+STATUS="$HOME/data/backup/offsite.json"
+HOST=$(hostname -s)
+mkdir -p "$CACHE" "$(dirname "$STATUS")"
+
+# Off-machine: the repository from desk.json, credentials from Keys (BACKUP_<restic variable>), the
+# backup passphrase as restic's password.
+offsite_repo() { jq -r '.backup.offsite.repository // empty' "$SETTINGS" 2>/dev/null; }
+offsite_env() {
+  export RESTIC_REPOSITORY="${1:-$(offsite_repo)}" RESTIC_PASSWORD_FILE="$PASS" RESTIC_CACHE_DIR="$HOME/.cache/restic" RESTIC_PROGRESS_FPS=0.016
+  [ -n "$RESTIC_REPOSITORY" ] || { echo "Off-machine backups aren't set up (skills/backup/SKILL.md)" >&2; return 1; }
+  [ -s "$PASS" ] || { echo "Off-machine backups need the backup passphrase (Settings → Backups)" >&2; return 1; }
+  command -v restic >/dev/null || sudo apt-get install -y -qq restic >/dev/null 2>&1 || { echo "restic isn't installed" >&2; return 1; }
+  # A running session or the desk server may not have the keys in its environment: read them here.
+  if [ -f "$CONF/secrets.env" ]; then set -a; . "$CONF/secrets.env"; set +a; fi
+  local v
+  for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION B2_ACCOUNT_ID B2_ACCOUNT_KEY AZURE_ACCOUNT_NAME AZURE_ACCOUNT_KEY AZURE_ACCOUNT_SAS GOOGLE_PROJECT_ID; do
+    local b="BACKUP_$v"; [ -n "${!b:-}" ] && export "$v=${!b}"
+  done
+  # GCS: a service account's JSON key, written to a private temp file for the run.
+  if [ -n "${BACKUP_GCS_CREDENTIALS:-}" ]; then
+    GCS_FILE=$(mktemp "$CACHE/gcs-XXXXXX.json"); chmod 600 "$GCS_FILE"
+    printf %s "$BACKUP_GCS_CREDENTIALS" > "$GCS_FILE"
+    export GOOGLE_APPLICATION_CREDENTIALS="$GCS_FILE"
+    [ -n "${GOOGLE_PROJECT_ID:-}" ] || export GOOGLE_PROJECT_ID=$(jq -r '.project_id // empty' "$GCS_FILE")
+  fi
+}
+cleanup() { rm -rf "${STAGE:-}" "${GCS_FILE:-}" "${TMP:-}"; }
+trap cleanup EXIT
+
+save_status() { # ok|error, message, [snapshot json]
+  jq -n --arg r "$(offsite_repo)" --arg s "$1" --arg m "$2" --argjson x "${3:-null}" --arg at "$(date -Is)" \
+    '{repository: $r, ok: ($s == "ok"), at: $at, message: $m} + ($x // {})' > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+}
+
+# Checks a backup unpacked into $1: the repo bundle, every database, the secrets.
+verify_dir() {
+  local d=$1 bad=0 dbbad=0 db n=0
+  # The restore clones the bundle: so does this.
+  if git clone -q --bare "$d/home.bundle" "$d/.verify.git" 2>/dev/null && git -C "$d/.verify.git" fsck --no-dangling --no-progress >/dev/null 2>&1; then
+    echo "✓ home: $(git -C "$d/.verify.git" rev-list --all --count) commits, last $(git -C "$d/.verify.git" log -1 --format=%cr --all)"
+  else echo "✗ home.bundle doesn't clone"; bad=1; fi
+  while IFS= read -r -d '' db; do
+    n=$((n + 1))
+    [ "$(sqlite3 "$db" 'pragma quick_check' 2>&1 | head -1)" = ok ] || { echo "✗ ${db#$d/} fails its integrity check"; dbbad=1; }
+  done < <(find "$d/data" -type f \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \) -print0 2>/dev/null)
+  if [ $dbbad = 0 ]; then echo "✓ data: $n databases pass, $(find "$d/data" -type f | wc -l) files"; else bad=1; fi
+  if [ -f "$d/secrets.tar.gz.enc" ]; then
+    if openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$PASS" -in "$d/secrets.tar.gz.enc" | tar -tzf - 2>/dev/null | grep 'secrets.env' >/dev/null; then echo "✓ secrets decrypt"
+    else echo "✗ secrets don't decrypt with this machine's passphrase"; bad=1; fi
+  elif [ -f "$d/secrets/.config/springroll/secrets.env" ]; then echo "✓ secrets present"
+  else echo "– no secrets in this backup"; fi
+  return $bad
+}
+
+case "${1:-}" in
+  offsite)
+    case "${2:-}" in
+      init)
+        repo=${3:?usage: backup offsite init <repository>}
+        offsite_env "$repo"
+        if restic cat config >/dev/null 2>&1; then echo "Using the existing repository at $repo"
+        else restic init >/dev/null && echo "Created a repository at $repo"; fi
+        tmp=$(mktemp); jq --arg r "$repo" --arg at "$(date -Is)" '.backup.offsite = {repository: $r, since: $at}' "$SETTINGS" > "$tmp" && cat "$tmp" > "$SETTINGS" && rm -f "$tmp"
+        signal --clear backup:offsite >/dev/null 2>&1 || true
+        echo "Off-machine backups are on. Run \`backup\` for the first one; the nightly job does it from now on." ;;
+      off)
+        tmp=$(mktemp); jq 'del(.backup.offsite) | if .backup == {} then del(.backup) else . end' "$SETTINGS" > "$tmp" && cat "$tmp" > "$SETTINGS" && rm -f "$tmp"
+        rm -f "$STATUS"; echo "Off-machine backups are off. What's in the bucket stays there." ;;
+      ""|--json)
+        repo=$(offsite_repo)
+        if [ "${2:-}" = --json ]; then jq -n --arg r "$repo" --argjson s "$(cat "$STATUS" 2>/dev/null || echo null)" '{enabled: ($r != ""), repository: (if $r == "" then null else $r end), last: $s}'
+        elif [ -z "$repo" ]; then echo "Off-machine backups: off (skills/backup/SKILL.md to set them up)"
+        else echo "Off-machine backups: $repo"; [ -f "$STATUS" ] && jq -r '"Last: \(.at) · \(if .ok then "ok" else "failed" end) · \(.message)"' "$STATUS"; fi ;;
+      *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    esac
+    exit 0 ;;
+  snapshots) offsite_env; restic snapshots --host "$HOST" --compact; exit 0 ;;
+  verify)
+    TMP=$(mktemp -d)
+    if [ "${2:-}" = --offsite ]; then
+      offsite_env
+      echo "Checking the bucket (5% of its data)…"; restic check --read-data-subset=5% -q >/dev/null 2>"$TMP/check.err" || { cat "$TMP/check.err"; echo "✗ restic check failed"; exit 1; }
+      echo "✓ repository checks"
+      restic restore latest --host "$HOST" --target "$TMP/r" -q >/dev/null
+      d=$(dirname "$(find "$TMP/r" -name home.bundle -print -quit)")
+      echo "Latest snapshot: $(restic snapshots latest --host "$HOST" --json | jq -r '.[0] | "\(.short_id) from \(.time[:16])"')"
+    else
+      f=${2:-$(ls -1t "$OUT_DIR"/springroll-*.tar.gz 2>/dev/null | head -1)}
+      [ -f "$f" ] || { echo "No backup to verify" >&2; exit 1; }
+      tar -C "$TMP" -xzf "$f"; d=$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -1)
+      echo "Backup: $(basename "$f")"
+    fi
+    verify_dir "$d"; exit $? ;;
+  check)
+    ok=0; "$0" verify || ok=1
+    if [ -n "$(offsite_repo)" ]; then echo; "$0" verify --offsite || ok=1; fi
+    exit $ok ;;
+  --keep|"") ;;
+  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
+
 KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=${2:-7}
-OUT_DIR="$HOME/backups"
 STAMP=$(date +%Y%m%d-%H%M)
-NAME="springroll-$(hostname -s)-$STAMP"
-STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
-mkdir -p "$OUT_DIR" "$STAGE/$NAME"
-cd "$STAGE/$NAME"
+NAME="springroll-$HOST-$STAMP"
+# One backup at a time (the nightly job and "Back up now" can meet).
+exec 9>"$CACHE/lock"; flock -w 1800 9 || { echo "Another backup is still running" >&2; exit 1; }
+# Staged at a fixed path so restic sees the same files night to night.
+umask 077
+STAGE="$CACHE/stage"; rm -rf "$STAGE"; mkdir -p "$OUT_DIR" "$STAGE/springroll"
+S="$STAGE/springroll"
 
 # 1. ~/home with its full history (uncommitted changes are committed first).
 git -C "$HOME/home" add -A >/dev/null 2>&1 && git -C "$HOME/home" commit -qm "Backup $STAMP" >/dev/null 2>&1 || true
-git -C "$HOME/home" bundle create "$STAGE/$NAME/home.bundle" --all >/dev/null
+git -C "$HOME/home" bundle create "$S/home.bundle" --all >/dev/null 2>&1
 
 # 2. ~/data: SQLite databases via .backup (consistent while in use), the rest as files.
-mkdir -p data
+mkdir -p "$S/data"
 if [ -d "$HOME/data" ]; then
-  (cd "$HOME/data" && find . -type f ! -name '*.db-wal' ! -name '*.db-shm' ! -name '*-journal' ! -path './agentd/agentd.db' -print0) |
+  (cd "$HOME/data" && find . -type f ! -name '*.db-wal' ! -name '*.db-shm' ! -name '*-journal' ! -path './agentd/agentd.db' ! -path './backup/offsite.json.tmp' -print0) |
     while IFS= read -r -d '' f; do
-      mkdir -p "data/$(dirname "$f")"
-      if [[ "$f" == *.db || "$f" == *.sqlite || "$f" == *.sqlite3 ]]; then sqlite3 "$HOME/data/$f" ".backup 'data/$f'" 2>/dev/null || cp "$HOME/data/$f" "data/$f"
-      else cp -p "$HOME/data/$f" "data/$f"; fi
+      mkdir -p "$S/data/$(dirname "$f")"
+      if [[ "$f" == *.db || "$f" == *.sqlite || "$f" == *.sqlite3 ]]; then sqlite3 "$HOME/data/$f" ".backup '$S/data/$f'" 2>/dev/null || cp "$HOME/data/$f" "$S/data/$f"
+      else cp -p "$HOME/data/$f" "$S/data/$f"; fi
     done
-  [ -f "$HOME/data/agentd/agentd.db" ] && mkdir -p data/agentd && sqlite3 "$HOME/data/agentd/agentd.db" ".backup 'data/agentd/agentd.db'"
+  [ -f "$HOME/data/agentd/agentd.db" ] && mkdir -p "$S/data/agentd" && sqlite3 "$HOME/data/agentd/agentd.db" ".backup '$S/data/agentd/agentd.db'"
 fi
 
-# 3. Secrets and sign-ins, encrypted.
-SECRETS="skipped (no passphrase: echo 'something long' > ~/.config/springroll/backup-passphrase)"
-PASS="$HOME/.config/springroll/backup-passphrase"
+# 3. Secrets and sign-ins (not the browser profiles' caches, which rebuild themselves). Locally they're
+#    encrypted into one file; off-machine restic encrypts them with everything else.
+SECRETS="skipped (no passphrase: Settings → Backups)"
 if [ -s "$PASS" ]; then
-  tar -C "$HOME" -czf - --ignore-failed-read .config/springroll .claude.json .claude/.credentials.json .codex/auth.json \
-    .local/share/opencode/auth.json .pi/agent/auth.json .config/gh/hosts.yml .gitconfig 2>/dev/null |
-    openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$PASS" -out secrets.tar.gz.enc
+  mkdir -p "$S/secrets"
+  tar -C "$HOME" -cf - --ignore-failed-read \
+    --exclude='Cache' --exclude='Code Cache' --exclude='GPUCache' --exclude='GPUPersistentCache' --exclude='GrShaderCache' --exclude='ShaderCache' \
+    --exclude='DawnGraphiteCache' --exclude='DawnWebGPUCache' --exclude='*_crx_cache' --exclude='Safe Browsing' --exclude='CertificateRevocation' \
+    --exclude='Subresource Filter' --exclude='BrowserMetrics*' --exclude='optimization_guide*' --exclude='segmentation_platform' --exclude='CacheStorage' \
+    .config/springroll .claude.json .claude/.credentials.json .codex/auth.json .local/share/opencode/auth.json .pi/agent/auth.json .config/gh/hosts.yml .gitconfig 2>/dev/null |
+    tar -C "$S/secrets" -xf -
+  tar -C "$S/secrets" -czf - . | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$PASS" -out "$S/secrets.tar.gz.enc"
   SECRETS="included, encrypted"
 fi
 
-cat > manifest.json <<JSON
-{ "host": "$(hostname -s)", "created": "$(date -Is)", "views": $(ls "$HOME/home/views" | jq -R . | jq -s .),
-  "secrets": "$SECRETS", "format": 1 }
+cat > "$S/manifest.json" <<JSON
+{ "host": "$HOST", "created": "$(date -Is)", "views": $(ls "$HOME/home/views" | jq -R . | jq -s .),
+  "secrets": "$SECRETS", "format": 2 }
 JSON
-tar -C "$STAGE" -czf "$OUT_DIR/$NAME.tar.gz" "$NAME"
+tar -C "$STAGE" --exclude='springroll/secrets' --transform "s,^springroll,$NAME," -czf "$OUT_DIR/$NAME.tar.gz" springroll
 chmod 600 "$OUT_DIR/$NAME.tar.gz"
 
 # Keep the newest $KEEP (older ones may still be named agentos-*). nullglob: a name with no files
@@ -57,3 +179,31 @@ kept=("$OUT_DIR"/springroll-*.tar.gz "$OUT_DIR"/agentos-*.tar.gz)
 shopt -u nullglob
 if [ "$KEEP" -gt 0 ] && [ ${#kept[@]} -gt "$KEEP" ]; then ls -1t "${kept[@]}" | tail -n +$((KEEP + 1)) | xargs -r rm -f; fi
 echo "Backed up to ~/backups/$NAME.tar.gz ($(du -h "$OUT_DIR/$NAME.tar.gz" | cut -f1)); secrets $SECRETS"
+
+# 4. Off-machine: the staged backup (secrets as files, not the locally encrypted copy) to the bucket,
+#    then the retention policy. Old data is pruned once a week.
+if [ -z "$(offsite_repo)" ]; then
+  # Recommend it once on the Timeline; marked Done, it stays done.
+  signal --needs --quiet --key backup:offsite --rev 1 --source Backups --icon cloud-upload --link '#/v/settings#backups' \
+    --note "Set up off-machine backups by following ~/home/skills/backup/SKILL.md: walk the owner through it (provider, bucket, a key saved with secret request), then run backup offsite init and a first backup." \
+    "Keep a copy of your backups off this machine" "Every backup is on this machine's disk; if it's lost, so are they. Set up a bucket (Google Cloud, S3, R2, B2) in a few minutes." >/dev/null 2>&1 || true
+  exit 0
+fi
+offsite_env 2>"$CACHE/env.err" || { save_status error "$(cat "$CACHE/env.err")"; cat "$CACHE/env.err" >&2; exit 1; }
+[ -d "$S/secrets" ] || { save_status error "No backup passphrase"; echo "Off-machine backup skipped: no passphrase" >&2; exit 1; }
+restic unlock -q 2>/dev/null || true
+if out=$(restic backup --host "$HOST" --tag springroll --exclude "$S/secrets.tar.gz.enc" --json -q "$S" 2>&1); then
+  sum=$(printf '%s\n' "$out" | grep '"message_type":"summary"' | tail -1)
+  snap=$(printf %s "$sum" | jq -c '{snapshot: .snapshot_id[:8], added: .data_added_packed, total: .total_bytes_processed}')
+  forget=(--host "$HOST" --keep-last 3 --keep-daily 7 --keep-weekly 5 --keep-monthly 12 -q)
+  [ "$(date +%u)" = 7 ] && forget+=(--prune)
+  if ferr=$(restic forget "${forget[@]}" 2>&1); then
+    save_status ok "Snapshot $(jq -r .snapshot <<<"$snap"), $(numfmt --to=iec "$(jq -r .added <<<"$snap")") new" "$snap"
+    echo "Off-machine: snapshot $(jq -r .snapshot <<<"$snap") in $(offsite_repo) ($(numfmt --to=iec "$(jq -r .added <<<"$snap")") uploaded)"
+  else
+    save_status error "Backed up, but cleaning old snapshots failed: $(tail -1 <<<"$ferr")" "$snap"; echo "Off-machine retention failed: $ferr" >&2; exit 1
+  fi
+else
+  err=$(printf '%s\n' "$out" | grep -v '^{' | tail -3 | tr '\n' ' ')
+  save_status error "${err:-restic backup failed}"; echo "Off-machine backup failed: ${err:-$out}" >&2; exit 1
+fi

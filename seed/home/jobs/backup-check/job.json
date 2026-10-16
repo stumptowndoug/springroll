@@ -1,0 +1,14 @@
+{
+  "title": "Backup check",
+  "group": "Springroll",
+  "type": "command",
+  "schedule": "0 5 * * 0",
+  "cwd": "~/home",
+  "command": "backup check",
+  "enabled": true,
+  "catchUp": "once",
+  "notify": true,
+  "report": true,
+  "timeline": "failures",
+  "timeout": "1h"
+}
