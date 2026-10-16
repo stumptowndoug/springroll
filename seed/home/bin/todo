@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""todo: the To-dos app's boards, for agents and jobs. A board is a TODO.md (each project's in
+~/projects/<name>/, plus the owner's personal one in ~/data/todos/); editing the file directly
+also works (keep the shep-todos format), this just does it surgically and safely.
+
+  todo boards                              every board: open, in progress, done
+  todo list [board] [--done] [--json]      a board's cards by column (id, title); no board: in progress everywhere
+  todo show <board> <id>                   one card with its sub-steps and notes
+  todo add <board> "title" [--column C] [--note "line"]…   a new card (Backlog unless --column)
+  todo start <board> <id>                  move it to In Progress
+  todo done <board> <id>                   move it to Done (checked)
+  todo reopen <board> <id>                 back to Backlog (unchecked)
+  todo move <board> <id> <column>          to any column (name or kind: backlog, progress, done)
+  todo edit <board> <id> "new title"
+  todo rm <board> <id>                     delete a card that was never needed (finished ones go to Done)
+  todo archive <board>                     move Done cards to the board's archive file (nothing is deleted)
+
+Board is "personal" or a project folder name. Ids are short hashes of the card's text (they change
+when the text does), shown by `todo list`.
+"""
+import json, os, sys
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.parse import quote
+
+PORT = open(os.path.expanduser("~/home/views/todos/PORT")).read().strip()
+API = f"http://127.0.0.1:{PORT}/api"
+
+
+def call(method, path, body=None):
+    req = Request(API + path, method=method, data=json.dumps(body).encode() if body is not None else None,
+                  headers={"content-type": "application/json"})
+    try:
+        with urlopen(req, timeout=30) as r: return json.load(r)
+    except HTTPError as e:
+        sys.exit(f"todo: {json.load(e).get('error', e.reason)}")
+    except OSError as e:
+        sys.exit(f"todo: the To-dos app isn't answering on :{PORT} ({e}); systemctl --user status todos")
+
+
+def short(t, n=110):
+    return t if len(t) <= n else t[:n - 1] + "…"
+
+
+def flags(args, name, many=False):
+    out, rest = [], []
+    it = iter(args)
+    for a in it:
+        if a == name: out.append(next(it, ""))
+        else: rest.append(a)
+    return (out if many else (out[-1] if out else None)), rest
+
+
+def card_line(c):
+    return f"  {c['id']}  [{'x' if c['done'] else ' '}] {short(c['text'])}"
+
+
+def main(a):
+    if not a or a[0] in ("-h", "--help", "help"): return print(__doc__.strip())
+    cmd, a = a[0], a[1:]
+    as_json = "--json" in a; a = [x for x in a if x != "--json"]
+    if cmd == "boards":
+        bs = call("GET", "/boards")
+        if as_json: return print(json.dumps(bs, indent=1))
+        for b in bs: print(f"{b['id']:<28} {b['open']:>3} open · {b['progress']} in progress · {b['done']} done   {b['path']}")
+    elif cmd == "list":
+        show_done = "--done" in a; a = [x for x in a if x != "--done"]
+        if not a:
+            now = call("GET", "/now")
+            if as_json: return print(json.dumps(now, indent=1))
+            for c in now: print(f"{c['board']:<26}{card_line(c)}")
+            return
+        b = call("GET", f"/boards/{quote(a[0])}")
+        if as_json: return print(json.dumps(b, indent=1))
+        for col in b["columns"]:
+            print(f"{col['title']} ({len(col['cards'])})")
+            if col["kind"] == "done" and not show_done and col["cards"]: print("  (--done to list them)"); continue
+            for c in col["cards"]: print(card_line(c))
+    elif cmd == "show":
+        b = call("GET", f"/boards/{quote(a[0])}")
+        for col in b["columns"]:
+            for c in col["cards"]:
+                if c["id"] == a[1]:
+                    if as_json: return print(json.dumps(dict(c, column=col["title"]), indent=1))
+                    return print(f"{col['title']} · {b['path']}:{c['lines'][0]}-{c['lines'][1]}\n[{'x' if c['done'] else ' '}] {c['text']}\n{c['body']}")
+        sys.exit(f"todo: no card {a[1]} on {a[0]}")
+    elif cmd == "add":
+        col, a = flags(a, "--column")
+        notes, a = flags(a, "--note", many=True)
+        c = call("POST", f"/boards/{quote(a[0])}/cards", {"text": " ".join(a[1:]), "column": col, "notes": notes})
+        print(f"added {c['id']} to {c['column']}")
+    elif cmd in ("start", "done", "reopen", "move"):
+        body = {"start": {"column": "progress"}, "done": {"done": True}, "reopen": {"done": False},
+                "move": {"column": " ".join(a[2:])}}[cmd]
+        c = call("PATCH", f"/boards/{quote(a[0])}/cards/{quote(a[1])}", body)
+        print(f"{c['id']} is in {c['column']}")
+    elif cmd == "edit":
+        c = call("PATCH", f"/boards/{quote(a[0])}/cards/{quote(a[1])}", {"text": " ".join(a[2:])})
+        print(f"edited: {c['id']}")
+    elif cmd == "rm":
+        call("DELETE", f"/boards/{quote(a[0])}/cards/{quote(a[1])}"); print("deleted")
+    elif cmd == "archive":
+        r = call("POST", f"/boards/{quote(a[0])}/archive")
+        print(f"archived {r['archived']} to {r['file']}" if r["archived"] else "nothing in Done")
+    else:
+        sys.exit(f"todo: unknown command {cmd!r} (todo --help)")
+
+
+if __name__ == "__main__":
+    try: main(sys.argv[1:])
+    except IndexError: sys.exit("todo: missing argument (todo --help)")

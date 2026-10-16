@@ -43,7 +43,7 @@ export function openStore(dir) {
   // The runs table is also the jobs' queue: a run waits as 'queued' (until not_before, and until there's
   // room) and survives restarts; attempt counts retries; how is scheduled | manual | retry.
   // Threads: the agent's settings as it reports them, Full access or Ask first, the effort chosen.
-  for (const col of ['options text', "access text default 'full'", 'effort text']) { try { db.exec(`alter table threads add column ${col}`); } catch {} }
+  for (const col of ['options text', "access text default 'full'", 'effort text', 'persona text']) { try { db.exec(`alter table threads add column ${col}`); } catch {} }
   for (const col of ['report text', 'title text', 'attempt integer not null default 1', 'not_before integer', 'how text']) { try { db.exec(`alter table runs add column ${col}`); } catch {} }
   // Signals from connectors: an icon, the note an agent gets when the owner asks about it, and a revision
   // (what changed upstream) so an item the owner marked done stays done until something new happens.
@@ -64,6 +64,7 @@ export function openStore(dir) {
     thread: db.prepare('select * from threads where id = ?'),
     threads: db.prepare('select * from threads where archived = ? order by pinned desc, updated desc limit ?'),
     threadsByOrigin: db.prepare('select * from threads where origin = ? order by updated desc limit ?'),
+    jobThreads: db.prepare("select * from threads where origin like 'job:%' and archived = 0 and updated < ? order by updated desc limit ?"),
     items: db.prepare('select * from items where thread_id = ? order by id'),
     itemsAfter: db.prepare('select * from items where thread_id = ? and id > ? order by id'),
     item: db.prepare('select * from items where id = ?'),
@@ -94,7 +95,8 @@ export function openStore(dir) {
     activeByPrefix: db.prepare("select id, key from signals where key like ? escape '\\' and dismissed = 0"),
     dismissSignal: db.prepare('update signals set dismissed = 1, updated = ? where id = ?'),
     dismissKey: db.prepare('update signals set dismissed = 2, updated = ? where key = ? and dismissed = 0'), // gone at the source, not done by the owner
-    dismissThreadNeeds: db.prepare("update signals set dismissed = 1, updated = ? where thread_id = ? and level = 'needs' and dismissed = 0"),
+    // Key requests and sign-ins keep waiting until they're done, whatever else is said in the chat.
+    dismissThreadNeeds: db.prepare("update signals set dismissed = 1, updated = ? where thread_id = ? and level = 'needs' and dismissed = 0 and coalesce(key, '') not like 'secret:%' and coalesce(key, '') not like 'signin:%'"),
     pruneSignals: db.prepare('delete from signals where updated < ? and (dismissed > 0 or (expires is not null and expires < ?))'),
     touchSignal: db.prepare('update signals set expires = ? where id = ?'),
   };
@@ -112,9 +114,11 @@ export function openStore(dir) {
     thread: (id) => parseThread(q.thread.get(id)),
     threads: ({ archived = false, limit = 200 } = {}) => q.threads.all(archived ? 1 : 0, limit).map(parseThread),
     threadsByOrigin: (origin, limit = 50) => q.threadsByOrigin.all(origin, limit).map(parseThread),
+    // Job runs before a time, newest first: the Timeline's history, a page at a time.
+    jobThreads: ({ before = Date.now() + 1, limit = 200 } = {}) => q.jobThreads.all(before, Math.min(limit, 1000)).map(parseThread),
     search: (text) => q.search.all(`%${text}%`, `%${text}%`).map(parseThread),
     updateThread(id, fields) {
-      const allowed = ['title', 'session_id', 'status', 'updated', 'last_read', 'archived', 'pinned', 'model', 'mode', 'error', 'usage', 'commands', 'preview', 'agent', 'cwd'];
+      const allowed = ['title', 'session_id', 'status', 'updated', 'last_read', 'archived', 'pinned', 'model', 'mode', 'error', 'usage', 'commands', 'preview', 'agent', 'cwd', 'persona'];
       const keys = Object.keys(fields).filter((k) => allowed.includes(k) && fields[k] !== undefined);
       if (!keys.length) return this.thread(id);
       const vals = keys.map((k) => (k === 'usage' || k === 'commands') && fields[k] != null && typeof fields[k] !== 'string' ? JSON.stringify(fields[k]) : typeof fields[k] === 'boolean' ? (fields[k] ? 1 : 0) : (k === 'preview' || k === 'error' || k === 'title') && typeof fields[k] === 'string' ? redact(fields[k]) : fields[k]);

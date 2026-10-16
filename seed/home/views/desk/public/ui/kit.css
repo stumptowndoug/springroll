@@ -62,6 +62,8 @@ img, svg, video { max-width: 100%; }
 .ui-prose pre code { background: none; padding: 0; font-size: inherit; }
 .ui-prose blockquote { margin-left: 0; padding-left: 14px; border-left: 2px solid var(--line); color: var(--muted); }
 .ui-prose table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); display: block; overflow-x: auto; }
+/* Cells break at spaces, never mid-word (the body's overflow-wrap: anywhere squeezed wide tables to a letter per line); short cells (.ui-nw, set by ui.markdown / ui.fitTables) don't wrap; a wide table scrolls sideways. */
+.ui-prose th, .ui-prose td { overflow-wrap: normal; } .ui-prose .ui-nw { white-space: nowrap; }
 .ui-prose th { text-align: left; font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
 .ui-prose th, .ui-prose td { padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
 .ui-prose hr { margin: 1.6em 0; }
@@ -205,6 +207,11 @@ input[type="checkbox"]:not(.ui-switch), input[type="radio"] { accent-color: var(
 .ui-chip:hover { color: var(--fg); }
 .ui-chip[aria-pressed="true"], .ui-chip.on { border-color: var(--accent); color: var(--accent); }
 .ui-chip .x { opacity: .6; }
+/* A tag: where something came from ("Mail triage", "GitHub"). Quiet, never colored; clickable when it filters. */
+.ui-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--radius-pill); background: var(--state-hover);
+  font-size: var(--text-2xs); font-weight: 550; color: var(--muted); white-space: nowrap; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.ui-tag[data-src] { cursor: pointer; }
+.ui-tag[data-src]:hover { color: var(--fg); }
 /* A context chip: what something is about ("View · Mail") */
 .ui-context { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px 0 10px; border-radius: var(--radius-control);
   background: var(--surface); font-size: var(--text-xs); max-width: 100%; }
@@ -248,6 +255,17 @@ a.ui-row:hover, button.ui-row:hover, .ui-row.hover:hover { background: var(--sur
 .ui-feed-row > .sub { grid-column: 3; font-size: var(--text-sm); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 64ch; }
 .ui-feed-row > .sub.danger { color: var(--danger); }
 .ui-feed-row > .chev { grid-row: 1 / 3; grid-column: 4; color: var(--faint); }
+/* Where a row came from (a job, Mail, GitHub): a quiet tag before the chevron; an icon can stand in for the dot. */
+.ui-feed-row:has(> .ui-tag, > .acts) { grid-template-columns: 4.6rem 7px minmax(0, 1fr) auto auto; }
+.ui-feed-row > .ui-tag { grid-row: 1 / 3; grid-column: 4; }
+.ui-feed-row:has(> .ui-tag, > .acts) > .chev, .ui-feed-row > .acts { grid-row: 1 / 3; grid-column: 5; }
+.ui-feed-row > .lead { grid-row: 1 / 3; width: 7px; display: flex; justify-content: center; overflow: visible; color: var(--muted); }
+.ui-feed-row > .lead .ui-icon { flex: none; width: 15px; min-width: 15px; max-width: none; height: 15px; }
+.ui-feed-row > .acts { display: flex; gap: 2px; margin: -4px -10px -4px 0; }
+.ui-feed-row > .acts .ui-icon-btn { width: 30px; height: 30px; color: var(--faint); }
+.ui-feed-row > .acts .ui-icon-btn:hover { color: var(--fg); }
+@media (hover: hover) { .ui-feed-row > .acts { opacity: 0; transition: opacity var(--fast); } .ui-feed-row:hover > .acts, .ui-feed-row:focus-within > .acts { opacity: 1; } }
+button.ui-feed-row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
 
 /* ---------- Cards: a surface fill, no border; only clickable cards react ---------- */
 .ui-card, .card { background: var(--surface); border-radius: var(--radius); border: 0; }
@@ -467,6 +485,8 @@ dialog.ui-sheet[open] { animation: ui-slide var(--med); display: flex; flex-dire
 .ui-report pre code { background: none; padding: 0; }
 .ui-report blockquote { margin-left: 0; padding-left: 14px; border-left: 2px solid var(--line); color: var(--muted); }
 .ui-report table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); display: block; overflow-x: auto; }
+/* Cells break at spaces, never mid-word (the body's overflow-wrap: anywhere squeezed wide tables to a letter per line); short cells (.ui-nw, set by ui.markdown / ui.fitTables) don't wrap; a wide table scrolls sideways. */
+.ui-report th, .ui-report td { overflow-wrap: normal; } .ui-report .ui-nw { white-space: nowrap; }
 .ui-report th { text-align: left; font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
 .ui-report th, .ui-report td { padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
 .ui-report .rollmark-block[data-rollmark-block="chart"], .ui-report .rollmark-block[data-rollmark-block="mermaid"] { margin: 24px 0; max-width: 100%; }
@@ -475,7 +495,7 @@ dialog.ui-sheet[open] { animation: ui-slide var(--med); display: flex; flex-dire
 .ui-report .rollmark-fallback { margin: 24px 0; padding: 14px 16px; border-radius: var(--radius); background: var(--danger-ground); }
 .ui-report .rollmark-fallback-reason { color: var(--muted); font-size: .85em; }
 
-/* ---------- Tasks: things that need the owner (Home's Needs you, Mail's Today) ----------
+/* ---------- Tasks: things that need the owner (the Timeline's Needs you, Mail's Today) ----------
    <div class="ui-tasks"><div class="ui-task" data-task="id">
      <span class="lead">icon or .ui-avatar</span>
      <div class="body"><div class="head"><b>Title</b><span class="when">2h</span></div><span class="sub">One line</span><code class="code">git push</code></div>
@@ -510,22 +530,52 @@ dialog.ui-sheet[open] { animation: ui-slide var(--med); display: flex; flex-dire
 
 /* ---------- Tiles: the one card for a grid of things (apps, jobs, services) ----------
    <a class="ui-tile" href>                       or <div class="ui-tile hover" data-open>
-     <span class="lead">icon</span>              optional; or a .top row: <span class="top"><span class="title"></span>…trail/badge</span>
-     <span class="title">Name</span>             one line
+     <span class="top">                          the icon beside the title, then any trail/badge
+       <span class="lead">icon</span><span class="title">Name</span>   one line
+       <span class="trail">status · badge · one small button</span></span>   optional: keeps a tile footer-free
      <span class="desc">What it is</span>        always two lines tall, clamped
      <span class="foot">meta · · · actions</span> pinned to the bottom
    Every tile in a grid is the same height and its parts line up across tiles. */
 .ui-tiles { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fill, minmax(min(var(--min, 240px), 100%), 1fr)); }
 .ui-tiles.wide { --min: 320px; }
-.ui-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 18px 20px 14px; background: var(--surface); border-radius: var(--radius);
+/* Board: kanban columns side by side (ui.board() adds drag and drop). On phones the columns
+   scroll sideways, one at a time. */
+.ui-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: var(--gap); align-items: start; overflow-x: auto; padding-bottom: 4px; }
+.ui-board-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 96px; padding: 6px 6px 8px; background: var(--surface-recessed); border-radius: var(--radius); transition: background var(--fast); }
+.ui-board-col > header { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 2px 6px 0; }
+.ui-board-col > header .count { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--faint); }
+.ui-board-col > header .ui-spacer { flex: 1; }
+.ui-board-col > .ui-link-action { align-self: flex-start; margin: 2px 6px 0; font-size: var(--text-sm); }
+.ui-board-col > .empty { padding: 4px 6px; font-size: var(--text-sm); color: var(--faint); }
+.ui-board-col.drop { background: var(--state-hover); }
+.ui-board-card { position: relative; display: grid; gap: 5px; min-width: 0; padding: 10px 12px; background: var(--surface); border-radius: var(--radius-sm); cursor: pointer; transition: background var(--fast); }
+.ui-board-card:hover { background: var(--surface-hover); }
+.ui-board-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ui-board-card > .title { font-size: var(--text-sm); font-weight: 550; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.ui-board-card > .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: var(--text-xs); color: var(--muted); }
+.ui-board-card > .meta .ui-mono { color: var(--faint); }
+.ui-board-card > .acts { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; padding-left: 12px; border-radius: var(--radius-sm); background: inherit; opacity: 0; transition: opacity var(--fast); }
+.ui-board-card:hover > .acts, .ui-board-card:focus-within > .acts, .ui-board-card > .acts:has([aria-expanded="true"]) { opacity: 1; }
+@media (hover: none) { .ui-board-card > .acts { display: none; } } /* touch: tapping opens the card instead */
+.ui-board-card.done > .title { color: var(--muted); font-weight: 400; }
+.ui-board-card.dragging { opacity: .4; }
+@media (max-width: 720px) { .ui-board { grid-auto-columns: 86%; scroll-snap-type: x mandatory; } .ui-board-col { scroll-snap-align: start; } }
+
+.ui-tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 16px 18px 12px; background: var(--surface); border-radius: var(--radius);
   color: var(--fg); text-align: left; text-decoration: none; border: 0; font: inherit; }
 a.ui-tile, button.ui-tile, .ui-tile.hover { cursor: pointer; transition: background var(--fast); }
 a.ui-tile:hover, button.ui-tile:hover, .ui-tile.hover:hover { background: var(--surface-hover); text-decoration: none; }
 .ui-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ui-tile > .lead { display: flex; align-items: center; gap: 8px; height: 22px; margin-bottom: 10px; color: var(--muted); }
 .ui-tile:hover > .lead { color: var(--fg); }
-.ui-tile > .top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ui-tile > .top { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 22px; }
+.ui-tile > .top > .lead { display: flex; flex: none; color: var(--muted); }
+.ui-tile:hover > .top > .lead { color: var(--fg); }
 .ui-tile > .top > .title { flex: 1; }
+.ui-tile > .top > .trail { display: flex; align-items: center; gap: 6px; flex: none; margin: -3px 0; font-size: var(--text-xs); color: var(--muted); }
+.ui-tile > .top > .trail .ui-status { font-size: var(--text-xs); }
+.ui-tile > .top > .trail > .ui-icon-btn { width: 28px; height: 28px; }
+.ui-tile > .top > .trail > .ui-icon-btn:last-child { margin-right: -6px; }
 .ui-tile .title { min-width: 0; font-weight: 650; font-size: var(--text-base); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-tile .title .ui-dot { margin-left: 6px; vertical-align: middle; }
 .ui-tile > .desc { --lines: 2; font-size: var(--text-sm); line-height: 1.45; color: var(--muted); min-height: calc(var(--lines) * 1.45em); overflow-wrap: anywhere;
@@ -534,10 +584,12 @@ a.ui-tile:hover, button.ui-tile:hover, .ui-tile.hover:hover { background: var(--
 .ui-tile > .line { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 8px; font-size: var(--text-sm); color: var(--fg); }
 .ui-tile > .line > .ui-icon { color: var(--muted); }
 .ui-tile > .line > .ui-mono { margin-left: auto; font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
-.ui-tile > .foot { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-top: auto; padding-top: 12px; font-size: var(--text-xs); color: var(--muted); }
+.ui-tile > .foot { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-top: auto; padding-top: 6px; font-size: var(--text-xs); color: var(--muted); }
 .ui-tile > .foot > .acts { margin-left: auto; margin-right: -8px; display: flex; align-items: center; gap: 2px; }
 .ui-tile > .foot label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .ui-tile.off .title, .ui-tile.off > .line { color: var(--muted); }
+/* One column (a phone): nothing to line up across, so a short description doesn't hold a blank line. */
+@media (max-width: 560px) { .ui-tile > .desc, .ui-tile > .desc.mono { min-height: 0; } }
 
 /* ---------- Selects: the kit's own list (kit.js opens ui.combobox on mouse and keyboard; phones keep the OS picker) ---------- */
 select[aria-expanded="true"] { border-color: color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); background-color: var(--bg); }

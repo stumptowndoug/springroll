@@ -1,0 +1,14 @@
+[Unit]
+Description=To-dos app (TODO.md boards)
+
+[Service]
+ExecStart=/usr/bin/python3 %h/home/views/todos/server.py
+Restart=always
+RestartSec=2
+
+MemoryHigh=100M
+MemoryMax=200M
+OOMScoreAdjust=300
+
+[Install]
+WantedBy=default.target

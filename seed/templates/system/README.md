@@ -16,7 +16,7 @@ Memory, CPU and disk, what's using them (by agent session, View, and other proce
   `memoryWarnPercent` for `memoryForSeconds`, or disk above
   `diskWarnPercent`, sends a notification and, if `agentEnabled`, runs the
   `agent` harness headless (its `headlessArgv` in `agents/agents.json`) with
-  the top users and the "Machine health" policy in `AGENTS.md`. Reports land
+  the top users and the "Machine health" policy in `skills/machine/SKILL.md`. Reports land
   in `~/data/system/incidents/`. One run per `cooldownMinutes`.
 - `STATUS` makes Springroll show a memory indicator in its top bar.
 

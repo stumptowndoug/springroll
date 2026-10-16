@@ -1,64 +1,123 @@
-// Connections: what agents can reach. Services (sign-ins and service keys from the catalog) and
-// Keys (every NAME=value secret, including ones agents asked for). Values stay on this machine.
-import { api, on, state, agentName, defaultAgent } from './api.js';
+// Connections: what agents can reach. Coding agents, and services (sign-ins and service keys from the
+// catalog). Every NAME=value key, including ones agents asked for, is in Keys (keys.js).
+import { api, on, state, agentName, defaultAgent, loadAgents } from './api.js';
 import { openSignin, terminalSetup } from './signin.js';
 
-let el, ctx, list = [], tab = 'services', keys = { keys: [], managed: [], requests: [] }, revealed = {}, editing = null, adding = false;
+let el, ctx, list = [];
 
 export function init(root, c) {
   el = root; ctx = c;
   el.addEventListener('click', onClick);
-  el.addEventListener('submit', onKeySubmit);
-  on('signals', () => { if (el.closest('.shown') && tab === 'keys') loadKeys(); });
-  on('agents', () => { if (el.closest('.shown') && tab === 'services' && !document.querySelector('dialog[open]')) render(); });
-  on('desk:connections', () => { if (el.closest('.shown') && !document.querySelector('dialog[open]') && !el.contains(document.activeElement?.closest('form'))) load(); });
+  on('agents', () => { if (el.closest('.shown') && !document.querySelector('dialog[open]')) render(); });
+  on('desk:connections', () => { if (el.closest('.shown') && !document.querySelector('dialog[open]') && !el.contains(document.activeElement?.closest('form'))) { loadAgents(); load(); } });
 }
 export async function show(_el, r) {
-  tab = r.q?.tab === 'keys' ? 'keys' : 'services';
-  revealed = {}; editing = null; adding = !!r.q?.add;
   await load();
   // Back from "Sign in with Google" (google.mjs's callback): say how it went.
   if (r.q?.signed) ui.toast(r.q.warn ? `Signed in as ${r.q.signed}, but Gmail didn't open: ${r.q.warn}` : `Added ${r.q.signed}`, { icon: r.q.warn ? 'circle-alert' : 'check' });
   if (r.q?.error) ui.toast(r.q.error, { icon: 'circle-alert' });
-  if (r.name) { const c = list.find((x) => x.id === r.name); if (c) openSheet(c); }
+  if (r.name) { const c = list.find((x) => x.id === r.name), a = state.agents.find((x) => x.id === r.name); if (c) openSheet(c); else if (a) agentSheet(a); }
 }
 export function title() { return 'Connections'; }
 
 async function load() {
   try { list = await api.get('api/connections'); } catch (e) { list = []; }
-  if (tab === 'keys') await loadKeys(false);
   render();
-}
-async function loadKeys(paint = true) {
-  keys = await api.get('api/secrets').catch(() => keys);
-  if (paint) render();
 }
 
 function card(c) {
-  const status = c.connected
-    ? `<span class="ui-status"><span class="ui-dot ${c.lastTest && !c.lastTest.ok ? 'danger' : 'ok'}"></span>${c.lastTest && !c.lastTest.ok ? 'Failing' : c.accountCount ? `${c.accountCount} account${c.accountCount === 1 ? '' : 's'}` : 'Connected'}</span>`
-    : `<span class="ui-faint">${ui.esc(c.category || 'Not connected')}</span>`;
+  // The status trails the title, so a service is as compact as an app: a dot when it's simply connected, a word
+  // when there's more to say (accounts, failing), nothing when it isn't connected yet.
+  const failing = c.lastTest && !c.lastTest.ok;
+  const status = !c.connected ? ''
+    : failing ? '<span class="ui-status"><span class="ui-dot danger"></span>Failing</span>'
+    : c.accountCount ? `<span class="ui-status"><span class="ui-dot ok"></span>${c.accountCount} account${c.accountCount === 1 ? '' : 's'}</span>`
+    : '<span class="ui-dot ok" title="Connected" aria-label="Connected"></span>';
   return `<button class="ui-tile" data-id="${c.id}">
-    <span class="lead">${ui.icon(c.icon || 'plug', 'lg')}</span>
-    <span class="title">${ui.esc(c.name)}</span>
-    <span class="desc">${ui.esc(c.description)}</span>
-    <span class="foot">${status}${c.mcpEnabled ? '<span class="acts"><span class="ui-badge">MCP</span></span>' : ''}</span></button>`;
+    <span class="top"><span class="lead">${ui.icon(c.icon || 'plug', 'lg')}</span><span class="title">${ui.esc(c.name)}</span>
+      <span class="trail">${c.mcpEnabled ? '<span class="ui-badge">MCP</span>' : ''}${status}</span></span>
+    <span class="desc">${ui.esc(c.description)}</span></button>`;
 }
 
-// A coding agent: the plan it signs in with, and whether it's ready (chat, or terminal and jobs only).
+// A coding agent: the plan it signs in with, what it can do here, and the one thing it needs next. None are
+// required: Install does the CLI and chat and signs in, in one go; Add chat adds a missing chat part (sizes are in
+// agents.json and the API, not shown). Click it for who it's signed in as, Sign in again and Remove chat.
+const mb = (n) => (n == null ? '' : n >= 1000 ? `${(n / 1024).toFixed(1)} GB` : `${n} MB`);
+const chatInstalls = new Map(); // agent id -> { state, progress, message } while its chat part installs
 function agentTile(a) {
-  const chatOk = !a.acp || a.acpInstalled;
-  const [dot, status, action] = !a.installed ? ['', 'Not installed', 'Install']
-    : !a.signedIn ? ['warn', 'Needs sign-in', 'Sign in']
-    : !chatOk ? ['warn', 'Chat adapter missing', 'Finish setup']
-    : ['ok', 'Signed in', ''];
-  const uses = a.acp ? 'Chat, terminal and jobs.' : 'Terminal and jobs.';
-  return `<div class="ui-tile agent-tile">
-    <span class="lead">${ui.agentMark(a.id, a.name, 'lg')}</span>
-    <span class="title">${ui.esc(a.name)}</span>
-    <span class="desc">${ui.esc(a.plan ? `${a.plan}. ${uses}` : uses)}</span>
-    <span class="foot"><span class="ui-status"><span class="ui-dot ${dot}"></span>${status}</span>
-      <button class="ui-btn sm ${action ? 'primary' : 'quiet'}" data-agent="${a.id}" data-act="${action === 'Finish setup' ? 'setup' : 'signin'}">${action || 'Sign in again'}</button></span></div>`;
+  const inst = chatInstalls.get(a.id);
+  const chatOk = a.acp && a.acpInstalled;
+  const btn = (act, label, why) => `<button class="ui-btn sm primary" data-agent="${a.id}" data-act="${act}" title="${why}">${label}</button>`;
+  // In the title's trail: a dot when it's ready, otherwise the one thing it needs next.
+  const next = !a.installed ? btn(a.signin ? 'signin' : 'setup', 'Install', 'Not installed')
+    : !a.signedIn ? btn(a.signin ? 'signin' : 'setup', 'Sign in', 'Needs sign-in')
+    : inst?.state === 'installing' ? '<span class="ui-shimmer">Adding chat…</span>'
+    : a.acp && !chatOk ? btn('add-chat', inst?.state === 'failed' ? 'Retry chat' : 'Add chat', inst?.state === 'failed' ? "Chat didn't install" : 'Terminal and jobs only')
+    : chatOk && !a.chatSignedIn ? btn('chat-signin', 'Sign in', 'Chat needs sign-in')
+    : '<span class="ui-dot ok" title="Ready" aria-label="Ready"></span>';
+  const uses = chatOk ? 'Chat, terminal and jobs.' : 'Terminal and jobs.';
+  return `<div class="ui-tile hover agent-tile" data-agent-sheet="${a.id}">
+    <span class="top"><span class="lead">${ui.agentMark(a.id, a.name, 'lg')}</span><span class="title">${ui.esc(a.name)}</span><span class="trail">${next}</span></span>
+    <span class="desc">${ui.esc(a.plan ? `${a.plan}. ${uses}` : uses)}</span></div>`;
+}
+
+async function addChat(a) {
+  if (a.chatSignin) return openSignin(a.id, { part: 'chat', onDone: render }); // installs the runtime, then signs it in
+  chatInstalls.set(a.id, { state: 'installing' }); render();
+  try {
+    let st = await api.post(`api/agents/${a.id}/chat`);
+    while (st.state === 'installing') {
+      chatInstalls.set(a.id, st); render();
+      await new Promise((r) => setTimeout(r, 1500));
+      st = await api.get(`api/agents/${a.id}/chat`);
+    }
+    if (st.state === 'failed') throw new Error(st.message || 'The install failed');
+    chatInstalls.delete(a.id);
+    ui.toast(`${a.name} can chat now`, { icon: 'check' });
+  } catch (err) { chatInstalls.set(a.id, { state: 'failed', message: err.message }); ui.toast(err.message, { icon: 'circle-alert' }); }
+  await loadAgents(); render();
+}
+
+// A coding agent's sheet: who it's signed in as (GET api/agents/<id>/account, from agents.json "account"), and how.
+const PLANS = { max: 'Max', pro: 'Pro', prolite: 'Pro Lite', plus: 'Plus', team: 'Team', business: 'Business', enterprise: 'Enterprise', free: 'Free' };
+function agentSheet(a) {
+  const d = document.createElement('dialog');
+  d.className = 'ui-sheet conn-sheet';
+  const removable = a.acp && a.acpInstalled && a.acpRemove;
+  const paint = (acct) => {
+    const who = !a.installed ? `<div class="ui-card pad signin-start"><div><b>Not installed</b><p class="ui-muted">Install adds it and signs it in, in one go.</p></div>
+        <button class="ui-btn primary" type="button" data-x="signin">Install</button></div>`
+      : !a.signedIn ? `<div class="ui-card pad signin-start"><div><b>Not signed in</b><p class="ui-muted">${ui.esc(a.plan || 'Sign in to use it')}.</p></div>
+        <button class="ui-btn primary" type="button" data-x="signin">Sign in</button></div>`
+      : `<div class="ui-card pad signin-done">${ui.icon('circle-check')}<div>${acct === undefined ? '<span class="ui-shimmer">Checking the sign-in</span>'
+        : acct.account ? `<b>Signed in as ${ui.esc(acct.account)}</b>
+          <span class="ui-muted">${[acct.plan && `${PLANS[acct.plan] || acct.plan} plan`, acct.method].filter(Boolean).map(ui.esc).join(' · ')}</span>`
+        : `<b>${ui.esc(acct.method || 'Signed in')}</b><span class="ui-muted">${ui.esc(a.plan || '')}</span>`}</div></div>`;
+    const chat = a.chatSignin && a.acpInstalled ? `<div class="ui-hstack" style="gap:8px;font-size:var(--text-sm)"><span class="ui-dot ${a.chatSignedIn ? 'ok' : 'warn'}"></span>
+        <span style="flex:1">${a.chatSignedIn ? 'Chat is signed in too' : 'Chat needs its own sign-in'}</span><button class="ui-btn quiet" type="button" data-x="chat-signin">${a.chatSignedIn ? 'Sign in again' : 'Sign in'}</button></div>` : '';
+    d.innerHTML = `
+      <div class="ui-toolbar"><span class="conn-icon sm">${ui.agentMark(a.id, a.name)}</span><span class="ui-title">${ui.esc(a.name)}</span><div class="ui-spacer"></div><button class="ui-icon-btn plain" data-x="close" aria-label="Close">${ui.icon('x')}</button></div>
+      <div class="body ui-stack" style="gap:18px">${who}${chat}
+        ${acct?.account ? '<p class="ui-note">To use a different account or subscription, sign in again with it. It replaces this one.</p>' : ''}</div>
+      ${a.installed ? `<footer>${removable ? `<button class="ui-btn ghost" data-x="remove-chat" style="margin-right:auto;color:var(--danger)">Remove chat</button>` : ''}
+        ${a.signedIn ? '<button class="ui-btn" data-x="signin">Sign in again</button>' : ''}</footer>` : ''}`;
+  };
+  d.addEventListener('click', async (e) => {
+    const x = e.target.closest('[data-x]')?.dataset.x;
+    if (!x) return;
+    d.close();
+    if (x === 'signin') a.signin ? openSignin(a.id, { onDone: render }) : terminalSetup(a);
+    if (x === 'chat-signin') openSignin(a.id, { part: 'chat', onDone: render });
+    if (x === 'remove-chat' && await ui.confirm(`Remove ${a.name}'s chat?`, { body: `Frees about ${mb(a.disk?.chat || a.size?.chat)}. ${a.name} still works in the terminal and jobs, and chat is one click to add back.`, ok: 'Remove', danger: true })) {
+      try { await api.del(`api/agents/${a.id}/chat`); ui.toast(`Removed ${a.name}'s chat`); } catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
+      await loadAgents(); render();
+    }
+  });
+  d.addEventListener('close', () => { d.remove(); if (location.hash.startsWith('#/connections/')) history.replaceState(null, '', '#/connections'); });
+  document.body.appendChild(d);
+  paint();
+  d.showModal();
+  if (a.signedIn) api.get(`api/agents/${a.id}/account`).then(paint, () => paint({}));
 }
 
 const NEW_CONN = `#/new?text=${encodeURIComponent('Connect Springroll to ')}`;
@@ -66,10 +125,8 @@ const NEW_CONN = `#/new?text=${encodeURIComponent('Connect Springroll to ')}`;
 function render() {
   const connected = list.filter((c) => c.connected), available = list.filter((c) => !c.connected);
   const head = `<header class="ui-heading"><div><span class="ui-eyebrow">What your agents can reach</span><h1 class="ui-display">Connections.</h1></div>
-      <div class="actions">${tab === 'keys' ? `<button class="ui-btn primary" data-k="add">${ui.icon('plus', 'sm')}Add a key</button>` : `<a class="ui-btn primary" href="${NEW_CONN}">${ui.icon('plus', 'sm')}New connection</a>`}</div></header>
-    <p class="ui-lede">Everything this machine signs in to: your coding agents' plans, the services agents can use, and the keys they use them with. All of it stays on this machine, never in git.</p>
-    <div class="ui-pagebar"><div class="ui-seg" role="tablist"><a href="#/connections" class="${tab === 'services' ? 'on' : ''}" role="tab">Services</a><a href="#/connections?tab=keys" class="${tab === 'keys' ? 'on' : ''}" role="tab">Keys${keys.requests.length ? '<span class="ui-dot warn"></span>' : ''}</a></div></div>`;
-  if (tab === 'keys') { ui.morph(el, `<div class="ui-page connections">${head}${keysView()}</div>`); el.querySelector('[data-focus]')?.focus(); return; }
+      <div class="actions"><a class="ui-btn primary" href="${NEW_CONN}">${ui.icon('plus', 'sm')}New connection</a></div></header>
+    <p class="ui-lede">Everything this machine signs in to: your coding agents' plans and the services agents can use. Their keys are in <a href="#/keys">Keys</a>.</p>`;
   const agents = state.agents;
   ui.morph(el, `<div class="ui-page connections">${head}
     ${agents.length ? `<section class="ui-section"><header><span class="ui-label">Coding agents</span><span class="ui-mono ui-muted count">${agents.length}</span><span class="ui-spacer"></span>
@@ -85,95 +142,18 @@ function onClick(e) {
   const ag = e.target.closest('[data-agent]');
   if (ag) {
     const a = state.agents.find((x) => x.id === ag.dataset.agent);
-    if (a) (ag.dataset.act === 'setup' ? terminalSetup(a) : openSignin(a.id, { onDone: render }));
+    const act = ag.dataset.act;
+    if (!a) return;
+    if (act === 'setup') terminalSetup(a);
+    else if (act === 'add-chat') addChat(a);
+    else if (act === 'chat-signin') openSignin(a.id, { part: 'chat', onDone: render });
+    else openSignin(a.id, { onDone: render });
     return;
   }
-  const k = e.target.closest('[data-k]');
-  if (k) return onKeyClick(k);
+  const sh = e.target.closest('[data-agent-sheet]');
+  if (sh) { const a = state.agents.find((x) => x.id === sh.dataset.agentSheet); if (a) agentSheet(a); return; }
   const b = e.target.closest('[data-id]');
   if (b) { const c = list.find((x) => x.id === b.dataset.id); if (c) openSheet(c); }
-}
-
-/* ---------- Keys ---------- */
-function keysView() {
-  const { keys: list, managed, requests } = keys;
-  const open = requests.filter((q) => !q.have);
-  const keyForm = (name, focus) => `<form class="key-form" data-key-form="${name || ''}">
-      ${name ? '' : `<label><span>Name</span><input class="ui-input ui-mono" name="name" placeholder="OPENAI_API_KEY" autocomplete="off" spellcheck="false" ${focus ? 'data-focus' : ''}></label>`}
-      <label><span>Value</span><input class="ui-input ui-mono" name="value" type="password" placeholder="Paste the key" autocomplete="off" ${name && focus ? 'data-focus' : ''}></label>
-      ${name ? '' : '<label><span>Note</span><input class="ui-input" name="note" placeholder="What it is for (optional)" autocomplete="off"></label>'}
-      <div class="key-form-actions"><button class="ui-btn sm primary">Save</button><button class="ui-btn quiet muted" type="button" data-k="cancel">Cancel</button></div></form>`;
-  return `    ${open.length ? `<section class="ui-section"><header><span class="ui-label">Asked for by agents</span></header><div class="ui-tasks">${open.map((q) => `
-      <div class="ui-task open"><span class="lead">${ui.icon('key-round')}</span>
-        <div class="body"><div class="head"><b class="ui-mono">${ui.esc(q.name)}</b><span class="when">${ui.esc(ui.ago(q.at))}</span></div>
-          <span class="sub">${ui.esc(q.why || '')}${q.from ? ` · ${ui.esc(q.from)}` : ''}</span></div>
-        <div class="acts">${q.thread ? `<a class="ui-btn sm" href="#/t/${q.thread}">${ui.icon('message-square', 'sm')}Chat</a>` : ''}</div>
-        <div class="drawer"><form data-key-form="${q.name}"><label class="ui-sr-only" for="kr-${q.name}">Value for ${q.name}</label>
-          <input class="ui-input ui-mono" id="kr-${q.name}" name="value" type="password" placeholder="Paste ${ui.esc(q.name)}" autocomplete="off"><button class="ui-btn sm primary">Save</button></form></div>
-      </div>`).join('')}</div></section>` : ''}
-    ${adding ? `<section class="ui-section"><div class="ui-card pad">${keyForm(null, true)}</div></section>` : ''}
-    <section class="ui-section"><header><span class="ui-label">Keys</span><span class="ui-mono ui-muted count">${list.length}</span></header>
-      ${list.length ? `<div class="ui-group">${list.map((k) => `
-        <div class="ui-row key-row">
-          <div class="body"><span class="title ui-mono">${ui.esc(k.name)}</span>
-            <span class="sub">${[k.connectionName ? `${ui.esc(k.connectionName)} connection` : ui.esc(k.note), k.usedBy.length ? `used by ${ui.esc(k.usedBy.join(', '))}` : ''].filter(Boolean).join(' · ') || '<span class="ui-faint">No note</span>'}</span>
-            ${revealed[k.name] != null ? `<span class="key-revealed ui-mono">${ui.esc(revealed[k.name])}</span>` : ''}
-            ${editing === k.name ? keyForm(k.name, true) : ''}</div>
-          <span class="key-value ui-mono">${ui.esc(k.hint)}</span>
-          <span class="meta">${k.updated ? ui.esc(ui.ago(k.updated)) : ''}</span>
-          <div class="key-actions">
-            <button class="ui-btn quiet muted" data-k="reveal" data-name="${k.name}">${revealed[k.name] != null ? 'Hide' : 'Reveal'}</button>
-            <button class="ui-btn quiet muted" data-k="edit" data-name="${k.name}">Replace</button>
-            <button class="ui-icon-btn plain" data-k="more" data-name="${k.name}" title="More" aria-label="More for ${ui.esc(k.name)}">${ui.icon('ellipsis', 'sm')}</button>
-          </div></div>`).join('')}</div>`
-      : `<div class="ui-empty"><div class="orbit"></div><h2>No keys yet.</h2><p>Add one, or connect a service. Agents can also ask you for one.</p></div>`}
-      <p class="ui-note">Every key is an environment variable (<span class="ui-mono">$NAME</span>) in new agent sessions and jobs, stored only on this machine
-        and masked in chat timelines. Agents ask for one with <span class="ui-mono">secret request</span> instead of having you paste it into a chat.</p></section>
-    ${managed.length ? `<section class="ui-section"><header><span class="ui-label">Sign-ins Springroll keeps</span></header><div class="ui-group">${managed.map((m) => `
-      <div class="ui-row"><span class="lead">${ui.icon('lock', 'sm')}</span><div class="body"><span class="title">${ui.esc(m.name)}</span><span class="sub">${ui.esc(m.note)}</span></div>
-        <span class="meta">${ui.esc(ui.ago(m.updated))}</span></div>`).join('')}</div></section>` : ''}`;
-}
-
-async function onKeyClick(b) {
-  const a = b.dataset.k, name = b.dataset.name;
-  try {
-    if (a === 'add') { adding = true; editing = null; return render(); }
-    if (a === 'cancel') { adding = false; editing = null; return render(); }
-    if (a === 'edit') { editing = editing === name ? null : name; adding = false; return render(); }
-    if (a === 'reveal') {
-      if (revealed[name] != null) delete revealed[name];
-      else revealed[name] = (await api.post(`api/secrets/${name}/reveal`)).value;
-      return render();
-    }
-    if (a === 'more') {
-      const k = keys.keys.find((x) => x.name === name);
-      const m = document.createElement('div');
-      m.className = 'ui-menu';
-      m.innerHTML = `<button data-x="copy">${ui.icon('copy')}Copy name</button>${k?.connection ? '' : `<hr><button class="danger" data-x="delete">${ui.icon('trash-2')}Delete key</button>`}`;
-      m.onclick = (ev) => { const x = ev.target.closest('[data-x]')?.dataset.x; ui.closePopover(); if (x === 'copy') { navigator.clipboard?.writeText(name); ui.toast('Copied'); } if (x === 'delete') onKeyClick({ dataset: { k: 'delete', name } }); };
-      ui.popover(b, m, { temp: true, align: 'end' });
-      return;
-    }
-    if (a === 'delete' && await ui.confirm(`Delete ${name}?`, { body: "Apps and jobs that use it stop working until it's added again.", ok: 'Delete', danger: true })) {
-      await api.del(`api/secrets/${name}`); ui.toast(`Deleted ${name}`); await loadKeys();
-    }
-  } catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
-}
-
-async function onKeySubmit(e) {
-  const f = e.target.closest('[data-key-form]');
-  if (!f) return;
-  e.preventDefault();
-  const name = f.dataset.keyForm || f.elements.name.value.trim().toUpperCase();
-  const value = f.elements.value.value;
-  if (!value) return f.elements.value.focus();
-  f.querySelectorAll('button,input').forEach((x) => (x.disabled = true));
-  try {
-    await api.post('api/secrets', { name, value, note: f.elements.note?.value });
-    ui.toast(`Saved ${name}`, { icon: 'check' });
-    adding = false; editing = null; delete revealed[name];
-    await loadKeys();
-  } catch (err) { f.querySelectorAll('button,input').forEach((x) => (x.disabled = false)); ui.toast(err.message, { icon: 'circle-alert' }); }
 }
 
 function openSheet(c) {

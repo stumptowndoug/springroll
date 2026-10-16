@@ -1,24 +1,238 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>To-dos</title>
 <link rel="stylesheet" href="/ui/theme.css">
 <script src="/ui/desk.js"></script>
-</head>
+<style>
+[hidden] { display: none !important; }
+/* Layout only; every look comes from the kit. */
+.ui-pagebar .where { font-size: var(--text-sm); color: var(--faint); }
+#sheet .body { display: grid; gap: var(--gap); align-content: start; }
+#sheet h2 { margin: 0; }
+#sheet .ui-facts select { max-width: 100%; }
+#sheet footer .ui-spacer { flex: 1; }
+</style></head>
 <body>
-<main class="ui-page narrow">
-  <header class="ui-heading"><div><span class="ui-eyebrow">Placeholder</span><h1 class="ui-display">To-dos.</h1></div></header>
-  <div class="ui-empty">
-    <div class="orbit"></div>
-    <h2>Not built yet.</h2>
-    <p>Things to do: yours, and the ones agents hand you. Ask the agent to build it the way you want; it replaces this page.</p>
-    <button class="ui-btn primary" id="build">Build it with the agent</button>
-  </div>
-</main>
+<main class="ui-page" id="page"><div class="ui-loading">Loading to-dos</div></main>
+<dialog class="ui-sheet" id="sheet"></dialog>
 <script>
-  document.getElementById('build').onclick = () => desk.go('#/new?text=' + encodeURIComponent("Build the To-dos View: a simple list stored in SQLite with due dates and projects, and an API so agents and jobs can add items."));
+const $ = (id) => document.getElementById(id);
+const esc = ui.esc;
+const ALL = '_all';
+const KINDS = [['backlog', 'Backlog'], ['progress', 'In Progress'], ['blocked', 'Blocked'], ['done', 'Done']];
+const LIMIT = { done: 8 }, PAGE = 40;
+let boards = [], full = {}, pick = localStorage.getItem('todos:board') || ALL, more = new Set(), failed = false, sheetKey = null;
+
+async function api(method, url, body) {
+  const r = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+
+// A long card ("GA re-collections (…): what happened…") reads as a title and the rest.
+function split(text) {
+  let depth = 0;
+  for (let i = 0; i < Math.min(text.length, 160); i++) {
+    const c = text[i];
+    if (c === '(' || c === '[') depth++;
+    else if ((c === ')' || c === ']') && depth) depth--;
+    else if (!depth && (c === ':' || c === '.') && text[i + 1] === ' ' && i > 8) return [text.slice(0, i), text.slice(i + 2)];
+  }
+  return [text, ''];
+}
+const plain = (s) => s.replace(/\*\*|__|`/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+const home = (p) => p.replace(/^\/home\/[^/]+/, '~');
+const when = (t) => { const a = ui.ago(t); return /^\d/.test(a) ? `${a} ago` : a; };
+const bare = (t) => t.replace(/^\p{Extended_Pictographic}️?\s*/u, '');
+const boardOf = (id) => boards.find((b) => b.id === id) || { id, name: id };
+const kindOf = (k) => (k === 'other' ? 'backlog' : k);
+
+// Columns to draw: a project's own, in a standard order; for All, one per kind across boards.
+function columns() {
+  const rank = { backlog: 0, other: 0, progress: 1, blocked: 2, done: 3 };
+  if (pick !== ALL) {
+    const b = full[pick]; if (!b) return null;
+    return [...b.columns].sort((x, y) => rank[x.kind] - rank[y.kind]).map((col) => ({
+      key: col.title, title: bare(col.title), kind: col.kind,
+      cards: col.cards.map((c) => ({ ...c, board: b.id, column: col.title, kind: col.kind })) }));
+  }
+  const cols = KINDS.map(([kind, title]) => ({ key: kind, title, kind, cards: [] }));
+  for (const b of boards) for (const col of full[b.id]?.columns || [])
+    cols.find((c) => c.kind === kindOf(col.kind)).cards.push(...col.cards.map((c) => ({ ...c, board: b.id, column: col.title, kind: col.kind })));
+  return cols.filter((c) => c.kind !== 'blocked' || c.cards.length);
+}
+
+function card(c) {
+  const [t] = split(c.text), d = c.children.filter((k) => k.done).length;
+  const meta = [pick === ALL ? `<span class="ui-tag">${esc(boardOf(c.board).name)}</span>` : '',
+    c.children.length ? `<span class="ui-mono">${ui.icon('list-checks', 'sm')} ${d}/${c.children.length}</span>` : ''].join('');
+  return `<div class="ui-board-card${c.kind === 'done' ? ' done' : ''}" draggable="true" tabindex="0" data-card="${esc(c.board)}:${esc(c.id)}">
+    <div class="title">${esc(plain(t))}</div>${meta ? `<div class="meta">${meta}</div>` : ''}
+    <div class="acts"><button class="ui-icon-btn plain sm" data-ask title="Chat about this" aria-label="Chat about this">${ui.icon('message-square', 'sm')}</button>
+      <button class="ui-icon-btn plain sm" data-more title="More" aria-label="More">${ui.icon('ellipsis', 'sm')}</button></div></div>`;
+}
+
+function column(col) {
+  const limit = more.has(col.key) ? Infinity : LIMIT[col.kind] || PAGE, shown = col.cards.slice(0, limit);
+  return `<section class="ui-board-col" data-col="${esc(col.key)}">
+    <header><span class="ui-label">${esc(col.title)}</span><span class="count">${col.cards.length}</span><span class="ui-spacer"></span>
+      ${col.kind === 'done' && pick !== ALL && col.cards.length ? '<button class="ui-link-action" data-archive title="Move these to the archive file">Archive</button>' : ''}</header>
+    ${shown.map(card).join('') || `<div class="empty">${col.kind === 'progress' ? 'Nothing in progress.' : col.kind === 'done' ? 'Nothing done yet.' : 'Empty.'}</div>`}
+    ${col.cards.length > shown.length ? `<button class="ui-link-action" data-showall="${esc(col.key)}">Show all ${col.cards.length}</button>` : ''}
+    ${col.kind !== 'done' ? `<button class="ui-link-action" data-add="${esc(col.key)}">Add a card</button>` : ''}
+  </section>`;
+}
+
+function render() {
+  const o = boards.reduce((n, b) => n + b.open, 0), p = boards.reduce((n, b) => n + b.progress, 0);
+  const b = pick === ALL ? null : boardOf(pick);
+  let html = `<header class="ui-heading"><div><span class="ui-eyebrow">${o} open · ${p} in progress</span><h1 class="ui-display">To-dos.</h1></div>
+    <div class="actions"><button class="ui-btn primary" data-add data-icon="plus">Add a to-do</button></div></header>
+    <p class="ui-lede">Your list and every project’s TODO.md board: kept current by you and your agents.</p>
+    <div class="ui-pagebar"><button class="ui-combo" id="picker"><span>${esc(b ? b.name : 'All boards')}</span>${ui.icon('chevron-down')}</button>
+      <span class="where">${b ? `${esc(home(b.path || ''))}${b.updated ? ` · changed ${esc(when(b.updated))}` : ''}` : `${boards.length} boards`}</span></div>`;
+  const cols = failed ? null : columns();
+  if (failed) html += `<div class="ui-empty"><div class="orbit"></div><h2>Couldn’t load the boards.</h2><p>The To-dos server didn’t answer.</p><button class="ui-btn" data-retry>Try again</button></div>`;
+  else if (!cols) html += '<div class="ui-loading">Loading board</div>';
+  else html += `<div class="ui-board" id="board">${cols.map(column).join('')}</div>`;
+  ui.morph($('page'), html);
+  if ($('board')) ui.board($('board'), { onMove: (key, col) => move(key, col) });
+}
+
+async function load() {
+  try {
+    boards = await api('GET', 'api/boards');
+    if (pick !== ALL && !boards.some((b) => b.id === pick)) pick = ALL;
+    const ids = pick === ALL ? boards.map((b) => b.id) : [pick];
+    const got = await Promise.all(ids.map((id) => api('GET', `api/boards/${encodeURIComponent(id)}`)));
+    got.forEach((b) => (full[b.id] = b));
+    failed = false;
+  } catch { failed = true; }
+  render();
+  if (sheetKey) openSheet(sheetKey, true);
+  const b = boardOf(pick);
+  desk.context?.(pick === ALL ? { label: 'To-dos: all boards', note: 'The To-dos app showing every TODO.md board as one kanban. `todo boards`, `todo list <board>` (todo --help).' }
+    : { label: `To-dos: ${b.name}`, note: `The ${b.name} board in the To-dos app (${home(b.path || '')}). \`todo list ${pick}\` lists its cards (todo --help).` });
+}
+
+function find(key) {
+  const i = key.indexOf(':'), bid = key.slice(0, i), cid = key.slice(i + 1);
+  for (const col of full[bid]?.columns || []) {
+    const c = col.cards.find((x) => x.id === cid);
+    if (c) return { c: { ...c, board: bid, column: col.title, kind: col.kind }, b: full[bid] };
+  }
+}
+const cardUrl = (c) => `api/boards/${encodeURIComponent(c.board)}/cards/${encodeURIComponent(c.id)}`;
+
+async function act(fn, ok) {
+  try { const r = await fn(); if (ok) ui.toast(ok); return r; } catch (e) { ui.toast(e.message); } finally { await load(); }
+}
+// In All, a column is a kind ("done"); on a project board it's the column's title.
+const move = (key, col) => { const it = find(key); if (it) act(() => api('PATCH', cardUrl(it.c), { column: col })); };
+
+function note(c, b) {
+  const project = b.id === 'personal' ? 'the owner\'s personal list' : `the ${b.name} project (read ~/projects/${b.id}/AGENTS.md first)`;
+  return `A to-do on ${project}: card ${c.id} in "${c.column}" of ${home(b.path)} (lines ${c.lines[0]}-${c.lines[1]}).\n\n`
+    + `- [${c.done ? 'x' : ' '}] ${c.text}\n${c.body ? c.body.slice(0, 3000) + '\n' : ''}\n`
+    + `The board is a markdown kanban (## headings are columns, one "- [ ]" line per card, sub-steps indented; keep that format and edit surgically). `
+    + `Act on it with \`todo start|done|reopen|move|edit|rm ${b.id} ${c.id} …\` (todo --help), or edit the file; when the work is done move the card to Done. `
+    + `Never delete finished cards: \`todo archive ${b.id}\` moves Done to an archive file.`;
+}
+const ask = (c, b) => desk.askAbout({ key: `todo:${b.id}:${c.id}`, label: plain(split(c.text)[0]), note: note(c, b) });
+const viewFile = (c, b) => desk.go(`#/v/files#p=${encodeURIComponent(b.path)}&l=${c.lines[0]}-${c.lines[1]}`);
+
+async function rename(c) {
+  const t = await ui.prompt('Rename this to-do', c.text, { ok: 'Save' });
+  if (t && t.trim() && t !== c.text) await act(() => api('PATCH', cardUrl(c), { text: t }));
+}
+async function remove(c) {
+  if (await ui.confirm('Delete this to-do?', { body: c.kind === 'done' ? 'Finished cards are the record: Archive keeps them instead.' : 'For a card that was never needed. Finished work goes to Done.', ok: 'Delete', danger: true })) {
+    if (sheetKey) closeSheet();
+    await act(() => api('DELETE', cardUrl(c)), 'Deleted');
+  }
+}
+function menu(anchor, c, b) {
+  const options = [...b.columns.filter((x) => x.title !== c.column).map((x) => ({ value: `move:${x.title}`, label: `Move to ${bare(x.title)}`, icon: 'arrow-right' })),
+    { value: 'view', label: 'Open in file', icon: 'file-text' }, { value: 'edit', label: 'Rename', icon: 'pencil' }, { value: 'rm', label: 'Delete', icon: 'trash-2' }];
+  ui.combobox(anchor, { options, search: false, align: 'end', onSelect: (v) => {
+    if (v.startsWith('move:')) return act(() => api('PATCH', cardUrl(c), { column: v.slice(5) }));
+    ({ view: () => viewFile(c, b), edit: () => rename(c), rm: () => remove(c) })[v]?.();
+  } });
+}
+
+// ---- Card sheet: the whole card, its column, and what to do with it ----
+function openSheet(key, refresh) {
+  const it = find(key), s = $('sheet');
+  if (!it) { if (refresh) closeSheet(); return; }
+  const { c, b } = it, [t, rest] = split(c.text), fin = c.kind === 'done';
+  const d = c.children.filter((k) => k.done).length;
+  sheetKey = key;
+  s.innerHTML = `<div class="ui-toolbar"><span class="ui-title">${esc(b.name)}</span><div class="ui-spacer"></div>
+      <button class="ui-icon-btn plain" data-sm="more" data-icon="ellipsis" title="More"></button><button class="ui-icon-btn plain" data-sm="close" data-icon="x" title="Close"></button></div>
+    <div class="body"><h2 class="ui-title">${esc(plain(t))}</h2>
+      <dl class="ui-facts"><div><dt>Column</dt><dd><select id="col">${b.columns.map((x) => `<option value="${esc(x.title)}"${x.title === c.column ? ' selected' : ''}>${esc(bare(x.title))}</option>`).join('')}</select></dd></div>
+        ${c.children.length ? `<div><dt>Steps</dt><dd class="ui-mono">${d} of ${c.children.length} done</dd></div>` : ''}
+        <div><dt>File</dt><dd><button class="ui-link-action" data-sm="view">${esc(home(b.path))}:${c.lines[0]}</button></dd></div></dl>
+      <div class="ui-prose">${ui.markdown([rest, c.body].filter(Boolean).join('\n\n') || '_No notes._')}</div></div>
+    <footer><button class="ui-btn quiet" data-sm="chat" data-icon="message-square">Chat</button><span class="ui-spacer"></span>
+      <button class="ui-btn primary" data-sm="done" data-icon="${fin ? 'rotate-ccw' : 'check'}">${fin ? 'Reopen' : 'Mark done'}</button></footer>`;
+  ui.hydrate?.(s);
+  $('col').onchange = (e) => act(() => api('PATCH', cardUrl(c), { column: e.target.value }), 'Moved');
+  s.onclick = (e) => {
+    if (e.target === s) return closeSheet(); // the backdrop
+    const a = e.target.closest('[data-sm]')?.dataset.sm; if (!a) return;
+    if (a === 'close') return closeSheet();
+    if (a === 'chat') return ask(c, b);
+    if (a === 'view') return viewFile(c, b);
+    if (a === 'more') return ui.combobox(e.target.closest('button'), { search: false, align: 'end', options: [{ value: 'edit', label: 'Rename', icon: 'pencil' }, { value: 'rm', label: 'Delete', icon: 'trash-2' }],
+      onSelect: (v) => (v === 'edit' ? rename(c) : remove(c)) });
+    if (a === 'done') act(() => api('PATCH', cardUrl(c), { done: !fin }), fin ? 'Reopened' : 'Done');
+  };
+  if (!s.open) s.showModal();
+}
+function closeSheet() { sheetKey = null; if ($('sheet').open) $('sheet').close(); }
+$('sheet').addEventListener('close', () => (sheetKey = null));
+
+function picker(anchor) {
+  const options = [{ value: ALL, label: 'All boards', meta: `${boards.reduce((n, b) => n + b.open, 0)} open`, icon: 'layout-grid' },
+    ...boards.map((b) => ({ value: b.id, label: b.name, meta: `${b.open} open`, icon: b.id === 'personal' ? 'user' : 'folder-git-2', group: b.id === 'personal' ? undefined : 'Projects' }))];
+  ui.combobox(anchor, { options, value: pick, onSelect: (v) => { pick = v; localStorage.setItem('todos:board', v); more.clear(); render(); load(); } });
+}
+
+// From a column's "Add a card", into that column; from the heading, into the Backlog. All adds to Personal.
+async function add(col) {
+  const target = pick === ALL ? 'personal' : pick, b = boardOf(target);
+  const label = col ? (pick === ALL ? KINDS.find(([k]) => k === col)?.[1] : bare(col)) : 'Backlog';
+  const text = await ui.prompt('Add a to-do', '', { body: `To ${target === 'personal' ? 'your list' : b.name}: ${label}.`, ok: 'Add' });
+  if (text && text.trim()) act(() => api('POST', `api/boards/${encodeURIComponent(target)}/cards`, { text, column: col || undefined }), 'Added');
+}
+
+document.addEventListener('click', async (e) => {
+  if (e.target.closest('#sheet')) return;
+  const t = e.target.closest('#picker,[data-add],[data-retry],[data-showall],[data-archive],[data-ask],[data-more],[data-card]');
+  if (!t) return;
+  if (t.id === 'picker') return picker(t);
+  if (t.dataset.retry !== undefined) return load();
+  if (t.dataset.add !== undefined) return add(t.dataset.add);
+  if (t.dataset.showall) { more.add(t.dataset.showall); return render(); }
+  if (t.dataset.archive !== undefined) {
+    const b = full[pick], n = b.columns.filter((c) => c.kind === 'done').reduce((s, c) => s + c.cards.length, 0);
+    if (await ui.confirm(`Archive ${n} finished to-do${n === 1 ? '' : 's'}?`, { body: `They move from ${home(b.path)} to ${home(b.archive)}. Nothing is deleted.`, ok: 'Archive' }))
+      act(async () => { const r = await api('POST', `api/boards/${encodeURIComponent(b.id)}/archive`); ui.toast(`Archived ${r.archived}`); });
+    return;
+  }
+  const el = t.closest('[data-card]'); if (!el) return;
+  const it = find(el.dataset.card); if (!it) return;
+  if (t.dataset.ask !== undefined) return ask(it.c, it.b);
+  if (t.dataset.more !== undefined) return menu(t, it.c, it.b);
+  openSheet(el.dataset.card);
+});
+document.addEventListener('keydown', (e) => { const el = e.target.closest?.('[data-card]'); if (el && e.key === 'Enter' && e.target === el) openSheet(el.dataset.card); });
+
+addEventListener('focus', () => { if (!sheetKey) load(); });
+setInterval(() => { if (!document.hidden && !sheetKey && !document.querySelector('.dragging')) load(); }, 30000);
+load();
 </script>
-</body>
-</html>
+</body></html>

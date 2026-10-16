@@ -9,5 +9,7 @@
   "keep": "failures",
   "enabled": true,
   "catchUp": "skip",
-  "notify": true
+  "notify": true,
+  "report": true,
+  "timeline": "failures"
 }

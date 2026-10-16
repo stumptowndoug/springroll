@@ -7,5 +7,7 @@
   "command": "backup --keep 7",
   "enabled": true,
   "catchUp": "once",
-  "notify": true
+  "notify": true,
+  "report": true,
+  "timeline": "failures"
 }

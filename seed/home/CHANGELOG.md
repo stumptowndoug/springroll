@@ -5,6 +5,59 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-16 · Timeline, Keys, memory and personas, background work, skills, To-dos
+
+Ported from the owner's machine, where each piece ran for a few days first. Big: read the parts
+your machine has its own version of. On a machine that never changed these files, it's a clean merge.
+
+- **Timeline replaces Home** (`views/desk/public/app/timeline.js`, was `home.js`; `main.js`,
+  `pages.css`, `jobs.js`, `run.js`, `agentd/server.mjs`, `store.mjs`): one feed of everything on the
+  box. What waits on the owner leads Today, then running and queued runs, then each day's job runs and
+  worth-knowing signals, each with a source tag (`ui-tag`). Search, filters and an Upcoming view
+  (next week's scheduled runs, `/api/upcoming`) sit beside the heading. Jobs lost its Runs tab
+  (`#/jobs?view=runs` → `#/`). Each job chooses how much of it reaches the Timeline (`job.json`
+  `timeline`: every run / failures / never; reports default to every run, others to failures).
+- **Needs you is sorted by a model** (`views/desk/needs.mjs`, `/api/needs…`, Settings → Needs you):
+  an agentd session reads the last 36 h (signals, failed runs, reports, triaged mail, machine) and
+  returns ranked items with a suggested step; rows get Chat/View/Done and 👍/👎. Approvals, sign-ins
+  and key requests stay as they were. Pick the agent, model and how often in Settings.
+- **Keys is its own page** (`app/keys.js`, `#/keys`; `#/connections?tab=keys` and `#/vault`
+  redirect): reveal switch, Replace/Edit note/Copy/Delete, "used by" with links, JSON keys. Settings →
+  Keys "Show values" (`desk.json` `keys.reveal`). Connections is coding agents and services only.
+- **Coding agents** (`agents/agents.json`, `bin/agy-acp-install`, `app/connections.js`, `signin.js`):
+  every agent optional with Install / Add chat / Remove; Cursor and Antigravity (Google's runtime,
+  pinned and checksummed) in chat; click an agent for who it's signed in as. Settings → Coding agents
+  sets each agent's default model and reasoning for new chats (`desk.json` `chatDefaults`).
+- **Memory and personas** (`notes/memory.md`, `CLAUDE.md`, `agentd/threads.mjs`, `agentd/personas.mjs`,
+  `personas/README.md`): one file of what every agent should know about the owner, imported by Claude
+  and sent with the first prompt to every other agent; the installer turns Claude's own auto memory
+  off. Personas set how the agent talks in a chat (`/persona <id>`, composer menu, Settings default,
+  a job's `persona`); voice only. Four starter presets ship (Bourdain, Dolly, Dude, Naval); none is on until the owner picks one, and Settings → Personas creates more.
+- **Background work in chat** (`agentd/background.mjs`, `threads.mjs`, `app/thread.js`, `thread.css`):
+  Claude's and Codex's backgrounded commands and subagents come from ACP as rows in their turn, with
+  a side pane (live output, Stop). Fixes Codex command output, missing since `codex-acp` (it sends
+  `_meta.terminal_output_delta`). Idle chats are no longer stopped after 15 minutes
+  (`SPRINGROLL_IDLE_MINUTES` opts back in); a job run's agent stops 2 minutes after its turn when
+  nothing of it is in the background; the new nightly **housekeeping** job stops abandoned chats.
+- **AGENTS.md is short (under 5 KB) and the detail is in skills**: `skills/apps`, `jobs`, `timeline`,
+  `connections`, `machine`, `backup`, next to `web`, `sprites`, `orchestrate`, `update`.
+  Housekeeping audits skills nightly (`jobs/housekeeping/skills-check.sh`).
+- **Off-machine backups, opt-in** (`bin/backup`, `bin/restore`, `skills/backup`, weekly
+  `jobs/backup-check`): the nightly snapshot also goes to the owner's bucket with restic when set up.
+- **Apps:** the To-dos app is real (`views/todos`, `bin/todo`, service on 8105: a Personal board and
+  every `~/projects/*/TODO.md`), with a board component in the kit (`ui.board`). Browser keeps a history
+  of every session (`views/browser/history.mjs`, `browser history`). Utilization adds Antigravity
+  quotas and per-provider switches (Settings → Utilization).
+- **Smaller:** sidebar has one Apps item instead of a per-app list; no "Working" pill in the chat
+  header and no suggested-prompt chips; tiles put the icon beside the title; Markdown tables scroll
+  instead of squeezing; `gmail --attach`, and `gmail` won't send/archive from the mail-triage job;
+  Settings → Appearance uses dropdowns with six text sizes. The morning brief job is gone.
+- **If you changed this:** keep your own choices (LOCAL.md says which) and fit these around them. Your
+  `home.js` customizations move to `timeline.js`'s feed; a Runs tab you kept becomes a Timeline filter.
+  If your AGENTS.md has your own rules, keep them in it and move only the stock detail into the
+  matching skill. A morning brief you still want stays as your own job; drop `signal --brief` only if
+  nothing reads it. Leave an existing `notes/memory.md` as it is.
+
 ## 2026-10-13 · Chat: the agent's narration stays in the chat
 
 - **Narration stays visible:** the agent's text, images, links, notices and approvals stay in the

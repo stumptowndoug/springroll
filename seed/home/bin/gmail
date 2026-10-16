@@ -4,8 +4,8 @@
   gmail accounts
   gmail search "<Gmail search, e.g. from:maya newer_than:7d>" [--account A] [--limit 20]
   gmail show <ref>
-  gmail reply <ref> [--all] [--approved]        the reply text on stdin
-  gmail send --from <account> --to <addr> [--cc <addr>] --subject <s> [--approved]   text on stdin
+  gmail reply <ref> [--all] [--attach FILE]... [--approved]        the reply text on stdin
+  gmail send --from <account> --to <addr> [--cc <addr>] --subject <s> [--attach FILE]... [--approved]   text on stdin
   gmail archive <ref>...                        out of the inbox (still in All Mail)
   gmail move <ref> <label>                      label it and take it out of the inbox
 
@@ -103,6 +103,17 @@ def policy_ok(c, approved):
     if (c.get("policy") or {}).get("send", "auto") == "ask" and not approved:
         die("the owner wants to approve what agents send (Connections → Gmail). Show them the exact email in the chat; when they say yes, run this again with --approved.", 3)
 
+# Read-only jobs: the owner wants sorting jobs never to send, reply, archive or move mail, whatever their prompt says.
+READ_ONLY_JOBS = {"mail-triage"}
+
+def not_read_only_job():
+    t = os.environ.get("SPRINGROLL_THREAD")
+    if not t: return
+    try: origin = (json.load(urllib.request.urlopen(f"http://127.0.0.1:8090/threads/{t}", timeout=5)).get("thread") or {}).get("origin") or ""
+    except Exception: return
+    if origin.startswith("job:") and origin[4:] in READ_ONLY_JOBS:
+        die(f"the {origin[4:]} job only sorts mail; it never sends, replies, archives or moves.", 4)
+
 def body_from_stdin():
     b = sys.stdin.read()
     if not b.strip(): die("put the email's text on stdin")
@@ -113,6 +124,19 @@ def arg(name, default=None):
         i = sys.argv.index(name); v = sys.argv[i + 1] if i + 1 < len(sys.argv) else None
         del sys.argv[i:i + 2]; return v
     return default
+
+def attachments():
+    files = []
+    while "--attach" in sys.argv: files.append(os.path.expanduser(arg("--attach") or ""))
+    for f in files:
+        if not os.path.isfile(f): die(f"attachment not found: {f}")
+    return files
+
+def attach(msg, files):
+    import mimetypes
+    for f in files:
+        maintype, subtype = (mimetypes.guess_type(f)[0] or "application/octet-stream").split("/", 1)
+        with open(f, "rb") as fh: msg.add_attachment(fh.read(), maintype=maintype, subtype=subtype, filename=os.path.basename(f))
 
 def flag(name):
     if name in sys.argv: sys.argv.remove(name); return True
@@ -152,8 +176,9 @@ def main():
             print(); print(text_of(m)[:20000])
         finally: M.logout()
         return
+    if cmd in ("reply", "send", "archive", "move"): not_read_only_job()
     if cmd == "reply":
-        reply_all = flag("--all"); approved = flag("--approved")
+        reply_all = flag("--all"); approved = flag("--approved"); files = attachments()
         acct, mid, local = resolve(sys.argv[2] if len(sys.argv) > 2 else "")
         a = account(c, acct); policy_ok(c, approved); text = body_from_stdin()
         M = imap(a, c)
@@ -174,7 +199,7 @@ def main():
         r["In-Reply-To"] = orig.get("Message-ID", mid)
         r["References"] = " ".join(x for x in (orig.get("References", ""), orig.get("Message-ID", mid)) if x)
         r["Date"] = email.utils.formatdate(localtime=True); r["Message-ID"] = email.utils.make_msgid(domain=me.split("@")[-1])
-        r.set_content(text)
+        r.set_content(text); attach(r, files)
         S = smtp(a, c)
         try: S.send_message(r)
         finally: S.quit()
@@ -182,12 +207,12 @@ def main():
         print(f"Sent your reply to {to} from {a['email']}.")
         return
     if cmd == "send":
-        frm = arg("--from"); to = arg("--to"); cc = arg("--cc"); subj = arg("--subject"); approved = flag("--approved")
+        frm = arg("--from"); to = arg("--to"); cc = arg("--cc"); subj = arg("--subject"); approved = flag("--approved"); files = attachments()
         if not (frm and to and subj): die("gmail send --from <account> --to <addr> --subject <s> (text on stdin)")
         a = account(c, frm); policy_ok(c, approved); text = body_from_stdin()
         r = EmailMessage(); r["From"] = a["email"]; r["To"] = to
         if cc: r["Cc"] = cc
-        r["Subject"] = subj; r["Date"] = email.utils.formatdate(localtime=True); r.set_content(text)
+        r["Subject"] = subj; r["Date"] = email.utils.formatdate(localtime=True); r.set_content(text); attach(r, files)
         S = smtp(a, c)
         try: S.send_message(r)
         finally: S.quit()

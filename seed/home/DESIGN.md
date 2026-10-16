@@ -84,7 +84,7 @@ collection shows `ui-empty` with the same button. No dashed "add" tiles, no
 "Something else?" cards.
 
 **Same things look the same.** A grid of things is `ui-tiles` of `ui-tile`
-(icon or top row, one-line title, a description that is always two lines tall,
+(a top row with the icon beside a one-line title and an optional trail for a status or one small button, a description that is always two lines tall,
 an optional detail line, a footer pinned to the bottom). A list is a `ui-group`
 of `ui-row`s whose meta and actions sit in the same columns on every row (give
 the row a grid when its parts vary). Titles are one line and truncate;
@@ -97,8 +97,9 @@ go behind a ⋯ menu; the one or two common ones stay visible.
 actions; `ui-link-action` ("Clear filters →") for text actions; `ui-icon-btn`
 (add `data-dot` when something is applied). **Round buttons** (`ui-round`: `.primary`,
 `.toggle` with `aria-pressed`, `.stop`) for run, pause, send and stop, the same
-everywhere. Segmented choices: `ui-seg`.
-Filters and tags: `ui-chip`. What something is about: `ui-context`.
+everywhere. Segmented choices: `ui-seg`, for switching views (tabs); a setting with fixed
+choices (size, density) is a `<select>`, like Settings → Appearance.
+Filters: `ui-chip`. Where something came from (a job, Mail, GitHub): `ui-tag`, quiet, never colored. What something is about: `ui-context`.
 
 **One popover shell for all floating UI** (`ui.popover`, `.ui-menu`,
 `.ui-popover`). Pickers are `ui.combobox()` (searchable, keyboard-driven,
@@ -125,7 +126,11 @@ Coding agents show their own mark: `ui.agentMark(id, name)` (`ui/logos.svg`).
   lists are `ui-list` of `ui-row` (title, sub, mono meta); selected row
   `.selected`, unread `.unread`.
 - Feed of things that happened: `ui-feed` with `ui-feed-day` headings and
-  `ui-feed-row` (time · dot · title · preview · chevron).
+  `ui-feed-row` (time · dot · title · preview · chevron); a `ui-tag` before the
+  chevron says where it came from, and a `.lead` icon can stand in for the dot.
+- Work in stages (to-dos, a pipeline): a kanban `ui-board` of `ui-board-col`s holding
+  `ui-board-card`s; `ui.board(el, {onMove})` drags cards between columns. Touch has no drag,
+  so a card opens a sheet that can move it.
 - Facts about a thing: `ui-facts` (label/value with hairlines).
 - Content View: `ui-page`, eyebrow, display title, `ui-prose lg`.
 - Settings-like: `ui-page`, sections of `ui-card` options.

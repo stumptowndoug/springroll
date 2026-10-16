@@ -7,3 +7,6 @@ here. Static page; the kit lives in `views/desk/public/ui/` (`theme.css`,
 `kit.css`, `kit.js`) and the rules in `~/home/DESIGN.md`.
 
 When you add a component to the kit, add it here too.
+
+`#agent-marks` previews `ui.agentMark` for every coding agent, including
+Antigravity's official mark and Gemini's separate mark.

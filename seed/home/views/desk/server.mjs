@@ -9,9 +9,13 @@ import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { listConnections, connect as connectService, testConnection, disconnect, setMcp, startSignin, signinStatus, cancelSignin } from './connections.mjs';
 import * as files from './files.mjs';
+import { listPersonas } from '../../agentd/personas.mjs';
 import { usage } from './usage.mjs';
+import { usageSettings, patchUsageSettings, visibleUsage } from './public/app/usage-settings.mjs';
 import * as google from './google.mjs';
-import { listSecrets, setSecret, revealSecret, deleteSecret, NAME_RE } from './secrets.mjs';
+import { listSecrets, setSecret, revealSecret, revealManaged, deleteSecret, NAME_RE } from './secrets.mjs';
+import * as needs from './needs.mjs';
+import { nextRun } from '../../agentd/cron.mjs';
 
 const HOME = os.homedir();
 const VIEWS = path.join(HOME, 'home', 'views');
@@ -43,6 +47,10 @@ function readSettings() {
     font: s.font || 'system', monoFont: s.monoFont || 'system', accent: s.accent || null, defaultAgent: s.defaultAgent || null,
     sidebarApps: s.sidebarApps || {}, // app name -> shown in the sidebar (default: shown unless a placeholder)
     timezone: s.timezone || null, // the owner's clock: jobs, agents and the machine follow it
+    chatDefaults: s.chatDefaults || {}, // agent id -> { model, effort } a new chat starts on (unset: last picked / the agent's own)
+    persona: { default: s.persona?.default || null }, // the persona a new chat starts with (~/home/personas)
+    utilization: usageSettings(s.utilization),
+    keys: { reveal: s.keys?.reveal !== false }, // the Keys page can show values (off: masked everywhere)
   };
 }
 
@@ -50,14 +58,34 @@ function writeSettings(patch) {
   let s = {}, tzChanged = false;
   try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
   for (const k of ['theme', 'fontSize', 'density', 'radius', 'sidebar', 'font', 'monoFont', 'defaultAgent']) if (typeof patch[k] === 'string' && patch[k]) s[k] = patch[k];
+  if (patch.utilization && typeof patch.utilization === 'object' && !Array.isArray(patch.utilization))
+    s.utilization = patchUsageSettings(s.utilization, patch.utilization);
   if (patch.sidebarApps && typeof patch.sidebarApps === 'object') {
     s.sidebarApps = { ...(s.sidebarApps || {}) };
     for (const [k, v] of Object.entries(patch.sidebarApps)) if (/^[A-Za-z0-9_-]{1,60}$/.test(k)) { if (typeof v === 'boolean') s.sidebarApps[k] = v; else delete s.sidebarApps[k]; }
+  }
+  // { persona: { default: 'graham' } }: the persona a new chat starts with (~/home/personas); null or '' for none.
+  if (patch.persona && typeof patch.persona === 'object' && 'default' in patch.persona) {
+    const id = patch.persona.default;
+    if (typeof id === 'string' && /^[a-z0-9-]{1,40}$/.test(id)) s.persona = { ...(s.persona || {}), default: id };
+    else if (!id) { delete s.persona?.default; if (s.persona && !Object.keys(s.persona).length) delete s.persona; }
+  }
+  // { chatDefaults: { claude: { model: 'opus', effort: null } } }: merged per agent; null or '' clears one.
+  if (patch.chatDefaults && typeof patch.chatDefaults === 'object') {
+    s.chatDefaults = { ...(s.chatDefaults || {}) };
+    for (const [a, d] of Object.entries(patch.chatDefaults)) {
+      if (!/^[a-z0-9_-]{1,40}$/.test(a) || !d || typeof d !== 'object') continue;
+      const cur = { ...(s.chatDefaults[a] || {}) };
+      for (const k of ['model', 'effort']) if (k in d) { if (typeof d[k] === 'string' && /^[\w.:\/\[\]-]{1,100}$/.test(d[k])) cur[k] = d[k]; else delete cur[k]; }
+      if (Object.keys(cur).length) s.chatDefaults[a] = cur; else delete s.chatDefaults[a];
+    }
+    if (!Object.keys(s.chatDefaults).length) delete s.chatDefaults;
   }
   if (typeof patch.timezone === 'string' && patch.timezone !== s.timezone) {
     let ok = false; try { new Intl.DateTimeFormat('en', { timeZone: patch.timezone }); ok = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(patch.timezone); } catch {}
     if (ok) { s.timezone = patch.timezone; tzChanged = true; }
   }
+  if (typeof patch.keys?.reveal === 'boolean') s.keys = { ...(s.keys || {}), reveal: patch.keys.reveal };
   if ('accent' in patch) { if (/^#[0-9a-f]{6}$/i.test(patch.accent || '')) s.accent = patch.accent.toLowerCase(); else delete s.accent; }
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + '\n');
   // A new time zone: the machine's clock (logs, `date`, cron-like tools) and agentd's schedules follow.
@@ -102,25 +130,54 @@ async function agentStatus() {
     if (!where) versions.delete(a.id);
     // An auth file counts once it holds something (some CLIs create an empty "{}").
     const signedIn = (a.auth || []).some((p) => { try { return fs.statSync(expand(p)).size > 4; } catch { return false; } });
-    // Chat needs the harness's ACP mode: built in (opencode acp) or an adapter (claude-agent-acp).
+    // Chat needs the harness's ACP mode: built in (opencode acp) or an adapter (claude-agent-acp), and for some
+    // (Antigravity's runtime) a sign-in of its own (agents.json "chatSignin").
     const acpInstalled = !!a.acp && (a.acp[0] === a.bin ? !!where : !!(await sh(`command -v ${a.acp[0]}`)));
-    return { ...a, installed: !!where, version: versions.get(a.id) || null, signedIn, acpInstalled };
+    const chatSignedIn = !a.chatSignin || authStamp(a.chatSignin.auth) > 0;
+    return { ...a, installed: !!where, version: versions.get(a.id) || null, signedIn, acpInstalled, chatSignedIn, disk: diskUse(a, !!where, acpInstalled) };
   }));
+}
+
+// What each agent's parts take on disk (agents.json "disk": paths, "npm:<package>" for a global npm package):
+// measured with du in the background, at most every 10 minutes per agent or right after an install or removal.
+// Until measured, or for a part that isn't installed, agents.json "size" (MB) is the estimate.
+const diskCache = new Map(); // agent id -> { at, cli, chat } (MB) | { at, pending: true }
+let npmRoot = null;
+function diskUse(a, cli, chat) {
+  const c = diskCache.get(a.id);
+  if (!c || (Date.now() - c.at > 600000 && !c.pending)) measureDisk(a);
+  const builtIn = !!a.acp && (a.acp[0] === a.bin);
+  return { cli: cli ? c?.cli ?? a.size?.cli ?? null : 0, chat: chat && !builtIn ? c?.chat ?? a.size?.chat ?? null : 0, measured: !!c && !c.pending };
+}
+async function measureDisk(a) {
+  const prev = diskCache.get(a.id);
+  diskCache.set(a.id, { ...prev, at: Date.now(), pending: true });
+  npmRoot ||= await sh('npm root -g');
+  const du = async (paths = []) => {
+    const args = paths.map((p) => (p.startsWith('npm:') ? `${npmRoot}/${p.slice(4)}` : expand(p)).split('*').map((x) => shq(x)).join('*'));
+    return args.length ? Number(await sh(`du -scm -- ${args.join(' ')} 2>/dev/null | tail -1 | cut -f1`)) || 0 : 0;
+  };
+  diskCache.set(a.id, { at: Date.now(), cli: await du(a.disk?.cli), chat: await du(a.disk?.chat) });
+  broadcast('connections', {}); // pages showing sizes refresh
 }
 
 /* ---------- Guided sign-in ----------
    An agent's own login command (agents.json "signin") runs in a hidden terminal, on this machine or on a
    Sprite (`sprite exec --tty`); the sign-in panel shows what the owner needs from it: the sign-in link, a
    code to enter on the provider's page ("device"), or a box to paste the provider's code back into
-   ("paste"), and notices when the sign-in lands. Installs the agent (and here, its chat adapter) first. */
-const agentSignins = new Map(); // "<agent>" or "<agent>@<sprite>" -> { session, started, before, sprite }
+   ("paste"), and notices when the sign-in lands. Installs the agent (and here, its chat adapter) first.
+   part "chat": the chat runtime's own sign-in (agents.json "chatSignin": Antigravity's runtime doesn't use agy's
+   login), installing the runtime first. */
+const agentSignins = new Map(); // "<agent>[:chat]" or "<agent>@<sprite>" -> { session, started, before, auth, sprite, spec }
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const spriteName = (s) => (s && /^[a-z0-9][a-z0-9-]{0,39}$/.test(s) ? s : null);
-const signinKey = (a, sprite) => (sprite ? `${a.id}@${sprite}` : a.id);
+const signinKey = (a, sprite, part) => (sprite ? `${a.id}@${sprite}` : part === 'chat' ? `${a.id}:chat` : a.id);
+// What a sign-in runs: the agent's login, or its chat runtime's ({command, kind, auth, paste}).
+const signinSpec = (a, part) => (part === 'chat' ? a.chatSignin : a.signin && { ...a.signin, auth: a.auth });
 
-// When the agent's sign-in files last changed here (0: none holding anything).
-function authStamp(a) {
-  return Math.max(0, ...(a.auth || []).map((p) => { try { const s = fs.statSync(expand(p)); return s.size > 4 ? s.mtimeMs : 0; } catch { return 0; } }));
+// When sign-in files (an agent's "auth", or its chat's) last changed here (0: none holding anything).
+function authStamp(auth) {
+  return Math.max(0, ...(auth || []).map((p) => { try { const s = fs.statSync(expand(p)); return s.size > 4 ? s.mtimeMs : 0; } catch { return 0; } }));
 }
 
 // Whether the agent is signed in on a Sprite (one of its auth files there holds something).
@@ -130,23 +187,25 @@ async function spriteSignedIn(a, sprite) {
   return /yes/.test(out);
 }
 
-async function startAgentSignin(a, sprite = null) {
-  await stopAgentSignin(signinKey(a, sprite));
+async function startAgentSignin(a, sprite = null, part = null) {
+  const spec = signinSpec(a, part);
+  await stopAgentSignin(signinKey(a, sprite, part));
   let command;
   if (sprite) {
     const remote = ['export PATH="$HOME/.local/bin:$PATH"',
       `command -v ${a.bin} >/dev/null || { echo "Installing ${a.name} on ${sprite}…"; ${a.install}; hash -r; }`,
-      'echo "Starting sign-in…"', `${a.signin.command}; echo "__signin_exit $?"`].join('; ');
+      'echo "Starting sign-in…"', `${spec.command}; echo "__signin_exit $?"`].join('; ');
     command = `echo "Connecting to ${sprite}…"; sprite exec -s ${sprite} --tty -- bash -lc ${shq(remote)}`;
   } else {
     const steps = [];
-    if (!(await sh(`command -v ${a.bin}`))) steps.push(`echo "Installing ${a.name}…"`, a.install, 'hash -r');
-    if (a.acpInstall && !(await sh(`command -v ${a.acp[0]}`))) steps.push(`echo "Installing ${a.name}'s chat adapter…"`, a.acpInstall, 'hash -r');
-    steps.push('echo "Starting sign-in…"', `${a.signin.command}; echo "__signin_exit $?"`);
+    if (part !== 'chat' && !(await sh(`command -v ${a.bin}`))) steps.push(`echo "Installing ${a.name}…"`, a.install, 'hash -r');
+    if (a.acpInstall && !(await sh(`command -v ${a.acp[0]}`))) steps.push(`echo "Installing ${a.name}'s chat ${a.chatSignin ? 'runtime' : 'adapter'}…"`, a.acpInstall, 'hash -r');
+    steps.push('echo "Starting sign-in…"', `${spec.command}; echo "__signin_exit $?"`);
     command = steps.join('; ');
+    diskCache.delete(a.id); // installs change it
   }
-  const session = await newSession({ name: sprite ? `signin-${a.id}-${sprite}`.slice(0, 40) : `signin-${a.id}`, command });
-  agentSignins.set(signinKey(a, sprite), { session, started: Date.now(), before: sprite ? 0 : authStamp(a), sprite });
+  const session = await newSession({ name: sprite ? `signin-${a.id}-${sprite}`.slice(0, 40) : `signin-${a.id}${part === 'chat' ? '-chat' : ''}`, command });
+  agentSignins.set(signinKey(a, sprite, part), { spec, session, started: Date.now(), before: sprite ? 0 : authStamp(spec.auth), auth: spec.auth, sprite });
   return session;
 }
 
@@ -172,8 +231,8 @@ function signinUrl(text) {
   return urls.filter((u) => /auth|login|device|oauth|activate|verify/i.test(u)).pop() || null;
 }
 
-async function agentSigninState(a, sprite = null) {
-  const s = agentSignins.get(signinKey(a, sprite));
+async function agentSigninState(a, sprite = null, part = null) {
+  const s = agentSignins.get(signinKey(a, sprite, part));
   if (!s) return { state: 'idle' };
   if (s.result) return s.result;
   const raw = await tmux(['capture-pane', '-p', '-J', '-S', '-500', '-t', s.session]);
@@ -183,7 +242,7 @@ async function agentSigninState(a, sprite = null) {
   const exit = /__signin_exit (\d+)/.exec(raw)?.[1];
   // Signed in: the login wrote its file, or (already signed in) the command just succeeded. On a Sprite,
   // checked there once the login has finished.
-  if (!s.sprite && (authStamp(a) > s.before || (exit === '0' && authStamp(a) > 0))) return { state: 'done' };
+  if (!s.sprite && (authStamp(s.auth) > s.before || (exit === '0' && authStamp(s.auth) > 0))) return { state: 'done' };
   if (s.sprite && exit === '0') {
     s.result = (await spriteSignedIn(a, s.sprite)) ? { state: 'done' } : { state: 'failed', message: `${a.name} finished without signing in on ${s.sprite}.` };
     return s.result;
@@ -191,8 +250,27 @@ async function agentSigninState(a, sprite = null) {
   if (exit != null) return { state: 'failed', message: exit === '0' ? `${a.name} finished without signing in.` : lines.slice(-3).join(' ').slice(0, 300) };
   const started = raw.includes('Starting sign-in…');
   const url = started ? signinUrl(text) : null;
-  const code = a.signin.kind === 'device' ? /\b[A-Z0-9]{4,5}-[A-Z0-9]{4,6}\b/.exec(text)?.[0] || null : null;
-  return { state: started ? 'waiting' : 'installing', kind: a.signin.kind, url, code, progress: lines.at(-1)?.slice(0, 160) || '', session: s.session, sprite: s.sprite };
+  const code = s.spec.kind === 'device' ? /\b[A-Z0-9]{4,5}-[A-Z0-9]{4,6}\b/.exec(text)?.[0] || null : null;
+  return { state: started ? 'waiting' : 'installing', kind: s.spec.kind, paste: s.spec.paste || null, url, code, progress: lines.at(-1)?.slice(0, 160) || '', session: s.session, sprite: s.sprite };
+}
+
+// Adding an agent's chat part (POST /api/agents/<id>/chat): idle | installing (progress: its last line) | done | failed.
+const agentInstalls = new Map(); // agent id -> { session, result }
+async function chatInstallState(a) {
+  const s = agentInstalls.get(a.id);
+  if (!s) return { state: 'idle' };
+  if (s.result) return s.result;
+  const raw = await tmux(['capture-pane', '-p', '-J', '-S', '-200', '-t', s.session]);
+  const lines = raw.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('__install'));
+  const exit = /__install_exit (\d+)/.exec(raw)?.[1];
+  if (!raw || exit != null) {
+    s.result = exit === '0' ? { state: 'done' } : { state: 'failed', message: lines.slice(-2).join(' ').slice(0, 300) || 'The install stopped.' };
+    tmux(['kill-session', '-t', s.session]);
+    diskCache.delete(a.id);
+    broadcast('connections', {});
+    return s.result;
+  }
+  return { state: 'installing', progress: lines.at(-1)?.slice(0, 160) || '' };
 }
 
 function lastSession() {
@@ -335,6 +413,7 @@ function broadcast(event, data) {
   for (const res of clients) res.write(msg);
 }
 setInterval(() => broadcast('ping', {}), 25000);
+needs.init({ broadcast });
 
 let viewsSnapshot = JSON.stringify(listViews());
 // Connections and keys change when an agent edits their files too: tell open pages.
@@ -414,6 +493,8 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { shown: payload, desks: clients.size });
   }
 
+  // The persona presets (~/home/personas), read here too so Settings doesn't depend on agentd.
+  if (url === '/api/personas') return json(res, 200, listPersonas().map(({ body, ...p }) => p));
   if (url === '/api/settings') {
     if (req.method === 'POST') return json(res, 200, writeSettings(await readBody(req)));
     return json(res, 200, readSettings());
@@ -434,7 +515,10 @@ const server = http.createServer(async (req, res) => {
 
 
   if (url === '/api/agents') return json(res, 200, await agentStatus());
-  if (url === '/api/usage') return json(res, 200, await usage(await agentStatus()));
+  if (url === '/api/usage') {
+    const providers = await usage(await agentStatus());
+    return json(res, 200, visibleUsage(providers, readSettings().utilization));
+  }
 
   if (url === '/api/templates') return json(res, 200, listTemplates());
 
@@ -464,11 +548,45 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return json(res, 400, { error: e.message }); }
   }
 
-  // Keys (Connections → Keys). Values only come back on an explicit reveal.
+  // The Timeline's Upcoming: every scheduled job run in the next days (default 7, at most 14), from each
+  // enabled job's cron (at most 1500 runs a job, enough for every 5 minutes for 5 days); the page folds frequent ones.
+  if (url.startsWith('/api/upcoming')) {
+    try {
+      const days = Math.min(14, Math.max(1, Number(new URL(url, 'http://desk').searchParams.get('days')) || 7));
+      const until = Date.now() + days * 86400e3, out = [];
+      const jobs = await (await fetch(`http://127.0.0.1:${AGENTD_PORT}/jobs`)).json();
+      for (const j of jobs) {
+        if (!j.enabled || !j.schedule) continue;
+        let t = new Date(), n = 0;
+        while (n++ < 1500) {
+          t = nextRun(j.schedule, t);
+          if (!t || t.getTime() > until) break;
+          out.push({ job: j.name, title: j.title || j.name, describe: j.describe, at: t.getTime(), onlyIf: !!j.onlyIf, type: j.type || 'agent' });
+        }
+      }
+      return json(res, 200, out.sort((a, b) => a.at - b.at));
+    } catch (e) { return json(res, 500, { error: e.message }); }
+  }
+
+  // Needs you, read by a model (needs.mjs): the Timeline's Needs you section.
+  if (url.startsWith('/api/needs')) {
+    try {
+      if (url === '/api/needs' || url === '/api/needs?opened=1') { if (url.endsWith('opened=1')) needs.maybe('opened'); return json(res, 200, needs.current()); }
+      if (url === '/api/needs/refresh' && req.method === 'POST') return json(res, 200, { started: await needs.maybe('asked', true) });
+      if (url === '/api/needs/preferences') return json(res, 200, req.method === 'POST' ? needs.setPreferences((await readBody(req)).text) : needs.preferences());
+      if (url === '/api/needs/config') return json(res, 200, req.method === 'POST' ? needs.setConfig(await readBody(req)) : needs.getConfig());
+      const nm = url.match(/^\/api\/needs\/([a-z0-9-]+)\/(done|up|down)$/);
+      if (nm && req.method === 'POST') return json(res, 200, await needs.act(nm[1], nm[2]));
+    } catch (e) { return json(res, 400, { error: e.message }); }
+  }
+
+  // Keys (the Keys page, #/keys). Values only come back on an explicit reveal.
   if (url === '/api/secrets' && req.method === 'GET') return json(res, 200, await listSecrets());
   if (url === '/api/secrets' && req.method === 'POST') {
     try { return json(res, 200, await setSecret(await readBody(req))); } catch (e) { return json(res, 400, { error: e.message }); }
   }
+  const sm = url.match(/^\/api\/secrets\/signin\/([a-z0-9.-]+)\/reveal$/);
+  if (sm && req.method === 'POST') { try { return json(res, 200, revealManaged(sm[1])); } catch (e) { return json(res, 400, { error: e.message }); } }
   const sk = url.match(/^\/api\/secrets\/([A-Z0-9_]+)(\/reveal)?$/);
   if (sk && NAME_RE.test(sk[1])) {
     try {
@@ -522,10 +640,15 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/backups' && req.method === 'GET') {
     let files = [];
     try { files = fs.readdirSync(BACKUPS).filter((f) => /^(springroll|agentos)-.*\.tar\.gz$/.test(f)).map((f) => { const st = fs.statSync(path.join(BACKUPS, f)); return { name: f, size: st.size, at: st.mtimeMs }; }).sort((a, b) => b.at - a.at); } catch {}
-    return json(res, 200, { files, hasPassphrase: fs.existsSync(PASSFILE) && fs.statSync(PASSFILE).size > 0 });
+    // Off-machine (bin/backup offsite): the repository from desk.json, the last run from ~/data/backup.
+    let offsite = null;
+    try { offsite = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')).backup?.offsite || null; } catch {}
+    if (!offsite?.repository) offsite = null;
+    else try { offsite.last = JSON.parse(fs.readFileSync(path.join(HOME, 'data', 'backup', 'offsite.json'), 'utf8')); } catch { offsite.last = null; }
+    return json(res, 200, { files, hasPassphrase: fs.existsSync(PASSFILE) && fs.statSync(PASSFILE).size > 0, offsite });
   }
   if (url === '/api/backups' && req.method === 'POST') {
-    const out = await new Promise((resolve) => execFile('bash', ['-c', `${ENV}; backup --keep 7`], { timeout: 600000 }, (err, stdout, stderr) => resolve({ ok: !err, output: (stdout || stderr).trim() })));
+    const out = await new Promise((resolve) => execFile('bash', ['-c', `${ENV}; backup --keep 7`], { timeout: 1800000 }, (err, stdout, stderr) => resolve({ ok: !err, output: (stdout || stderr).trim() })));
     return json(res, out.ok ? 200 : 400, out.ok ? out : { error: out.output });
   }
   if (url === '/api/backups/passphrase' && req.method === 'POST') {
@@ -561,6 +684,15 @@ const server = http.createServer(async (req, res) => {
     catch (e) { return json(res, 400, { error: e.message }); }
   }
 
+  // Who an agent is signed in as (agents.json "account": a command printing {account, plan, method}), for its sheet in Connections.
+  const acct = url.match(/^\/api\/agents\/([a-z0-9-]+)\/account$/);
+  if (acct && req.method === 'GET') {
+    const a = readAgents().find((x) => x.id === acct[1]);
+    if (!a) return json(res, 404, { error: 'No such agent' });
+    let r = {};
+    try { r = a.account ? JSON.parse(await sh(a.account) || '{}') : {}; } catch {}
+    return json(res, 200, { account: r.account || null, plan: r.plan || null, method: r.method || null });
+  }
   const setup = url.match(/^\/api\/agents\/([a-z0-9-]+)\/setup$/);
   if (setup && req.method === 'POST') {
     const a = readAgents().find((x) => x.id === setup[1]);
@@ -579,23 +711,52 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ?sprite=<name>: sign in on that Sprite instead of this machine.
+  // ?part=chat: the chat runtime's own sign-in (agents.json "chatSignin").
   const signin = url.match(/^\/api\/agents\/([a-z0-9-]+)\/signin(\/code)?(?:\?(.*))?$/);
   if (signin) {
     const a = readAgents().find((x) => x.id === signin[1]);
-    if (!a?.signin) return json(res, 404, { error: `${a?.name || 'that agent'} signs in in the terminal` });
-    const sprite = spriteName(new URLSearchParams(signin[3] || '').get('sprite'));
+    const q = new URLSearchParams(signin[3] || '');
+    const part = q.get('part') === 'chat' ? 'chat' : null;
+    if (!a || !signinSpec(a, part)) return json(res, 404, { error: `${a?.name || 'that agent'} signs in in the terminal` });
+    const sprite = part ? null : spriteName(q.get('sprite'));
     try {
       if (signin[2] && req.method === 'POST') {
-        const s = agentSignins.get(signinKey(a, sprite));
+        const s = agentSignins.get(signinKey(a, sprite, part));
         const { code } = await readBody(req);
         if (!s || !code?.trim()) return json(res, 400, { error: 'no sign-in is waiting for a code' });
         await tmux(['send-keys', '-t', s.session, '-l', code.trim()]);
         await tmux(['send-keys', '-t', s.session, 'Enter']);
         return json(res, 200, { ok: true });
       }
-      if (req.method === 'POST') { await startAgentSignin(a, sprite); return json(res, 200, await agentSigninState(a, sprite)); }
-      if (req.method === 'DELETE') { await stopAgentSignin(signinKey(a, sprite)); return json(res, 200, { ok: true }); }
-      return json(res, 200, await agentSigninState(a, sprite));
+      if (req.method === 'POST') { await startAgentSignin(a, sprite, part); return json(res, 200, await agentSigninState(a, sprite, part)); }
+      if (req.method === 'DELETE') { await stopAgentSignin(signinKey(a, sprite, part)); return json(res, 200, { ok: true }); }
+      return json(res, 200, await agentSigninState(a, sprite, part));
+    } catch (e) { return json(res, 400, { error: e.message }); }
+  }
+
+  // An agent's chat part on its own (agents.json "acpInstall" / "acpRemove"): POST installs it in a hidden terminal
+  // (GET: its progress), DELETE removes it. A chat runtime with a sign-in of its own installs through that instead.
+  const chatPart = url.match(/^\/api\/agents\/([a-z0-9-]+)\/chat$/);
+  if (chatPart) {
+    const a = readAgents().find((x) => x.id === chatPart[1]);
+    if (!a?.acp) return json(res, 404, { error: `${a?.name || 'that agent'} has no chat` });
+    try {
+      if (req.method === 'POST') {
+        if (!a.acpInstall) return json(res, 400, { error: `${a.name}'s chat is built in` });
+        await tmux(['kill-session', '-t', `=install-${a.id}`]);
+        const session = await newSession({ name: `install-${a.id}`, command: `echo "Installing ${a.name}'s chat ${a.chatSignin ? 'runtime' : 'adapter'}…"; ${a.acpInstall}; echo "__install_exit $?"` });
+        agentInstalls.set(a.id, { session });
+        diskCache.delete(a.id);
+        return json(res, 200, await chatInstallState(a));
+      }
+      if (req.method === 'DELETE') {
+        if (!a.acpRemove) return json(res, 400, { error: `${a.name}'s chat is built in` });
+        const out = await new Promise((resolve) => execFile('bash', ['-c', `${ENV}; ${a.acpRemove} 2>&1`], { timeout: 120000 }, (err, o) => resolve({ ok: !err, text: String(o || err?.message || '').trim() })));
+        diskCache.delete(a.id);
+        broadcast('connections', {});
+        return json(res, out.ok ? 200 : 400, out.ok ? { ok: true } : { error: out.text.split('\n').slice(-2).join(' ') });
+      }
+      return json(res, 200, await chatInstallState(a));
     } catch (e) { return json(res, 400, { error: e.message }); }
   }
 

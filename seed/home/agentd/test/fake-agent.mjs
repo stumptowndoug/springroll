@@ -9,6 +9,11 @@
 //   delegate starts a delegated agent (session c1) that reads a file and answers, while the root answers too;
 //            a session nobody announced says something that must not show
 //   look     says how many images came with the prompt, and whether they came before the text
+//   echoall  says the prompt's blocks back as JSON (what agentd added before the text)
+//   bgrun    a command that goes to the background (AIR asyncTasks): output chunks, the turn ends, then
+//            more output and the task completes with exit 0
+//   bghold   a background task that runs until _session/async_task/stop
+//   monitor  a Monitor tool call (60s deadline) and nothing else
 import readline from 'node:readline';
 
 const send = (o) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...o }) + '\n');
@@ -24,10 +29,15 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   if (m.method === 'initialize') return send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false, promptCapabilities: { image: true } } } });
   if (m.method === 'session/new') return send({ id: m.id, result: { sessionId: 's1', configOptions: [{ id: 'model', category: 'model', type: 'select', name: 'Model', currentValue: 'small', options: [{ value: 'small', name: 'Small' }, { value: 'big', name: 'Big' }] }] } });
   if (m.method === 'session/cancel') { cancelled = true; return; }
+  if (m.method === '_session/async_task/stop') {
+    update({ sessionUpdate: 'async_task_state_update', asyncTaskId: m.params.asyncTaskId, state: 'stopped' });
+    return send({ id: m.id, result: { stopped: true } });
+  }
   if (m.method !== 'session/prompt') return;
   cancelled = false;
   const text = m.params.prompt.map((p) => p.text || '').join(' ');
   const done = (stopReason = 'end_turn') => send({ id: m.id, result: { stopReason } });
+  if (/echoall/.test(text)) { say(JSON.stringify(m.params.prompt.map((p) => p.text || p.type))); return done(); }
   if (/hang/.test(text)) return say('working');
   if (/slow/.test(text)) {
     for (let i = 0; i < 200; i++) { if (cancelled) return done('cancelled'); say(`s${i} `, 'm1'); await sleep(50); }
@@ -65,6 +75,28 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
     say('Delegated.');
     update({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'child-only' }] }, 'c1');
     update({ sessionUpdate: 'subagent_state_update', subagentSessionId: 'c1', state: 'completed' });
+    return done();
+  }
+  if (/bgrun|bghold/.test(text)) {
+    const hold = /bghold/.test(text), id = hold ? 'bg2' : 'bg1', call = hold ? 't6' : 't5';
+    const out = (data) => update({ sessionUpdate: 'tool_call_update', toolCallId: call, _meta: { terminal_output_delta: { data, terminal_id: call } } });
+    update({ sessionUpdate: 'tool_call', toolCallId: call, title: 'make build', kind: 'execute', status: 'in_progress', rawInput: { command: 'make build' }, content: [{ type: 'terminal', terminalId: call }] });
+    out('step 1\n'); out('step 2\n');
+    update({ sessionUpdate: 'tool_call_update', toolCallId: call, _meta: { jetbrains: { air: { asyncTasks: { backgrounded: true } } } } });
+    update({ sessionUpdate: 'async_task_spawned', asyncTaskId: id, name: 'make build', description: 'Build the thing', taskType: 'shell', canStop: true, toolCallId: call });
+    update({ sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed' });
+    say('Started.');
+    done();
+    if (hold) return;
+    await sleep(400);
+    out('step 3\n');
+    await sleep(50);
+    update({ sessionUpdate: 'async_task_state_update', asyncTaskId: id, state: 'completed' });
+    update({ sessionUpdate: 'tool_call_update', toolCallId: call, status: 'completed', _meta: { terminal_exit: { exit_code: 0, signal: null, terminal_id: call } } });
+    return;
+  }
+  if (/monitor/.test(text)) {
+    update({ sessionUpdate: 'tool_call', toolCallId: 't7', title: 'Monitor', kind: 'other', status: 'completed', rawInput: { command: 'tail -f x.log', timeout_ms: 60000 }, _meta: { claudeCode: { toolName: 'Monitor' } } });
     return done();
   }
   if (/look/.test(text)) {

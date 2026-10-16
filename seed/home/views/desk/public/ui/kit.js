@@ -1,6 +1,6 @@
 // Springroll kit behaviors, loaded by desk.js. Exposes window.ui:
 //   ui.icon('mail', 'sm')            '<svg class="ui-icon sm">…</svg>' (any Lucide name: lucide.dev/icons)
-//   ui.agentMark('claude', 'Claude Code')  a coding agent's logo (ui/logos.svg), or its initial
+//   ui.agentMark('claude', 'Claude Code')  a coding agent's own logo, or its initial
 //   ui.toast('Saved', {icon})        transient message, bottom right
 //   ui.popover(anchor, el, {align})  open any element as a popover (one shell for all floating UI)
 //   ui.combobox(anchor, {options, value, search, onSelect, escape})
@@ -12,6 +12,7 @@
 //   await ui.highlight(el)           highlight every <pre data-lang><code> inside el (after ui.markdown)
 //   await ui.editor(el, {value, lang|file, onUpdate})  a code editor (prism-code-editor) in el
 //   await ui.langFor('server.mjs')   'javascript' (the language for a file name or fence tag)
+//   ui.board(el, {onMove(card, col)})  drag [data-card]s between [data-col]s of a .ui-board
 //   ui.morph(el, html)               set el's content, changing only what differs (live lists, streams);
 //                                     an element with data-keep keeps its own children (a live widget inside)
 //   ui.ago(date) '3m'  ui.duration(ms) '1m 12s'  ui.tokens(n) '3.2k'  ui.esc(s)
@@ -58,11 +59,13 @@
 
   ui.icon = (name, size = '') =>
     `<svg class="ui-icon ${size}" viewBox="0 0 24 24" aria-hidden="true"><use href="${href('icons', name)}"/></svg>`;
-  // A coding agent's mark (from /ui/logos.svg); an agent without one gets its initial.
+  // A coding agent's mark; an agent without one gets its initial. Masked brand SVGs
+  // use standalone images: masks inside the zero-sized inline sprite can lose their shape.
   const LOGOS = new Set(['claude', 'codex', 'opencode', 'pi', 'gemini', 'grok', 'cursor']);
-  const LOGO_OF = { antigravity: 'gemini' }; // Antigravity is Gemini's successor; no mark of its own yet
-  ui.agentMark = (id, name = id, size = '') => LOGOS.has(LOGO_OF[id] || id)
-    ? `<svg class="ui-icon ui-logo ${size}" viewBox="0 0 24 24" role="img" aria-label="${ui.esc(name)}"><use href="${href('logos', LOGO_OF[id] || id)}"/></svg>`
+  const LOGO_FILES = new Map([['antigravity', '/ui/antigravity.svg']]);
+  ui.agentMark = (id, name = id, size = '') => LOGO_FILES.has(id)
+    ? `<img class="ui-icon ui-logo ${size}" src="${LOGO_FILES.get(id)}" alt="${ui.esc(name)}">`
+    : LOGOS.has(id) ? `<svg class="ui-icon ui-logo ${size}" viewBox="0 0 24 24" role="img" aria-label="${ui.esc(name)}"><use href="${href('logos', id)}"/></svg>`
     : `<span class="ui-logo letter ${size}" aria-hidden="true">${ui.esc(String(name || '?').slice(0, 1).toUpperCase())}</span>`;
 
   function hydrateIcons(rootEl = document) {
@@ -105,7 +108,7 @@
     const t = new Date(d), today = new Date();
     const diff = Math.round((new Date(today.toDateString()) - new Date(t.toDateString())) / 86400000);
     const full = t.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-    return diff === 0 ? `Today · ${full}` : diff === 1 ? `Yesterday · ${full}` : full;
+    return diff === 0 ? `Today · ${full}` : diff === 1 ? `Yesterday · ${full}` : diff === -1 ? `Tomorrow · ${full}` : full;
   };
 
   ui.initials = (name = '') => name.replace(/[^\p{L}\s]/gu, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
@@ -130,6 +133,9 @@
       if (x.nodeType === 3 || x.nodeType === 8) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
       if (x.nodeType !== 1) continue;
       if (x.isEqualNode(y)) continue;
+      // A different field took this one's place (the row above it went away): start it empty, so
+      // what was typed into one field never shows up in another.
+      if ((x.tagName === 'INPUT' || x.tagName === 'TEXTAREA') && x.id !== y.id) { cur.replaceChild(y, x); continue; }
       for (const { name } of [...x.attributes]) if (!y.hasAttribute(name)) x.removeAttribute(name);
       for (const { name, value } of [...y.attributes]) if (x.getAttribute(name) !== value) x.setAttribute(name, value);
       if (x.tagName === 'INPUT' || x.tagName === 'TEXTAREA') continue; // never clobber what's being typed
@@ -207,7 +213,7 @@
       else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
       else if (e.key === 'Enter') { pick(active); e.preventDefault(); }
     });
-    input?.addEventListener('input', () => { active = 0; render(); });
+    input?.addEventListener('input', () => { active = escape && input.value.trim() ? 1 : 0; render(); }); // searching: the first match, not the pinned escape
     render();
     ui.popover(anchor, el, { align, temp: true });
     (input || el).focus();
@@ -288,9 +294,21 @@
     s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
     return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${ui.esc(codes[+i])}</code>`);
   }
+  // Table cells this short (numbers, statuses, "16/187 9%") stay on one line (.ui-nw); longer ones wrap
+  // at spaces. A table wider than its column then scrolls sideways instead of squeezing every cell.
+  const SHORT_CELL = 24;
+  const SOFT_WRAP = 60;
+  ui.fitTables = (root) => { for (const c of root.querySelectorAll('th, td')) if (c.textContent.trim().length <= SHORT_CELL) c.classList.add('ui-nw'); };
   ui.markdown = (src = '') => {
     const lines = String(src).replace(/\r/g, '').split('\n');
     let html = '', i = 0;
+    // A newline after a long line is the writer's hard wrap (NOTES.md, prompts): join it as a space
+    // (inline code and links may span it). After a short one ("Status: ok" / "Next: …") it's a line break.
+    const lines_ = (ls) => ls.reduce((acc, t, k) => {
+      if (k && ls[k - 1].length < SOFT_WRAP) acc.push([]);
+      acc.at(-1).push(t.trim());
+      return acc;
+    }, [[]]).map((g) => inline(g.join(' '))).join('<br>');
     const isTable = (l, n) => /^\s*\|.*\|\s*$/.test(l) && /^\s*\|?\s*:?-{2,}/.test(n || '');
     while (i < lines.length) {
       const l = lines[i];
@@ -312,8 +330,9 @@
         const head = row(l);
         i += 2;
         let body = '';
-        while (i < lines.length && /^\s*\|/.test(lines[i])) body += `<tr>${row(lines[i++]).map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`;
-        html += `<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+        const cell = (tag, c) => `<${tag}${c.length <= SHORT_CELL ? ' class="ui-nw"' : ''}>${inline(c)}</${tag}>`;
+        while (i < lines.length && /^\s*\|/.test(lines[i])) body += `<tr>${row(lines[i++]).map((c) => cell('td', c)).join('')}</tr>`;
+        html += `<table><thead><tr>${head.map((c) => cell('th', c)).join('')}</tr></thead><tbody>${body}</tbody></table>`;
         continue;
       }
       if (/^\s*>/.test(l)) {
@@ -330,14 +349,18 @@
         while (i < lines.length) {
           const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)/);
           if (m && m[1].length <= base + 1) { cur = [m[3]]; items.push(cur); i++; continue; }
-          if (lines[i].trim() && /^\s{2,}/.test(lines[i]) && cur) { cur.push(lines[i].replace(/^\s{2,4}/, '')); i++; continue; }
+          if (lines[i].trim() && lines[i].match(/^\s*/)[0].length > base && cur) { cur.push(lines[i].replace(/^\s{1,4}/, '')); i++; continue; }
           break;
         }
         const tag = ordered ? 'ol' : 'ul';
         html += `<${tag}>${items.map((it) => {
-          const [first, ...rest] = it;
-          const task = first.match(/^\[([ xX])\]\s+(.*)/);
-          const head = task ? `<input type="checkbox" disabled${task[1] !== ' ' ? ' checked' : ''}> ${inline(task[2])}` : inline(first);
+          // The item's own text runs until a nested list or block (a hard-wrapped item is one paragraph).
+          let n = 1;
+          while (n < it.length && !/^\s*(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/.test(it[n])) n++;
+          const own = it.slice(0, n), rest = it.slice(n);
+          const task = own[0].match(/^\[([ xX])\]\s+(.*)/);
+          if (task) own[0] = task[2];
+          const head = `${task ? `<input type="checkbox" disabled${task[1] !== ' ' ? ' checked' : ''}> ` : ''}${lines_(own)}`;
           return `<li>${head}${rest.length ? ui.markdown(rest.join('\n')) : ''}</li>`;
         }).join('')}</${tag}>`;
         continue;
@@ -345,7 +368,7 @@
       const para = [];
       while (i < lines.length && lines[i].trim() && !/^(\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d+[.)]\s))/.test(lines[i]) && !isTable(lines[i], lines[i + 1])) para.push(lines[i++]);
       if (!para.length) { para.push(lines[i++]); }
-      html += `<p>${para.map(inline).join('<br>')}</p>`;
+      html += `<p>${lines_(para)}</p>`;
     }
     return html;
   };
@@ -405,6 +428,7 @@
     r.mounted?.dispose();
     el.replaceChildren();
     r.mounted = await m.mount(el, r.source, reportColors()).catch(() => { el.textContent = r.source; return null; });
+    ui.fitTables(el);
   }
   let themed = false;
   ui.report = async (el, source) => {
@@ -418,7 +442,41 @@
 
   ui.document = async (text, opts) => {
     loadCode();
-    return (await (mdMod ??= import('/ui/vendor/markdown.js'))).render(text, opts);
+    const t = document.createElement('template');
+    t.innerHTML = await (await (mdMod ??= import('/ui/vendor/markdown.js'))).render(text, opts);
+    ui.fitTables(t.content);
+    return t.innerHTML;
+  };
+
+  // ---------- Board: drag cards between columns ----------
+  // ui.board(el, {onMove(card, col)}): cards are [data-card] inside columns [data-col]; dropping a
+  // card on another column calls onMove with both keys. Touch has no drag: give cards a menu too.
+  ui.board = (el, { onMove } = {}) => {
+    if (el._board) { el._board.onMove = onMove; return el; }
+    const st = (el._board = { onMove, card: null });
+    const col = (e) => e.target.closest?.('[data-col]');
+    el.addEventListener('dragstart', (e) => {
+      const c = e.target.closest?.('[data-card]'); if (!c) return;
+      st.card = c; c.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.dataset.card);
+    });
+    el.addEventListener('dragend', () => { st.card?.classList.remove('dragging'); st.card = null; el.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop')); });
+    el.addEventListener('dragover', (e) => {
+      const c = col(e); if (!c || !st.card) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      if (!c.classList.contains('drop')) { el.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop')); if (c !== st.card.closest('[data-col]')) c.classList.add('drop'); }
+    });
+    el.addEventListener('drop', (e) => {
+      const c = col(e); if (!c || !st.card) return;
+      e.preventDefault();
+      const from = st.card.closest('[data-col]'), key = st.card.dataset.card;
+      c.classList.remove('drop');
+      if (c === from) return;
+      const last = [...c.querySelectorAll('[data-card]')].pop(); // show it there at once; onMove saves it
+      if (last) last.after(st.card); else (c.querySelector(':scope > header') || c.firstChild)?.after(st.card);
+      st.onMove?.(key, c.dataset.col);
+    });
+    return el;
   };
 
   // ---------- Declarative behaviors ----------

@@ -31,6 +31,7 @@ large: write it to a file (`-o file.md`) and read what matters.
     agent-browser --session main click @e3 ; fill @e5 "text" ; press Enter ; get text body
     agent-browser --session main screenshot /tmp/x.png   # then look at it
     browser stop main                               # always, when done
+    browser history [--job J] [--site S] [id]       # past sessions: sites, route, length, who, how it ended
 
 - `agent-browser skills get core` is its full guide (refs, waits, tabs, downloads). Always pass
   `--session <name>`; without it agent-browser starts its own separate, unwatched browser. For a

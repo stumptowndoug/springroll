@@ -60,7 +60,33 @@ Kernel's local Docker image (kernel-images, headful with its own live view) is t
   (and is taken back on focus/visibility when another viewer resized it). A Home internet section (switch, fallback, last check) on the start page. Toolbar (session picker, back, reload, address, type, Chat, ⋯ with New /
   Provider live view / Stop), the live image, a meta line.
 
-Data: `~/data/browser/sessions.json` (running sessions, Browserbase contexts), `home.json` (home
+- `history.mjs`: the history (below).
+
+## History
+
+Every browser session is kept in `~/data/browser/history.db` (SQLite, 180 days): where it ran
+(route, exit address, a fallback from home and why), its profile, who started it (`SPRINGROLL_THREAD`
+→ the chat or job run, looked up in agentd; `app` when the owner started it here; `terminal`
+otherwise; other chats that reused it by name go in `also`), when it started and ended and why
+(`stopped` by an agent, `owner` in the app, `idle` when agent-browser let go, `gone` when the browser
+itself ended, `home-down`, `failed` with the error, `lost` when it ended while the server was down),
+and every page it showed (URL, title, time). Browserbase sessions also record proxy bytes.
+
+- `lib.mjs` writes the start (or the failure) and the end. `browser start` tells the server
+  (`POST api/history/watch`) before it opens the first URL, so the recorder is already listening.
+- The server's recorder (`history.watch`, every 3 s from `sessions.json`) keeps one extra CDP
+  connection per running browser and listens to `Target.targetCreated/targetInfoChanged`, which
+  fire on every navigation, including in-page ones (pushState). Chrome doesn't announce title
+  changes, so it asks for a new page's title (`Target.getTargetInfo`) after 2, 6 and 15 s. A page
+  left within a second or so may have no title. Kernel and Browserbase take the second connection
+  fine. It doesn't keep a cloud browser alive any longer than agent-browser's own connection does.
+- No recordings. Kernel (replays) and Browserbase (session recordings) offer them if wanted later;
+  `providerId` is kept for that.
+- In the app: the start page (`#history`, also ⋯ → History while watching) lists sessions by day,
+  with the running ones on top. A row opens a sheet with the facts and pages. Chat and the chat/run
+  that drove it are on the row (on hover) and in the sheet.
+
+Data: `~/data/browser/sessions.json` (running sessions, Browserbase contexts), `history.db`, `home.json` (home
 settings); sign-ins in `~/.config/springroll/browser/profiles/` (moved there from `~/data` on first
 use). Agents' usage guide: `skills/web/SKILL.md`.
 
@@ -93,6 +119,12 @@ a browser of its own instead of attaching to ours (skipping the home proxy and p
 - `POST api/sessions/<name>/stop`
 - `GET api/setup` → `[{id, title, state: ready|needs|installing|off, detail, action?, authURL?, enabled?, fallback?}]`;
   `POST api/setup/home`, `POST api/setup/home/remove`
+- `GET api/history?limit=&before=&job=&origin=&thread=&site=` → newest first:
+  `[{id, name, via, fallbackFrom, fallbackReason, profile, exitIP, providerId, thread, origin, threadTitle,
+  job, alsoThreads, started, ended, live, seconds, endReason, error, pages, dataBytes, sites}]`
+  (`before` is a `started` time, for paging; `site` matches any page's URL)
+- `GET api/history/<id>` → the same plus `pageList: [{at, url, title}]`
+- `POST api/history/watch`: start recording newly started browsers now (`browser start` calls it)
 - `GET api/backends` → `[{via, ready, key | reason, …}]`
 - `GET api/home` → the home route's checks `{ok, reason, enabled, fallback, homeIP, ip, serverIP, exitNode, nodes, authURL?}`;
   `POST api/home` `{enabled?, fallback?, node?, accept?}` changes settings and returns the same

@@ -6,4 +6,4 @@ Ideas when it's built: read Google Calendar through its connection (Connections 
 Google Calendar), show job runs from agentd (`GET /api/agent/jobs`, `next`) and
 to-dos with due dates (the To-dos app's API). Read-only first; agents add events
 only once the owner allows it. Replace this folder's index.html with the real app and delete `.placeholder`
-(see AGENTS.md "Apps" and DESIGN.md).
+(see `skills/apps/SKILL.md` and DESIGN.md).

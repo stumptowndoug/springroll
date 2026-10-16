@@ -7,25 +7,28 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '../store.mjs';
-import { ThreadManager, usableModels, mentionBlocks, listFiles } from '../threads.mjs';
+import { ThreadManager, usableModels, mentionBlocks, listFiles, memoryText } from '../threads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-let dir, store, tm, events;
+let dir, store, tm, events, personas;
 const ends = new Map();
 
 before(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentd-test-'));
   store = openStore(dir);
   events = [];
-  tm = new ThreadManager({ store, emit: (e) => events.push(e), notify() {}, mcpServers: () => [], cancelMs: 1500,
-    agents: () => [{ id: 'fake', name: 'Fake', acp: [process.execPath, path.join(here, 'fake-agent.mjs')] }] });
+  personas = path.join(dir, 'personas');
+  fs.mkdirSync(personas);
+  fs.writeFileSync(path.join(personas, 'pirate.md'), '---\nname: Pirate\nicon: anchor\n---\nTalk like a pirate.\n');
+  tm = new ThreadManager({ store, emit: (e) => events.push(e), notify() {}, mcpServers: () => [], cancelMs: 1500, memoryFile: null, personasDir: personas,
+    agents: () => ['fake', 'pi'].map((id) => ({ id, name: id, acp: [process.execPath, path.join(here, 'fake-agent.mjs')] })) });
   tm.onTurnEnd = (t, r) => { ends.set(t.id, [...(ends.get(t.id) || []), r]); };
 });
 after(() => { tm.shutdown(); fs.rmSync(dir, { recursive: true, force: true }); });
 
 const until = async (f, ms = 10000) => { const t0 = Date.now(); while (!f()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise((r) => setTimeout(r, 20)); } };
-async function chat(text) {
-  const t = store.createThread({ agent: 'fake', cwd: os.tmpdir() });
+async function chat(text, agent = 'fake') {
+  const t = store.createThread({ agent, cwd: os.tmpdir() });
   await tm.prompt(t.id, { text });
   return t.id;
 }
@@ -188,4 +191,110 @@ test('delegated agents: an agent item in the turn, its own transcript, unknown s
   assert.ok(!items.some((i) => i.text === 'not mine'));
   assert.equal(ends.get(id)[0].text, 'Delegated.', "the chat's answer is its own agent's");
   assert.deepEqual(store.thread(id).commands, [], "a delegated agent's commands aren't the chat's");
+});
+
+test('background tasks: a task item in the turn, its output streamed, its end recorded; the call is marked backgrounded', async () => {
+  const id = await chat('bgrun');
+  await turnsEnded(id);
+  const task = () => store.items(id).find((i) => i.kind === 'task');
+  assert.equal(task().state, 'running');
+  assert.equal(task().description, 'Build the thing');
+  assert.equal(task().turn, store.items(id).find((i) => i.kind === 'tool').turn, "in the turn of the call that started it");
+  assert.deepEqual(tm.background(id).map((b) => [b.kind, b.id, b.stoppable]), [['task', 'bg1', true]]);
+  await until(() => task().state === 'completed');
+  assert.ok(task().ended);
+  const tool = store.items(id).find((i) => i.kind === 'tool');
+  await until(() => store.item(tool.id).exitCode === 0);
+  assert.equal(store.item(tool.id).output, 'step 1\nstep 2\nstep 3\n', 'chunks kept in order, none lost to batching');
+  assert.ok(store.item(tool.id).backgrounded);
+  assert.deepEqual(tm.taskOutput(id, 'bg1'), { text: 'step 1\nstep 2\nstep 3\n', exitCode: 0 });
+  assert.deepEqual(tm.background(id), []);
+});
+
+test('background tasks: Stop goes to the adapter; an agent that goes away takes its tasks with it', async () => {
+  const id = await chat('bghold');
+  await turnsEnded(id);
+  assert.equal(await tm.stopTask(id, 'nope'), false);
+  assert.equal(await tm.stopTask(id, 'bg2'), true);
+  await until(() => store.items(id).find((i) => i.kind === 'task').state === 'stopped');
+  const id2 = await chat('bghold');
+  await turnsEnded(id2);
+  tm.stop(id2);
+  await until(() => store.items(id2).find((i) => i.kind === 'task').state === 'disconnected');
+});
+
+test("a finished job run's agent is stopped; a chat's stays", async () => {
+  const job = store.createThread({ agent: 'fake', cwd: os.tmpdir(), origin: 'job:test' });
+  await tm.prompt(job.id, { text: 'hello' });
+  const id = await chat('hello');
+  await turnsEnded(job.id);
+  await turnsEnded(id);
+  tm.reapJobs(10 * 60 * 1000);
+  assert.ok(tm.live.has(job.id), 'not before it has been idle a while');
+  tm.reapJobs(0);
+  assert.ok(!tm.live.has(job.id));
+  assert.ok(tm.live.has(id));
+  await tm.prompt(job.id, { text: 'again' });
+  await turnsEnded(job.id, 2);
+  assert.ok(!ends.get(job.id)[1].error, 'a reply starts it again');
+});
+
+test("a job run's agent stays while it has a background task or a Monitor before its deadline", async () => {
+  for (const text of ['bghold', 'monitor']) {
+    const job = store.createThread({ agent: 'fake', cwd: os.tmpdir(), origin: 'job:test' });
+    await tm.prompt(job.id, { text });
+    await turnsEnded(job.id);
+    tm.reapJobs(0);
+    assert.ok(tm.live.has(job.id), text);
+    tm.stop(job.id);
+  }
+});
+
+test('agents that never report background work are asked to work in the foreground', async () => {
+  const pi = await chat('echoall', 'pi'), fake = await chat('echoall');
+  await turnsEnded(pi); await turnsEnded(fake);
+  const said = (id) => store.items(id).find((i) => i.kind === 'text').text;
+  assert.match(said(pi), /Run commands in the foreground/);
+  assert.doesNotMatch(said(fake), /foreground/);
+});
+
+test('memory: sent to a fresh session unless Claude already has it from ~/home/CLAUDE.md', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-')), file = path.join(home, 'notes', 'memory.md');
+  assert.equal(memoryText('codex', home, file), null, 'no file, nothing sent');
+  fs.mkdirSync(path.dirname(file));
+  fs.writeFileSync(file, '# Memory\n- Prefers short answers.\n');
+  assert.match(memoryText('codex', home, file), /^\[Memory from Springroll: .*\]\n# Memory\n- Prefers short answers\.$/);
+  assert.equal(memoryText('claude', home, file), null);
+  assert.equal(memoryText('claude', path.join(home, 'jobs'), file), null);
+  assert.ok(memoryText('claude', '/tmp/elsewhere', file), 'Claude outside ~/home gets it');
+  assert.ok(memoryText('claude', home + '-other', file), 'a sibling folder is not ~/home');
+  assert.equal(memoryText('codex', home, null), null);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('personas: /persona switches, the next prompt carries the preset, later ones a reminder, off says so', async () => {
+  const id = await chat('echoall');
+  await turnsEnded(id);
+  const said = () => JSON.parse(store.items(id).filter((i) => i.kind === 'text').at(-1).text);
+  assert.deepEqual(said(), ['echoall'], 'no persona, nothing added');
+  assert.deepEqual(await tm.prompt(id, { text: '/persona pirate' }), { queued: false, persona: 'pirate' });
+  assert.equal(store.thread(id).persona, 'pirate');
+  assert.equal(store.items(id).at(-1).text, 'Persona: Pirate');
+  await tm.prompt(id, { text: 'echoall' });
+  await turnsEnded(id, 2);
+  assert.match(said()[0], /^\[Persona: Pirate\. The owner asked you to play this part.*\]\nTalk like a pirate\.$/);
+  await tm.prompt(id, { text: 'echoall' });
+  await turnsEnded(id, 3);
+  assert.match(said()[0], /^\[Persona: Pirate \(.*pirate\.md\): stay in character\. Only the voice changes/);
+  await tm.prompt(id, { text: '/persona' });
+  assert.match(store.items(id).at(-1).text, /^Persona: Pirate\. Switch with \/persona <name> \(pirate\)/);
+  assert.throws(() => tm.setPersona(id, 'nobody'), /no persona nobody \(have: pirate\)/);
+  await tm.prompt(id, { text: '/persona off' });
+  await tm.prompt(id, { text: 'echoall' });
+  await turnsEnded(id, 4);
+  assert.deepEqual(said(), ['[Persona off: from now on, speak in your normal voice.]', 'echoall']);
+  await tm.prompt(id, { text: 'echoall' });
+  await turnsEnded(id, 5);
+  assert.deepEqual(said(), ['echoall']);
+  assert.equal(store.items(id).filter((i) => i.kind === 'user').length, 5, '/persona messages are not user messages');
 });

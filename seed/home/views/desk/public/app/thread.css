@@ -1,6 +1,8 @@
 /* Conversations: timeline + composer. Quiet by default: finished work fades,
    live work shimmers, the answer reads like a letter. */
-.thread { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.thread-shell { height: 100%; width: 100%; display: flex; min-height: 0; position: relative; container-type: inline-size; }
+.thread { height: 100%; display: flex; flex-direction: column; min-height: 0; flex: 1; min-width: 0; }
+.thread-shell > .thread { position: relative; inset: auto; } /* .thread.page: beside the side pane, not over it */
 .thread-head { flex: none; display: flex; align-items: flex-start; gap: 8px; width: min(820px, 100% - 2 * var(--gutter)); margin: 0 auto; padding: 22px 0 6px; }
 .thread-head:empty { display: none; }
 .th-main { flex: 1; min-width: 0; }
@@ -119,14 +121,32 @@
 /* Empty chat */
 .empty-chat { padding: 10vh 0 24px; }
 .empty-chat .ui-display { margin-bottom: 14px; }
-.empty-chat > p { max-width: 52ch; margin-bottom: 22px; }
-.suggest { display: flex; flex-wrap: wrap; gap: 8px; }
-.suggest .ui-chip { height: 32px; }
+.empty-chat > p { max-width: 52ch; }
 
 /* Dock: approvals and composer */
 .dock { flex: none; padding: 0 var(--gutter) max(16px, env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 70%, transparent); position: relative; }
 .stack { width: min(760px, 100%); margin: 0 auto; display: grid; gap: 8px; }
 .stack:not(:empty) { margin-bottom: 10px; }
+/* Background work: one quiet line above the composer, opening into the list */
+.bg-work { width: min(760px, 100%); margin: 0 auto; }
+.bg-work:not(:empty) { margin-bottom: 8px; }
+.bg summary { display: flex; align-items: center; gap: 8px; padding: 4px 6px; list-style: none; cursor: pointer; font-size: var(--text-sm); color: var(--muted); border-radius: var(--radius-sm); }
+.bg summary::-webkit-details-marker { display: none; }
+.bg summary:hover { color: var(--fg); }
+.bg summary > .ui-shimmer { white-space: nowrap; flex: none; }
+.bg summary .bg-counts { color: var(--faint); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg summary > svg:last-child { margin-left: auto; transition: transform var(--fast); }
+.bg[open] summary > svg:last-child { transform: rotate(180deg); }
+.bg-list { background: var(--surface); border-radius: var(--radius); padding: 4px 0; margin-top: 4px; max-height: 40vh; overflow: auto; }
+.bg-row { display: grid; grid-template-columns: auto 5.5rem minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: var(--row-py) var(--row-px); font-size: var(--text-sm); }
+.bg-row + .bg-row { box-shadow: 0 -1px 0 var(--line); }
+.bg-row > svg { color: var(--muted); }
+.bg-row .bg-what { color: var(--muted); }
+.bg-row .bg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg-row .ui-mono { color: var(--faint); font-size: var(--text-xs); }
+.bg-row.opens { cursor: pointer; }
+.bg-row.opens:hover { background: var(--state-hover); }
+@media (max-width: 600px) { .bg-row { grid-template-columns: auto minmax(0, 1fr) auto auto; } .bg-row .bg-what { display: none; } }
 .approval { background: var(--surface-overlay); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: var(--radius); padding: 14px 16px;
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 26px -14px rgb(0 0 0 / 30%); display: grid; gap: 10px; animation: ui-pop var(--med); }
 .ap-head { display: flex; align-items: center; gap: 8px; color: var(--warn); }
@@ -166,7 +186,7 @@
 .thread.panel .timeline, .thread.panel .tail, .thread.panel .chat-report { width: calc(100% - 32px); }
 .thread.panel .empty-chat { padding-top: 4vh; }
 .thread.panel .empty-chat .ui-display { font-size: 1.9rem; }
-.thread.panel .dock { padding: 0 12px 12px; }
+.thread.panel .dock { padding: 0 12px 12px; background: linear-gradient(to top, var(--surface-recessed) 70%, transparent); }
 .thread.panel .msg-user { max-width: 88%; }
 
 @media (max-width: 860px) {
@@ -207,21 +227,45 @@
 .c-image:hover button, .c-image button:focus-visible { opacity: 1; }
 @media (pointer: coarse) { .c-image button { opacity: 1; } }
 .composer.dropping { border-color: var(--accent); }
-.c-foot .c-attach { width: 30px; height: 30px; margin-right: 2px; color: var(--muted); }
+.c-foot .c-attach { width: 30px; height: 30px; flex: none; color: var(--muted); }
 .u-images { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .u-images img { display: block; max-width: 220px; max-height: 160px; border-radius: 12px; object-fit: cover; }
 .msg-user.queued .u-images { opacity: .6; }
 
-/* Delegated agents: one row each in their turn, opening to what that agent did */
+/* Delegated agents and background tasks: one row each in their turn, opening in the side pane */
 .agent-wrap { margin-left: calc(var(--depth, 0) * 18px); }
-.row.agent > summary .a-icon { flex: none; width: 16px; display: grid; place-items: center; color: var(--faint); }
-.row.agent.completed > summary .a-icon { color: var(--ok); }
-.row.agent.waiting > summary .a-icon { color: var(--warn); }
+div.row[data-side]:hover { background: var(--state-hover); }
+div.row[data-side].selected { background: var(--surface-selected); }
+div.row[data-side]:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.row.agent .a-icon, .side-head .a-icon { flex: none; width: 16px; display: grid; place-items: center; color: var(--faint); }
+.row.agent.completed .a-icon, .side-head.completed .a-icon { color: var(--ok); }
+.row.agent.waiting .a-icon { color: var(--warn); }
 .row.agent .a-name { flex: none; color: var(--fg); font-weight: 550; }
+.row.task .a-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row.agent .extra { min-width: 0; flex: 1; }
+.row.agent .extra.mono { font-family: var(--font-mono); font-size: var(--text-xs); }
 .row.agent .deco { margin-left: auto; display: flex; gap: 6px; align-items: center; }
 .row.agent .a-status { color: var(--muted); }
 .agent-wrap .a-activity { font-size: var(--text-xs); color: var(--muted); padding: 0 0 2px 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row.agent .a-body { margin: 2px 0 6px 7px; padding: 4px 0 4px 16px; border-left: 1px solid var(--line); gap: 4px; }
-.row.agent .a-body .msg-agent { color: var(--muted); font-size: var(--text-sm); }
-.row.agent .a-prompt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: var(--text-sm); max-height: 8.5em; overflow: auto; }
+.a-prompt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: var(--text-sm); max-height: 8.5em; overflow: auto; }
+
+/* The side pane: beside the chat when there's room, over it when there isn't (a phone, the Ask panel) */
+.thread-side { flex: none; width: min(480px, 44%); display: flex; flex-direction: column; min-height: 0; background: var(--surface-recessed); }
+.thread-side[hidden] { display: none; }
+@container (max-width: 760px) { .thread-side { position: absolute; inset: 0; width: auto; z-index: 5; background: var(--bg); } }
+.thread-shell.in-panel .thread-side { background: var(--surface-recessed); }
+.side-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 10px 2px 16px; }
+.side-head .ui-title { flex: 1; min-width: 0; font-size: var(--text-base); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-meta { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: var(--ctl-h); padding: 0 16px 8px 40px; font-size: var(--text-sm); color: var(--muted); }
+.side-meta .sep { color: var(--faint); }
+.side-meta .ui-mono { font-size: var(--text-xs); color: var(--faint); }
+.side-meta .ui-btn { margin-left: auto; }
+.side-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 16px 20px; display: grid; align-content: start; gap: 10px; }
+.side-body .ui-terminal > .out { max-height: none; }
+.side-body .ui-terminal > .more { padding-bottom: 6px; color: var(--faint); cursor: default; }
+.side-note { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+.side-section { display: grid; gap: 4px; }
+.side-working { font-size: var(--text-sm); color: var(--muted); padding: 2px 0; }
+.side-foot { flex: none; display: flex; justify-content: flex-end; padding: 10px 16px 14px; }
+.side-transcript { display: grid; gap: 4px; min-width: 0; }
+.side-transcript .msg-agent { color: var(--muted); font-size: var(--text-sm); }
