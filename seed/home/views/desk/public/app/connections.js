@@ -224,8 +224,8 @@ function accountsSheet(c) {
             <button class="ui-btn quiet muted" data-g="test" data-email="${ui.esc(a.email)}">Test</button>
             <button class="ui-btn quiet danger" data-g="remove" data-email="${ui.esc(a.email)}">Remove</button></div>`).join('')}</div>` : ''}
         ${g.accounts.length ? `<div class="ui-card pad" style="display:flex;align-items:center;gap:14px">
-          <div style="flex:1"><b style="font-weight:600">When an agent sends email</b><p class="ui-muted" style="font-size:var(--text-sm);margin-top:2px">${g.policy?.send === 'ask' ? 'It shows you the email in the chat and sends only after you say yes.' : 'Agents reply, send and archive for you. Replies land in Gmail\'s Sent as usual.'}</p></div>
-          <div class="ui-seg"><button type="button" data-g="policy-auto" aria-pressed="${g.policy?.send !== 'ask'}">Send right away</button><button type="button" data-g="policy-ask" aria-pressed="${g.policy?.send === 'ask'}">Ask me first</button></div></div>` : ''}
+          <div style="flex:1"><b style="font-weight:600">When an agent sends email</b><p class="ui-muted" style="font-size:var(--text-sm);margin-top:2px">${g.policy?.send !== 'auto' ? 'It shows you the email in the chat and sends only after you say yes.' : 'Agents reply, send and archive for you. Replies land in Gmail\'s Sent as usual.'}</p></div>
+          <div class="ui-seg"><button type="button" data-g="policy-auto" aria-pressed="${g.policy?.send === 'auto'}">Send right away</button><button type="button" data-g="policy-ask" aria-pressed="${g.policy?.send !== 'auto'}">Ask me first</button></div></div>` : ''}
         <form class="ui-stack acct-add" data-g-form="add" style="gap:12px">
           <span class="ui-label">${g.accounts.length ? 'Add another account' : 'Add an account'}</span>
           <div class="ui-field"><label for="ga-email">Gmail address</label><input id="ga-email" name="email" type="email" placeholder="you@gmail.com" autocomplete="off"></div>

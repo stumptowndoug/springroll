@@ -58,6 +58,7 @@ check "upcoming API" "curl -fsS localhost:8000/api/upcoming | jq -e 'type==\"arr
 check "needs-you config" "curl -fsS localhost:8000/api/needs/config | jq -e 'type==\"object\"'"
 check "personas: presets ship, none by default" "curl -fsS localhost:8000/api/personas | jq -e 'length>=4' && curl -fsS localhost:8000/api/settings | jq -e '.persona.default==null'"
 check "to-dos app answers" "for i in \$(seq 1 30); do curl -fsS localhost:8000/v/todos/api/boards | jq -e '.[0].id==\"personal\"' && exit 0; sleep 2; done; exit 1"
+check "email asks first by default" "curl -fsS localhost:8000/api/google | jq -e '.policy.send==\"ask\"'"
 check "housekeeping job" "curl -fsS localhost:8000/api/agent/jobs | grep -q housekeeping"
 check "memory seeded, Claude's own off" "test -s /home/agent/home/notes/memory.md && jq -e '.autoMemoryEnabled==false' /home/agent/.claude/settings.json"
 check "skills linked for every agent" "test -e /home/agent/.claude/skills/timeline/SKILL.md && test -e /home/agent/.codex/skills/jobs/SKILL.md && test -e /home/agent/.pi/agent/skills/machine/SKILL.md"
@@ -69,6 +70,7 @@ if [ -n "${BACKUP:-}" ]; then
   check "restored: secrets" "test -s /home/agent/.config/springroll/gmail"
 else
   check "re-run is clean" "bash /opt/springroll-seed/install.sh --no-tailscale $* >/dev/null 2>&1"
+check "browser still opens after the re-run" "sudo -u agent bash -lc '. ~/.config/springroll/env; browser start t --via local --url https://example.com >/dev/null && agent-browser --session t get title | grep -q Example; r=\$?; browser stop t >/dev/null; exit \$r'"
 fi
 echo "$IMAGE: $pass passed, $fail failed"
 [ "$fail" = 0 ]

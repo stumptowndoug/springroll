@@ -37,7 +37,7 @@ export function listGoogle() {
   return {
     accounts: d.accounts.map((a) => ({ email: a.email, method: a.method, added: a.added || null, lastTest: a.lastTest || null })),
     client: d.client?.id ? { id: d.client.id } : null,
-    policy: { send: d.policy?.send === 'ask' ? 'ask' : 'auto' },
+    policy: { send: d.policy?.send === 'auto' ? 'auto' : 'ask' }, // Ask me first unless the owner chose otherwise
   };
 }
 
