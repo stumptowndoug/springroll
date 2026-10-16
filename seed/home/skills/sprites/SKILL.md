@@ -35,7 +35,7 @@ them), then save the ready state: `sprite checkpoint create --comment "ready"`.
 
 Coding agents the project runs on the Sprite (Cursor, Antigravity, Claude, Codex:
 anything in `agents/agents.json` with a `signin`) sign in with the owner's plan,
-once per Sprite. Don't send the owner to a terminal: put the sign-in on Home,
+once per Sprite. Don't send the owner to a terminal: put the sign-in on the Timeline,
 where **Sign in** runs the agent's login on the Sprite and walks them through it
 (open the page, paste or enter a code):
 

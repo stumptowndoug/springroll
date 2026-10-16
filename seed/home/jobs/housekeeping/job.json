@@ -1,0 +1,16 @@
+{
+  "title": "Nightly housekeeping",
+  "group": "Springroll",
+  "type": "agent",
+  "schedule": "30 2 * * *",
+  "agent": "claude",
+  "model": "sonnet",
+  "effort": "medium",
+  "cwd": "~/home",
+  "prompt": "Nightly housekeeping for this machine: follow ~/home/jobs/housekeeping/NOTES.md from start to finish.",
+  "enabled": true,
+  "catchUp": "skip",
+  "notify": true,
+  "timeline": "failures",
+  "timeout": "45m"
+}
