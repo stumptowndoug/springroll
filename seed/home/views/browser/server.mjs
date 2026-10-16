@@ -5,7 +5,8 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startSession, stopSession, listSessions, backends, streamPort, pageInfo, ab, guardHome } from './lib.mjs';
+import { startSession, stopSession, listSessions, backends, streamPort, pageInfo, ab, guardHome, read } from './lib.mjs';
+import * as history from './history.mjs';
 import { homeStatus, writeHome } from './home.mjs';
 import { parts, setupHome, removeHome } from './setup.mjs';
 
@@ -52,9 +53,23 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/sessions' && req.method === 'POST') {
       const b = await readBody(req);
-      return json(res, 200, pub(await startSession(b)));
+      return json(res, 200, pub(await startSession({ ...b, by: { origin: 'app', thread: null } })));
     }
-    let m = p.match(/^\/api\/sessions\/([a-z0-9-]+)\/viewport$/);
+    if (p === '/api/history' && req.method === 'GET') {
+      return json(res, 200, history.list(Object.fromEntries(url.searchParams)));
+    }
+    // `browser start` asks for this before opening the first page.
+    if (p === '/api/history/watch' && req.method === 'POST') {
+      record();
+      await Promise.race([history.listening(), new Promise((r) => setTimeout(r, 3000))]);
+      return json(res, 200, { ok: true });
+    }
+    let m = p.match(/^\/api\/history\/(\d+)$/);
+    if (m && req.method === 'GET') {
+      const h = history.get(m[1]);
+      return h ? json(res, 200, h) : json(res, 404, { error: 'no such session' });
+    }
+    m = p.match(/^\/api\/sessions\/([a-z0-9-]+)\/viewport$/);
     if (m && req.method === 'POST') {
       await live(m[1]);
       const { w, h } = await readBody(req);
@@ -65,7 +80,7 @@ const server = http.createServer(async (req, res) => {
     m = p.match(/^\/api\/sessions\/([a-z0-9-]+)\/(stop|open|back|reload)$/);
     if (m && req.method === 'POST') {
       const [, name, act] = m;
-      if (act === 'stop') return json(res, 200, pub(await stopSession(name)));
+      if (act === 'stop') return json(res, 200, pub(await stopSession(name, 'owner')));
       await live(name);
       if (act === 'open') {
         let { url: to } = await readBody(req);
@@ -101,5 +116,13 @@ server.on('upgrade', async (req, socket, head) => {
 setInterval(() => listSessions().catch(() => {}), 60000);
 // And while home browsers run, check the home route every 3 minutes (guardHome).
 setInterval(() => guardHome().catch(() => {}), 180000);
+
+// History: watch each running browser's pages (cheap: reads sessions.json), close what was lost
+// while the server was down, and drop sessions older than half a year once a day.
+const record = () => { try { history.closeLost(history.watch(read().sessions)); } catch (e) { console.error('history:', e.message); } };
+setInterval(record, 3000);
+record();
+try { history.prune(); } catch {}
+setInterval(() => { try { history.prune(); } catch {} }, 864e5);
 
 server.listen(PORT, '127.0.0.1', () => console.log(`Browser on 127.0.0.1:${PORT}`));

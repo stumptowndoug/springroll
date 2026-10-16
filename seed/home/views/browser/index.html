@@ -26,6 +26,16 @@
 .ctl .ui-status { margin-right: 4px; white-space: nowrap; }
 #homeSet { margin-top: var(--gap); }
 #homeSet select { width: auto; }
+#hist { margin-top: 44px; }
+#hist .ui-feed-row { cursor: pointer; }
+#hsheet .ui-facts { margin-bottom: 28px; }
+#hpages .ui-row .sub { font-family: var(--font-mono); font-size: var(--text-xs); }
+#histMore { margin-top: 12px; }
+/* Phones: no room for row actions; tapping a row opens its sheet, which has Chat and the chat/run. */
+@media (max-width: 640px) {
+  #hist .ui-feed-row { grid-template-columns: 3.9rem 7px minmax(0, 1fr) auto; column-gap: 12px; padding: 12px 10px; }
+  #hist .ui-feed-row > .acts { display: none; }
+}
 @media (max-width: 520px) { .ctl .lbl { display: none; } }
 @media (max-width: 720px) {
   #addr { order: 9; flex-basis: 100%; }
@@ -47,6 +57,7 @@
 <div class="ui-menu" id="moreMenu">
   <button data-icon="plus" id="newBtn">New browser…</button>
   <button data-icon="external-link" id="liveBtn">Provider live view</button>
+  <button data-icon="history" id="histBtn">History</button>
   <hr><button class="danger" data-icon="square" id="stopBtn">Stop browser</button>
 </div>
 
@@ -69,6 +80,11 @@
       <div style="display:flex;gap:8px"><button class="ui-btn primary" id="go" data-icon="play">Start</button><button class="ui-btn ghost" type="button" id="cancel" hidden>Cancel</button></div>
     </div>
   </form>
+  <section class="ui-section" id="hist">
+    <div class="ui-label">History</div>
+    <div class="ui-feed" id="histFeed"><div class="ui-loading">Loading</div></div>
+    <button class="ui-link-action" id="histMore" hidden>Show older →</button>
+  </section>
   <section class="ui-section" id="ways">
     <div class="ui-label">Ways to browse</div>
     <div class="ui-group" id="parts"><div class="ui-row"><span class="ui-shimmer">Checking</span></div></div>
@@ -79,6 +95,9 @@
         <span class="ctl"><select id="homeFb" aria-label="If home internet is down"><option value="stop">Don’t start</option><option value="kernel">Use Kernel</option><option value="local">Use this server</option></select></span></div>
     </div>
   </section>
+  <dialog class="ui-sheet" id="hsheet"><div class="ui-toolbar"><span class="ui-title" id="htitle"></span><div class="ui-spacer"></div><button class="ui-icon-btn plain" data-close data-icon="x" title="Close"></button></div>
+    <div class="body"><dl class="ui-facts" id="hfacts"></dl><div class="ui-label">Pages</div><div class="ui-group" id="hpages"></div></div>
+    <footer><button class="ui-btn" id="hthread" data-icon="messages-square"></button><button class="ui-btn primary" id="hchat" data-icon="message-square">Chat</button></footer></dialog>
   <div class="ui-menu" id="homeMenu"><button data-icon="refresh-cw" id="homeCheck">Check again</button><hr><button class="danger" data-icon="trash-2" id="homeRemove">Remove home internet</button></div>
 </div></main>
 
@@ -99,6 +118,7 @@ async function load() {
   try { sessions = await api('api/sessions'); }
   catch (e) { sessions = []; showHome(`<div class="ui-empty"><i data-icon="globe-lock"></i><span class="title">Couldn’t reach the browser service</span><p>${esc(e.message)}</p><button class="ui-btn" onclick="load()" data-icon="refresh-cw">Try again</button></div>`); return; }
   const want = location.hash.slice(1);
+  if (want === 'history') return showHome();
   const s = sessions.find((x) => x.name === want) || sessions.find((x) => x.name === cur?.name) || sessions[0];
   if (s) open(s); else showHome();
 }
@@ -106,11 +126,15 @@ async function load() {
 function showHome(html) {
   close(); cur = null;
   $('bar').hidden = true; $('viewer').hidden = true; $('home').hidden = false;
-  $('empty').innerHTML = html ?? `<div class="ui-empty"><i data-icon="orbit"></i><span class="title">No browser running</span><p>Ask an agent to look something up, or start one and sign in yourself.</p>
+  const running = sessions.length && !html && `<section class="ui-section"><div class="ui-label">Running</div><div class="ui-group">${sessions.map((s) => `<div class="ui-row"><div class="body"><span class="title">${esc(s.title || s.url || s.name)}</span><span class="sub">${esc([s.name, VIA[s.via], s.profile && `profile ${s.profile}`, `since ${ui.time(s.started)}`].filter(Boolean).join(' · '))}</span></div>
+    <span class="ctl"><button class="ui-btn sm" data-watch="${esc(s.name)}" data-icon="eye">Watch</button></span></div>`).join('')}</div></section>`;
+  $('empty').innerHTML = html ?? running ?? `<div class="ui-empty"><i data-icon="orbit"></i><span class="title">No browser running</span><p>Ask an agent to look something up, or start one and sign in yourself.</p>
     <div style="display:flex;gap:8px;justify-content:center"><button class="ui-btn primary" id="emptyStart" data-icon="play">Start a browser</button><button class="ui-btn" id="emptyAsk" data-icon="message-square">Ask an agent</button></div></div>`;
   $('start').hidden = true;
   loadParts();
   ui.hydrate?.($('empty'));
+  loadHistory();
+  for (const b of $('empty').querySelectorAll('[data-watch]')) b.addEventListener('click', () => { const s = sessions.find((x) => x.name === b.dataset.watch); if (s) open(s); });
   $('emptyStart')?.addEventListener('click', () => showStart());
   $('emptyAsk')?.addEventListener('click', () => desk.ask('Use the browser to '));
   desk.context?.({ label: 'Browser', note: 'The Browser app: nothing running. Start one with `browser start [--via home|local|kernel|browserbase] [--profile P]` (home route: `browser home status|on|off`), drive it with `agent-browser --session <name> …`.' });
@@ -202,7 +226,7 @@ function open(s) {
   if (document.activeElement !== $('url')) $('url').value = s.url || '';
   $('liveBtn').hidden = !s.live;
   meta();
-  if (history.replaceState) history.replaceState(null, '', '#' + s.name);
+  if (window.history.replaceState) window.history.replaceState(null, '', '#' + s.name);
   if (!same) { connect(); fitted = ''; setTimeout(fit, 300); }
 }
 function meta() {
@@ -216,6 +240,7 @@ $('pick').addEventListener('change', () => { const s = sessions.find((x) => x.na
 $('chat').addEventListener('click', () => cur && desk.askAbout({ key: `browser:${cur.name}`, label: `Browser: ${cur.title || cur.url || cur.name}`, note: noteFor(cur) }));
 $('more').addEventListener('click', () => ui.openMenu($('moreMenu'), $('more')));
 $('newBtn').addEventListener('click', () => { ui.closePopover(); showStart(true); });
+$('histBtn').addEventListener('click', () => { ui.closePopover(); location.hash = 'history'; showHome(); });
 $('liveBtn').addEventListener('click', () => { ui.closePopover(); if (cur?.live) window.open(cur.live, '_blank', 'noopener'); });
 $('stopBtn').addEventListener('click', async () => {
   ui.closePopover();
@@ -230,6 +255,80 @@ $('addr').addEventListener('submit', (e) => {
   $('screen').focus();
 });
 function update(info) { if (!cur || !info) return; Object.assign(cur, info); $('url').value = cur.url || ''; meta(); }
+
+// ---- History: every past session (history.mjs), newest first, by day; details in a sheet ----
+let hist = [], histAll = false;
+const ENDED = { stopped: 'stopped', owner: 'stopped by you', idle: 'closed after an idle hour', gone: 'the browser ended', 'home-down': 'home internet dropped', lost: 'ended while the app was down', failed: 'didn’t start' };
+const dur = (h) => ui.duration(h.seconds * 1000).replace(/ 0s$/, '');
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const from = (h) => h.job || (h.origin === 'chat' ? 'Chat' : h.origin === 'app' ? 'You' : h.origin === 'terminal' ? 'Terminal' : (h.origin || '').replace(/^view:/, ''));
+const fromLong = (h) => h.job ? `the ${h.job} job` : h.origin === 'chat' ? `a chat${h.threadTitle ? ` (“${h.threadTitle}”)` : ''}` : h.origin === 'app' ? 'you, in this app' : h.origin === 'terminal' ? 'the terminal' : h.origin;
+const hTitle = (h) => h.sites.length ? h.sites.slice(0, 3).join(', ') + (h.sites.length > 3 ? ` +${h.sites.length - 3}` : '') : h.endReason === 'failed' ? 'Didn’t start' : h.live ? 'Blank page' : 'Nothing opened';
+const route = (h) => (VIA[h.via] || h.via || 'unknown') + (h.fallbackFrom ? ` (instead of ${VIA[h.fallbackFrom] || h.fallbackFrom})` : '');
+const hSub = (h) => h.endReason === 'failed' ? h.error : [route(h), h.live ? `running ${dur(h)}` : dur(h), plural(h.pages, 'page'), !h.live && ENDED[h.endReason]].filter(Boolean).join(' · ');
+const hNote = (h) => `A past browser session from the Browser app's history (#${h.id}, "${h.name}"): ${route(h)}${h.exitIP ? ` from ${h.exitIP}` : ''}, ${new Date(h.started).toLocaleString()}, ${dur(h)}, started by ${fromLong(h)}, ${h.live ? 'still running' : ENDED[h.endReason] || h.endReason}${h.error ? ` (${h.error})` : ''}. Sites: ${h.sites.join(', ') || 'none'}. Every page with times: \`browser history ${h.id}\` (or GET localhost:8103/api/history/${h.id}).${h.thread ? ` The chat or run that drove it: thread ${h.thread} (GET localhost:8090/threads/${h.thread}).` : ''}`;
+
+// A refresh reloads as many as are showing; "Show older" adds the next 40.
+async function loadHistory(more) {
+  const n = more ? 40 : Math.max(40, hist.length);
+  let got;
+  try { got = await api(`api/history?limit=${n}${more && hist.length ? `&before=${hist.at(-1).started}` : ''}`); }
+  catch (e) { if (!hist.length) { $('histFeed').innerHTML = `<div class="ui-empty"><i data-icon="orbit"></i><span class="title">Couldn’t load the history</span><p>${esc(e.message)}</p></div>`; ui.hydrate?.($('histFeed')); } return; }
+  hist = more ? hist.concat(got) : got;
+  histAll = got.length < n;
+  renderHistory();
+}
+function renderHistory() {
+  $('histMore').hidden = histAll || !hist.length;
+  if (!hist.length) { $('histFeed').innerHTML = `<div class="ui-empty"><i data-icon="orbit"></i><span class="title">No browser sessions yet</span><p>Every browser an agent or you start lands here: the sites, the route, how long it ran.</p></div>`; ui.hydrate?.($('histFeed')); return; }
+  let day = '', html = '';
+  for (const h of hist) {
+    const d = ui.day(h.started);
+    if (d !== day) { html += `<div class="ui-feed-day">${esc(d)}</div>`; day = d; }
+    const dot = h.live ? 'run' : h.endReason === 'failed' ? 'danger' : h.endReason === 'home-down' || h.endReason === 'lost' ? 'warn' : 'ok';
+    html += `<div class="ui-feed-row" role="button" tabindex="0" data-h="${h.id}"><span class="time">${ui.time(h.started)}</span><span class="ui-dot ${dot}"></span><span class="title">${esc(hTitle(h))}</span>
+      <span class="ui-tag">${esc(from(h))}</span><span class="acts"><button class="ui-icon-btn" data-hchat="${h.id}" data-icon="message-square" title="Chat about this session"></button>${h.thread ? `<button class="ui-icon-btn" data-hthread="${h.id}" data-icon="messages-square" title="Open the ${h.job ? 'run' : 'chat'} that used it"></button>` : ''}</span>
+      <span class="sub${h.endReason === 'failed' ? ' danger' : ''}">${esc(hSub(h))}</span></div>`;
+  }
+  ui.morph ? ui.morph($('histFeed'), html) : ($('histFeed').innerHTML = html);
+  ui.hydrate?.($('histFeed'));
+}
+const hById = (id) => hist.find((h) => h.id === Number(id));
+const hChat = (h) => desk.askAbout({ key: `browser:history:${h.id}`, label: `Browser: ${hTitle(h)} · ${ui.time(h.started)}`, note: hNote(h) });
+$('histFeed').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b?.dataset.hchat) return hChat(hById(b.dataset.hchat));
+  if (b?.dataset.hthread) return desk.go(`#/t/${hById(b.dataset.hthread).thread}`);
+  const row = e.target.closest('[data-h]'); if (row) showSession(row.dataset.h);
+});
+$('histFeed').addEventListener('keydown', (e) => { const row = e.target.closest('[data-h]'); if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); showSession(row.dataset.h); } });
+$('histMore').addEventListener('click', () => loadHistory(true));
+
+let shown = null;
+async function showSession(id) {
+  let h;
+  try { h = await api(`api/history/${id}`); } catch (e) { return ui.toast(e.message, { icon: 'circle-alert' }); }
+  shown = h;
+  $('htitle').textContent = hTitle(h);
+  const fact = (k, v, small) => v ? `<div><dt>${esc(k)}</dt><dd>${esc(v)}${small ? `<small>${esc(small)}</small>` : ''}</dd></div>` : '';
+  $('hfacts').innerHTML = [
+    fact('Route', route(h), h.fallbackReason ? `Home was down: ${h.fallbackReason}` : h.exitIP ? `Sites saw ${h.exitIP}` : ''),
+    fact('Started', `${ui.day(h.started).split(' · ')[0]}, ${ui.time(h.started)}`, `by ${fromLong(h)}`),
+    fact('Ran', h.live ? `${dur(h)} so far` : dur(h), h.live ? 'Still running' : h.endReason === 'failed' ? h.error : `Ended: ${ENDED[h.endReason] || h.endReason}`),
+    fact('Profile', h.profile, 'Keeps its sign-ins'),
+    fact('Browsed', `${plural(h.pages, 'page')} on ${plural(h.sites.length, 'site')}`, h.dataBytes ? `${(h.dataBytes / 1e6).toFixed(1)} MB through the proxy` : ''),
+    h.alsoThreads.length ? fact('Also used by', plural(h.alsoThreads.length, 'other chat')) : '',
+  ].join('');
+  $('hpages').innerHTML = h.pageList.length ? h.pageList.map((p) => `<a class="ui-row" href="${esc(p.url)}" target="_blank" rel="noopener"><div class="body"><span class="title">${esc(p.title || p.url.replace(/^https?:\/\//, ''))}</span><span class="sub">${esc(p.url)}</span></div><span class="ui-mono ui-muted">${new Date(p.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span></a>`).join('')
+    : `<div class="ui-row"><span class="ui-muted">${h.endReason === 'failed' ? 'It didn’t start, so nothing opened.' : 'No pages opened.'}</span></div>`;
+  $('hthread').hidden = !h.thread;
+  $('hthread').innerHTML = `${ui.icon('messages-square')}Open the ${h.job ? 'run' : 'chat'}`;
+  ui.hydrate?.($('hsheet'));
+  $('hsheet').showModal();
+  desk.context?.({ label: `Browser: ${hTitle(h)} · ${ui.time(h.started)}`, note: hNote(h) });
+}
+$('hchat').addEventListener('click', () => { if (shown) { $('hsheet').close(); hChat(shown); } });
+$('hthread').addEventListener('click', () => { if (shown?.thread) { $('hsheet').close(); desk.go(`#/t/${shown.thread}`); } });
 
 // ---- Live view: agent-browser's stream through the app server ----
 function close() { if (ws) { ws.onclose = null; ws.close(); ws = null; } }
@@ -324,10 +423,11 @@ function fit() {
   api(`api/sessions/${cur.name}/viewport`, { w, h }).catch(() => {});
 }
 
-addEventListener('hashchange', () => { const s = sessions.find((x) => x.name === location.hash.slice(1)); if (s && s.name !== cur?.name) open(s); });
+addEventListener('hashchange', () => { if (location.hash === '#history') return $('home').hidden && showHome(); const s = sessions.find((x) => x.name === location.hash.slice(1)); if (s && s.name !== cur?.name) open(s); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) close(); else if (cur) connect(); });
 setInterval(() => { if (!document.hidden && !starting && $('start').hidden) api('api/sessions').then((all) => {
   const names = (a) => a.map((x) => x.name).join();
+  if (!$('home').hidden && !$('hsheet').open) loadHistory();
   if (names(all) !== names(sessions)) { sessions = all; load(); } else { sessions = all; const x = all.find((y) => y.name === cur?.name); if (x) update(x); }
 }).catch(() => {}); }, 15000);
 load();

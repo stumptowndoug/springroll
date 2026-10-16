@@ -3,6 +3,7 @@
 // watches (and takes over) in the Browser app. See views/browser/README.md.
 import { startSession, stopSession, listSessions, backends } from './lib.mjs';
 import { homeStatus, writeHome } from './home.mjs';
+import * as history from './history.mjs';
 
 const HELP = `browser: a real browser for agents, watched (and taken over) in the Browser app.
 
@@ -21,6 +22,9 @@ const HELP = `browser: a real browser for agents, watched (and taken over) in th
       --stealth  Kernel: on by default (proxy + captcha solving). Browserbase: off by default.
   browser list [--json]          what's running
   browser stop [name|--all]      stop it (cloud browsers bill while running: stop when done)
+  browser history [--job J] [--site S] [--limit N] [--json]
+                                 past sessions: sites, route, how long, who started it, how it ended
+  browser history <id> [--json]  one session, with every page it showed
   browser backends               which backends are ready
   browser home [status]          is the home route working, and from which address
   browser home on|off            make home the default for browser start (or not)
@@ -59,6 +63,26 @@ try {
     const all = await listSessions();
     if (flags.json) console.log(JSON.stringify(all, null, 2));
     else console.log(all.length ? all.map(line).join('\n') : 'Nothing running.');
+  } else if (cmd === 'history') {
+    const dur = (sec) => (sec < 60 ? `${sec}s` : sec < 3600 ? `${Math.round(sec / 60)}m` : `${(sec / 3600).toFixed(1)}h`);
+    const when = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const from = (h) => h.job ? `job ${h.job}` : h.origin === 'chat' ? `chat ${h.thread}` : h.origin === 'app' ? 'the owner (app)' : h.origin;
+    const how = (h) => h.live ? 'running' : h.endReason === 'failed' ? `failed: ${h.error}` : h.endReason;
+    if (pos[0]) {
+      const h = history.get(pos[0]);
+      if (!h) throw new Error(`No session ${pos[0]} in the history.`);
+      if (flags.json) console.log(JSON.stringify(h, null, 2));
+      else {
+        console.log(`#${h.id} ${h.name} · ${when(h.started)} · ${dur(h.seconds)} · ${how(h)}`);
+        console.log(`Route: ${h.via}${h.exitIP ? ` (${h.exitIP})` : ''}${h.fallbackFrom ? ` instead of ${h.fallbackFrom}: ${h.fallbackReason}` : ''}${h.profile ? ` · profile ${h.profile}` : ''}`);
+        console.log(`Started by: ${from(h)}${h.threadTitle ? ` ("${h.threadTitle}")` : ''}${h.alsoThreads.length ? ` · also used by ${h.alsoThreads.join(', ')}` : ''}`);
+        for (const p of h.pageList) console.log(`  ${new Date(p.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}  ${p.url}${p.title ? `  ${p.title}` : ''}`);
+      }
+    } else {
+      const all = history.list({ limit: flags.limit, job: flags.job, site: flags.site });
+      if (flags.json) console.log(JSON.stringify(all, null, 2));
+      else console.log(all.length ? all.map((h) => [`#${h.id}`, when(h.started), h.sites.slice(0, 3).join(', ') || '(no pages)', h.via, dur(h.seconds), `${h.pages} pages`, from(h), how(h)].join(' · ')).join('\n') : 'No browser sessions yet.');
+    }
   } else if (cmd === 'backends') {
     for (const b of await backends()) console.log(`${b.via.padEnd(12)} ${b.ready ? 'ready' : b.reason || `needs ${b.key}`}`);
   } else if (cmd === 'home') {

@@ -274,7 +274,7 @@ function renderToday() {
   if (today.off) {
     // Sorting is opt-in: say exactly what an agent would read, and turn it on in one click.
     html += `<div class="ui-card pad" style="margin-top:20px"><p><b>Let an agent sort your new mail?</b></p>
-      <p class="today-note" style="margin-top:6px">The Mail triage job (Claude Haiku) reads each new email's sender, subject and preview, and the full text only when it drafts a reply. It never changes anything in Gmail. Emails that need you also show on Home. Turn it off any time in Jobs.</p>
+      <p class="today-note" style="margin-top:6px">The Mail triage job (Claude Haiku) reads each new email's sender, subject and preview, and the full text only when it drafts a reply. It never changes anything in Gmail. Emails that need you also show on the Timeline. Turn it off any time in Jobs.</p>
       <p style="margin-top:14px"><button class="ui-btn primary" data-turnon>Turn on sorting</button> <a class="ui-btn quiet" href="#" data-go="#/jobs/mail-triage">The triage job</a></p></div>
       ${today.items.length ? '<p class="today-note" style="margin-top:20px">Sorting is off. Below: what it sorted before.</p>' : ''}`;
     if (!today.items.length) { ui.morph($('todayIn'), html); return; }

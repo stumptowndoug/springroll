@@ -8,6 +8,7 @@ import net from 'node:net';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homeStatus, readHome, PROXY } from './home.mjs';
+import * as history from './history.mjs';
 
 const run = promisify(execFile);
 const HOME = os.homedir();
@@ -35,6 +36,7 @@ const AB_ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/
 const IDLE_SECONDS = 900;
 const MAX_HERE = 2;
 export const VIA = ['home', 'local', 'kernel', 'browserbase'];
+const APP_PORT = fs.readFileSync(new URL('./PORT', import.meta.url), 'utf8').trim();
 const KEYS = { kernel: 'KERNEL_API_KEY', browserbase: 'BROWSERBASE_API_KEY' };
 
 // A key from the environment, else from secrets.env (the app's service doesn't get them as env vars).
@@ -53,7 +55,7 @@ export async function backends() {
 }
 const cloudVia = () => (key('KERNEL_API_KEY') ? 'kernel' : key('BROWSERBASE_API_KEY') ? 'browserbase' : 'local');
 
-const read = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return { sessions: [], contexts: {} }; } };
+export const read = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return { sessions: [], contexts: {} }; } };
 function write(s) {
   fs.mkdirSync(DATA, { recursive: true });
   fs.writeFileSync(STATE + '.tmp', JSON.stringify(s, null, 2) + '\n');
@@ -209,10 +211,23 @@ const alive = {
 };
 
 // Start a browser and attach agent-browser session `name` to it. Reuses a running one of that name.
-export async function startSession({ name = 'main', via, profile, stealth, url } = {}) {
+// `by` says who asked ({ origin: 'app' } from the Browser app); otherwise the chat or job running this.
+// Every start, and every failed one, goes into the history (history.mjs).
+export async function startSession({ name = 'main', via, profile, stealth, url, by } = {}) {
   name = slug(name) || 'main';
-  const asked = via;
+  const asked = via || null;
+  by = await history.who(by);
+  const note = {};
+  try {
+    return await startOne({ name, via, profile, stealth, url, asked, by, note });
+  } catch (e) {
+    if (!e.recorded) try { history.failed({ name, via: note.via || via || null, asked, profile: profile || null, fallback_from: note.from, fallback_reason: note.why }, by, e.message); } catch {}
+    throw e;
+  }
+}
+async function startOne({ name, via, profile, stealth, url, asked, by, note }) {
   via ||= readHome().enabled ? 'home' : cloudVia();
+  note.via = via;
   if (!VIA.includes(via)) throw new Error(`Unknown backend ${via}: ${VIA.join(', ')}`);
   let exitIP = null;
   if (via === 'home') {
@@ -226,6 +241,7 @@ export async function startSession({ name = 'main', via, profile, stealth, url }
       if (fb !== 'stop' && profile) throw new Error(`Home internet isn't available (${h.reason}). Profile "${profile}" holds sign-ins, so it waits for home rather than using ${fb === 'kernel' ? 'Kernel' : 'this server'}.`);
       if (fb === 'stop') throw new Error(`Home internet isn't available: ${h.reason} (browser home status)`);
       if (fb === 'kernel' && !key('KERNEL_API_KEY')) throw new Error(`Home internet isn't available (${h.reason}) and Kernel isn't connected.`);
+      Object.assign(note, { via: fb, from: 'home', why: h.reason });
       via = fb;
     }
   }
@@ -234,6 +250,7 @@ export async function startSession({ name = 'main', via, profile, stealth, url }
   if (existing) {
     // Asked for another route by name: don't hand back this one (it would look like the step up worked).
     if (asked && asked !== existing.via) throw new Error(`${name} is already running on ${existing.via}. To switch: browser stop ${name} && browser start ${name} --via ${asked}`);
+    history.reused(existing.hid, by);
     if (url) await ab(name, 'open', url);
     return { ...existing, reused: true };
   }
@@ -248,27 +265,45 @@ export async function startSession({ name = 'main', via, profile, stealth, url }
   const s = { name, via, id: b.id, cdp: b.cdp, live: b.live || null, port: b.port || null, profile: opts.profile || null, started: Date.now(), ...(exitIP ? { exitIP } : {}) };
   try {
     await attach(name, b.cdp);
-    if (url) await ab(name, 'open', url);
   } catch (e) {
     await stop[via](s).catch(() => {});
     throw e;
   }
+  s.hid = history.begin(s, by, { asked, fallback_from: note.from, fallback_reason: note.why });
   const fresh = read();
   fresh.contexts = { ...fresh.contexts, ...state.contexts };
   fresh.sessions = [...fresh.sessions.filter((x) => x.name !== name), s];
   write(fresh);
+  // Have the app's recorder listening before the first page, so the history has it.
+  await fetch(`http://127.0.0.1:${APP_PORT}/api/history/watch`, { method: 'POST', signal: AbortSignal.timeout(4000) }).catch(() => {});
+  if (url) {
+    try { await ab(name, 'open', url); } catch (e) {
+      await stopSession(name, 'failed').catch(() => {});
+      try { history.end(s.hid, 'failed', { error: e.message }); } catch {}
+      throw Object.assign(e, { recorded: true });
+    }
+  }
   return s;
 }
 
-export async function stopSession(name) {
+// `reason` goes into the history: stopped (an agent or the terminal), owner (the Browser app), home-down.
+export async function stopSession(name, reason = 'stopped') {
   const state = read();
   const s = state.sessions.find((x) => x.name === name);
   if (!s) throw new Error(`No browser named ${name}.`);
   await ab(name, 'close').catch(() => {});
   await stop[s.via](s);
-  state.sessions = state.sessions.filter((x) => x.name !== name);
-  write(state);
+  const fresh = read();
+  fresh.sessions = fresh.sessions.filter((x) => x.name !== name);
+  write(fresh);
+  await ended(s, reason);
   return s;
+}
+// Record the end; Browserbase also says how much proxy traffic it used (what stealth bills by).
+async function ended(s, reason) {
+  let data_bytes;
+  if (s.via === 'browserbase' && s.hid) data_bytes = (await api('browserbase', 'GET', `/v1/sessions/${s.id}`).catch(() => ({}))).proxyBytes;
+  try { history.end(s.hid, reason, { data_bytes }); } catch {}
 }
 
 // Running sessions. One whose browser has gone (timed out, stopped elsewhere), or that agent-browser
@@ -281,7 +316,9 @@ export async function listSessions() {
   const checks = await Promise.all(state.sessions.map(async (s) => names.has(s.name) && alive[s.via](s)));
   const gone = state.sessions.filter((_, i) => !checks[i]);
   if (gone.length) {
-    for (const s of gone) { ab(s.name, 'close').catch(() => {}); stop[s.via](s).catch(() => {}); }
+    // Not attached any more: agent-browser idled out (an hour without commands). Attached but gone:
+    // the browser itself ended (a cloud timeout, a crash, stopped elsewhere).
+    for (const s of gone) { ab(s.name, 'close').catch(() => {}); stop[s.via](s).catch(() => {}); ended(s, names.has(s.name) ? 'gone' : 'idle'); }
     const now = read();
     now.sessions = now.sessions.filter((x) => !gone.some((g) => g.name === x.name));
     write(now);
@@ -316,7 +353,7 @@ export async function guardHome() {
     run('signal', ['--clear', 'browser:home-down']).catch(() => {});
     return { checked: true, ok: true };
   }
-  for (const s of running) await stopSession(s.name).catch(() => {});
+  for (const s of running) await stopSession(s.name, 'home-down').catch(() => {});
   await run('signal', ['--key', 'browser:home-down', '--source', 'Browser', '--icon', 'wifi-off', '--hours', '12',
     '--note', `Stopped browsers: ${running.map((s) => s.name).join(', ')}. Check with \`browser home status\`; start again with \`browser start <name> --via home\` once it's ok.`,
     `Home internet dropped: stopped ${running.length === 1 ? `the ${running[0].name} browser` : `${running.length} browsers`}`, h.reason]).catch(() => {});
