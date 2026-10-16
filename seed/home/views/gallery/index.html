@@ -90,13 +90,14 @@
 
   <section class="ui-section">
     <h2>Tiles</h2>
-    <p class="ui-muted">The one card for a grid of things (apps, jobs, services): <code>ui-tiles</code> of <code>ui-tile</code>. Icon or a top row, a one-line title,
+    <p class="ui-muted">The one card for a grid of things (apps, jobs, services): <code>ui-tiles</code> of <code>ui-tile</code>. A top row (the icon beside a one-line title, then any <code>trail</code>: a status, badge or one small button, so a tile with nothing else to show needs no footer),
       a description that is always two lines tall, an optional detail line, and a footer pinned to the bottom (meta left, quiet actions right).
       Every tile in a grid is the same height and its parts line up. <code>ui-tiles wide</code> for richer tiles.</p>
     <div class="ui-tiles">
-      <a class="ui-tile" href="#"><span class="lead"><i data-icon="mail" data-icon-size="lg"></i></span><span class="title">Mail</span>
-        <span class="desc">Every Gmail account, sorted by an agent.</span><span class="foot"><span class="ui-status"><span class="ui-dot ok"></span>2 accounts</span></span></a>
-      <a class="ui-tile" href="#"><span class="lead"><i data-icon="activity" data-icon-size="lg"></i></span><span class="title">System</span>
+      <a class="ui-tile" href="#"><span class="top"><span class="lead"><i data-icon="mail" data-icon-size="lg"></i></span><span class="title">Mail</span>
+        <span class="trail"><span class="ui-status"><span class="ui-dot ok"></span>2 accounts</span></span></span>
+        <span class="desc">Every Gmail account, sorted by an agent.</span></a>
+      <a class="ui-tile" href="#"><span class="top"><span class="lead"><i data-icon="activity" data-icon-size="lg"></i></span><span class="title">System</span></span>
         <span class="desc">Memory, CPU and disk, and what's using them: each chat, app and process, with a watchdog.</span><span class="foot">Built in</span></a>
       <div class="ui-tile hover"><span class="top"><span class="title">Morning brief</span><span class="ui-trail"><i class="ok"></i><i class="ok"></i><i class="danger"></i></span></span>
         <span class="desc">Write the owner's morning brief.</span>
@@ -153,6 +154,22 @@
   </section>
 
   <section class="ui-section">
+    <h2>Board</h2>
+    <p class="ui-muted">Kanban columns (<code>ui-board</code>, <code>ui-board-col</code>, <code>ui-board-card</code>); <code>ui.board(el, {onMove})</code> drags cards between columns. Chat and ⋯ show on hover; on touch, tapping a card opens it.</p>
+    <div class="ui-board" id="boardDemo">
+      <section class="ui-board-col" data-col="backlog"><header><span class="ui-label">Backlog</span><span class="count">2</span></header>
+        <div class="ui-board-card" draggable="true" data-card="a"><div class="title">Add health checks to the status page</div><div class="meta"><span class="ui-tag">web</span></div></div>
+        <div class="ui-board-card" draggable="true" data-card="b"><div class="title">Rotate the setup token</div></div>
+        <button class="ui-link-action">Add a card</button></section>
+      <section class="ui-board-col" data-col="progress"><header><span class="ui-label">In Progress</span><span class="count">1</span></header>
+        <div class="ui-board-card" draggable="true" data-card="c"><div class="title">Pipeline v2</div><div class="meta"><span class="ui-mono"><i data-icon="list-checks"></i> 12/30</span></div>
+          <div class="acts"><button class="ui-icon-btn plain sm" data-icon="message-square" title="Chat"></button><button class="ui-icon-btn plain sm" data-icon="ellipsis" title="More"></button></div></div></section>
+      <section class="ui-board-col" data-col="done"><header><span class="ui-label">Done</span><span class="count">1</span><span class="ui-spacer"></span><button class="ui-link-action">Archive</button></header>
+        <div class="ui-board-card done" draggable="true" data-card="d"><div class="title">Merge PR #14</div></div></section>
+    </div>
+  </section>
+
+  <section class="ui-section">
     <h2>Lists</h2>
     <p class="ui-muted">A group is one surface; hairlines separate its rows. Leading icon or avatar, title and subtitle, mono meta on the right.</p>
     <div class="ui-grid" style="--min: 320px">
@@ -174,7 +191,8 @@
     <p class="ui-muted">Everything that happened, grouped by day: time · dot · what · preview. Errors keep their title; only the preview turns red.</p>
     <div class="ui-feed">
       <div class="ui-feed-day">Today · Friday, October 9</div>
-      <a class="ui-feed-row" href="#"><span class="time">7:00 AM</span><span class="ui-dot ok"></span><span class="title">Morning brief</span><span class="chev">›</span><span class="sub">3 emails need replies; dentist moved to Thursday.</span></a>
+      <a class="ui-feed-row" href="#"><span class="time">7:00 AM</span><span class="ui-dot ok"></span><span class="title">3 emails need replies</span><span class="ui-tag">Morning brief</span><span class="chev">›</span><span class="sub">Dentist moved to Thursday.</span></a>
+      <a class="ui-feed-row" href="#"><span class="time">6:40 AM</span><span class="lead"><i data-icon="receipt"></i></span><span class="title">Hetzner invoice: €18.40</span><span class="ui-tag">Billing</span><span class="chev">›</span><span class="sub">Matches last month.</span></a>
       <a class="ui-feed-row" href="#"><span class="time">6:12 AM</span><span class="ui-dot run"></span><span class="title">Rebuild the photo index</span><span class="chev">›</span><span class="sub">Working…</span></a>
       <a class="ui-feed-row" href="#"><span class="time">3:30 AM</span><span class="ui-dot danger"></span><span class="title">Nightly backup</span><span class="chev">›</span><span class="sub danger">exit 1 · disk full</span></a>
     </div>
@@ -280,8 +298,15 @@ Tests: 24 passed, 24 total</div></div>
     <p class="ui-muted">Lucide, 1,500+ icons: <code>ui.icon('name')</code> or <code>&lt;i data-icon="name"&gt;</code>. 16px, currentColor, beside text rather than instead of it. Browse names at lucide.dev/icons.</p>
     <div class="demo" id="icons" style="color: var(--muted); gap: 18px"></div>
   </section>
+
+  <section class="ui-section" id="agent-marks">
+    <h2>Coding agent marks</h2>
+    <p class="ui-muted"><code>ui.agentMark(id, name)</code> gives each agent its own mark, with brand colors or a monochrome mark that follows the theme.</p>
+    <div class="demo" id="agentMarks"></div>
+  </section>
 </main>
 <script>
+ui.board(document.getElementById('boardDemo'), { onMove: (card, col) => ui.toast(`Moved to ${col}`) });
 const people = [['Grace Hopper', 'The compiler works. Sort of.', '2m', true], ['Linus Torvalds', 'Re: patch series v3', '1h', true],
   ['Ada Lovelace', 'Notes on the Analytical Engine', '9:41', false], ['Alan Turing', 'Can machines think?', 'Tue', false],
   ['Margaret Hamilton', 'Priority displays', 'Mon', false], ['Katherine Johnson', 'Trajectory check', 'Oct 2', false]];
@@ -298,6 +323,8 @@ for (const n of ['bg', 'fg', 'accent', 'run', 'ok', 'warn', 'danger', 'surface',
   document.getElementById('swatches').insertAdjacentHTML('beforeend', `<div class="chip-swatch"><div style="background: var(--${n})"></div><span>--${n}</span></div>`);
 for (const n of ['house', 'sun', 'inbox', 'mail', 'calendar-clock', 'music', 'play', 'pause', 'search', 'settings-2', 'square-terminal', 'bot', 'sparkles', 'folder', 'file-text', 'git-branch', 'check', 'x', 'plus', 'trash-2', 'star', 'bell', 'plug', 'zap', 'chart-line'])
   document.getElementById('icons').insertAdjacentHTML('beforeend', `<span title="${n}">${ui.icon(n, 'lg')}</span>`);
+for (const [id, name] of [['claude', 'Claude'], ['codex', 'Codex'], ['antigravity', 'Antigravity'], ['gemini', 'Gemini'], ['cursor', 'Cursor'], ['opencode', 'OpenCode'], ['pi', 'Pi'], ['grok', 'Grok']])
+  document.getElementById('agentMarks').insertAdjacentHTML('beforeend', `<span class="ui-hstack" data-agent-mark="${id}">${ui.agentMark(id, name, 'lg')}<span>${name}</span></span>`);
 document.addEventListener('click', (e) => { if (e.target.closest('a[href="#"]')) e.preventDefault(); });
 document.getElementById('confirmDemo').onclick = async () => { if (await ui.confirm('Delete Morning brief?', { body: 'Its runs stay in Runs.', ok: 'Delete', danger: true })) ui.toast('Deleted'); };
 const sample = `// Jobs: run work on a schedule.

@@ -61,9 +61,12 @@ export function defaultAgent() {
   return (ok.find((a) => a.id === pref) || ok.find((a) => a.id === 'claude') || ok[0] || chatAgents()[0])?.id || 'claude';
 }
 
+// Settings → Coding agents: the model and effort new chats with this agent start on ({} when unset).
+export const chatDefaults = (agent) => desk.settings?.chatDefaults?.[agent] || {};
+
 export function connect() {
   const desk = new EventSource('api/events');
-  for (const t of ['views', 'show', 'notify', 'settings', 'agent', 'sessions', 'go', 'connections']) desk.addEventListener(t, (e) => fire('desk:' + t, JSON.parse(e.data)));
+  for (const t of ['views', 'show', 'notify', 'settings', 'agent', 'sessions', 'go', 'connections', 'needs']) desk.addEventListener(t, (e) => fire('desk:' + t, JSON.parse(e.data)));
   const agent = new EventSource('api/agent/events');
   agent.onmessage = (e) => {
     const ev = JSON.parse(e.data);

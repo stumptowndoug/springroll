@@ -21,17 +21,13 @@
 <div class="shell" id="shell">
   <aside class="side" id="side">
     <div class="side-top">
-      <button class="brand" id="brand" title="Home (Ctrl+0)"><svg class="brand-mark" viewBox="0 0 512 512" aria-hidden="true"><use href="ui/logos.svg#springroll"/></svg><span>Springroll</span></button>
+      <button class="brand" id="brand" title="Timeline (Ctrl+0)"><svg class="brand-mark" viewBox="0 0 512 512" aria-hidden="true"><use href="ui/logos.svg#springroll"/></svg><span>Springroll</span></button>
       <div class="ui-spacer"></div>
-      <button class="ui-icon-btn plain hide-mobile" id="collapse" title="Hide sidebar (Ctrl+B)" data-icon="panel-left-close"></button>
+      <button class="ui-icon-btn plain hide-mobile" id="collapse" title="Hide sidebar (Ctrl+B)" data-icon="panel-left"></button>
     </div>
     <button class="search-btn" id="launchBtn"><i data-icon="search" data-icon-size="sm"></i><span>Search or jump to…</span><kbd>Ctrl K</kbd></button>
     <nav class="side-nav" id="nav"></nav>
     <div class="side-scroll">
-      <section class="side-sec" id="viewsSec">
-        <header><span>Apps</span><button class="add" id="addView" title="Build an app" data-icon="plus" data-icon-size="sm"></button></header>
-        <div id="viewList"></div>
-      </section>
       <section class="side-sec" id="chatsSec">
         <header><span>Chats</span><button class="add" id="newChatSide" title="New chat" data-icon="plus" data-icon-size="sm"></button></header>
         <div id="chatList"></div>
@@ -50,7 +46,7 @@
       <button class="ui-icon-btn plain mobile-chat" id="mobileChat" data-icon="message-square" title="Chat about this page"></button>
       <button class="ui-icon-btn plain" id="mobileNew" data-icon="square-pen" title="New chat"></button>
     </div>
-    <button class="ui-icon-btn plain expand-side" id="expandSide" title="Show sidebar (Ctrl+B)" data-icon="panel-left-open"></button>
+    <button class="ui-icon-btn plain expand-side" id="expandSide" title="Show sidebar (Ctrl+B)" data-icon="panel-left"></button>
     <div class="pages" id="pages"></div>
   </main>
   <aside class="panel" id="panel"></aside>

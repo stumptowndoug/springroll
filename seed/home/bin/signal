@@ -2,6 +2,8 @@
 # Put something on the owner's Home page (Needs you / Worth knowing). See AGENTS.md, "Home".
 #   signal "Title" ["detail"]            worth knowing (shown for 3 days)
 #   signal --needs "Title" ["detail"]    waiting on the owner (pings their phone once, when it's new)
+#   signal --running --key K "Title" "progress"   long work outside a job run, in the Timeline's
+#                                        Running section; post again to update, --clear K when done
 #   signal --brief "Two or three sentences"   today's morning brief
 #   signal --clear <key>                 take one back
 #   signal sync <prefix> [--source S] [--icon I] [--needs]   < items (JSON array or one JSON object per line)
@@ -49,6 +51,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --needs) level=needs ;;
     --brief) level=brief ;;
+    --running) level=running ;;
     --key) key=$2; shift ;;
     --link|--url) link=$2; shift ;;
     --source) source=$2; shift ;;

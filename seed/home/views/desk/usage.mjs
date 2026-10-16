@@ -5,14 +5,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
+import { fetchAntigravityUsage, AntigravityUsageError } from './antigravity-usage.mjs';
 
 const HOME = os.homedir();
 const TTL = 5 * 60000;
 // Kept on disk: a provider that says "retry after N" (Anthropic's usage endpoint does) must not be
 // called again when Springroll restarts, or the lockout starts over. Last good numbers survive too.
-const STATE = path.join(HOME, '.desk', 'usage.json');
-const cache = new Map(Object.entries(readJson(STATE) || {})); // id -> { at, data, dataAt, error, retryAt, fails }
-const save = () => { try { fs.mkdirSync(path.dirname(STATE), { recursive: true }); fs.writeFileSync(STATE, JSON.stringify(Object.fromEntries(cache))); } catch {} };
+const STATE = path.join(HOME, 'data', 'desk', 'usage.json');
+const cache = new Map(Object.entries(readJson(STATE) || readJson(path.join(HOME, '.desk', 'usage.json')) || {})); // id -> { at, data, dataAt, error, retryAt, fails }
+const save = () => { try {
+  fs.mkdirSync(path.dirname(STATE), { recursive: true, mode: 0o700 });
+  const tmp = `${STATE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(cache)), { mode: 0o600 });
+  fs.renameSync(tmp, STATE);
+} catch {} };
+// Migrate the old cache without losing provider backoffs or removing its original file.
+if (!fs.existsSync(STATE) && cache.size) save();
 
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }
 const envVar = (name) => new Promise((resolve) => execFile('bash', ['-c', `. "${HOME}/.config/springroll/env" 2>/dev/null; printf %s "\${${name}:-}"`], { timeout: 5000 }, (e, out) => resolve(e ? '' : out.trim())));
@@ -78,30 +86,39 @@ const PROVIDERS = {
       return { plan: j.plan_type || null, windows: [w(j.rate_limit?.primary_window), w(j.rate_limit?.secondary_window)].filter(Boolean) };
     },
   },
+  antigravity: {
+    name: 'Antigravity',
+    load: fetchAntigravityUsage,
+  },
 };
 
 async function refresh(id) {
   const p = PROVIDERS[id], c = cache.get(id) || { fails: 0 };
-  const token = await p.token();
-  if (!token) { cache.set(id, { ...c, at: Date.now(), data: null, error: 'Not signed in', retryAt: Date.now() + TTL }); return; }
+  const token = p.load ? true : await p.token();
+  if (!token) { cache.set(id, { ...c, at: Date.now(), data: null, error: 'Not signed in', retryAt: Date.now() + TTL }); return save(); }
   if (token.limited) { cache.set(id, { at: Date.now(), data: null, error: token.limited, fix: token.fix, limited: true, retryAt: Date.now() + 60000, fails: 0 }); return save(); }
   try {
-    const [url, opts] = p.request(token);
-    const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(10000) });
-    if (!r.ok) {
-      const after = Number(r.headers.get('retry-after')) || 0;
-      const fails = (c.fails || 0) + 1;
-      // 429: at least what it asks (plus a little), and longer each time in a row (to 6 hours).
-      const wait = r.status === 429 ? Math.min(Math.max(after * 1000 * 1.1, 15 * 60000) * 2 ** Math.min(fails - 1, 3), 6 * 3600000) : Math.min(30000 * 2 ** (fails - 1), TTL);
-      const error = r.status === 401 || r.status === 403 ? 'Sign in again to see usage' : r.status === 429 ? 'Anthropic is limiting usage checks for this account right now (every app that checks counts, Shep included)' : `Usage service error ${r.status}`;
-      cache.set(id, { ...c, at: Date.now(), error, retryAt: Date.now() + wait, fails });
-      return save();
+    let data;
+    if (p.load) data = await p.load();
+    else {
+      const [url, opts] = p.request(token);
+      const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(10000) });
+      if (!r.ok) {
+        const after = Number(r.headers.get('retry-after')) || 0;
+        const fails = (c.fails || 0) + 1;
+        // 429: at least what it asks (plus a little), and longer each time in a row (to 6 hours).
+        const wait = r.status === 429 ? Math.min(Math.max(after * 1000 * 1.1, 15 * 60000) * 2 ** Math.min(fails - 1, 3), 6 * 3600000) : Math.min(30000 * 2 ** (fails - 1), TTL);
+        const error = r.status === 401 || r.status === 403 ? 'Sign in again to see usage' : r.status === 429 ? `${id === 'claude' ? 'Anthropic' : p.name} is limiting usage checks for this account right now (every app that checks counts, Shep included)` : `Usage service error ${r.status}`;
+        cache.set(id, { ...c, at: Date.now(), error, retryAt: Date.now() + wait, fails });
+        return save();
+      }
+      data = p.parse(await r.json());
     }
-    cache.set(id, { at: Date.now(), dataAt: Date.now(), data: p.parse(await r.json()), error: null, retryAt: Date.now() + TTL, fails: 0 });
+    cache.set(id, { at: Date.now(), dataAt: Date.now(), data, error: null, retryAt: Date.now() + TTL, fails: 0 });
     save();
   } catch (e) {
     const fails = (c.fails || 0) + 1;
-    cache.set(id, { ...c, at: Date.now(), error: `Couldn't reach the usage service`, retryAt: Date.now() + Math.min(30000 * 2 ** (fails - 1), TTL), fails });
+    cache.set(id, { ...c, at: Date.now(), error: e instanceof AntigravityUsageError ? e.message : `Couldn't reach the usage service`, retryAt: Date.now() + Math.min(30000 * 2 ** (fails - 1), TTL), fails });
     save();
   }
 }

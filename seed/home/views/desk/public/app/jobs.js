@@ -1,31 +1,29 @@
 // Jobs: things that run on a schedule. Each run is a chat thread; its last message is the report.
 import { api, state, on, chatAgents, agentName, defaultAgent } from './api.js';
-import { nextLabel, runFeed } from './home.js';
+import { nextLabel } from './timeline.js';
 
-let el, ctx, currentName = null, tab = 'jobs';
+let el, ctx, currentName = null;
 
 export function init(root, c) {
   el = root; ctx = c;
   on('jobs', () => { if (el.closest('.shown')) render(); });
-  on('threads', () => { if (el.closest('.shown') && (currentName || tab === 'runs')) render(); });
+  on('threads', () => { if (el.closest('.shown') && currentName) render(); });
   el.addEventListener('click', onClick);
   el.addEventListener('input', (e) => { if (e.target.matches('[data-jobq]')) { query = e.target.value.trim(); render(); } });
-  el.addEventListener('change', (e) => { if (e.target.matches('[data-runjob]')) { runJob = e.target.value; render(); } });
 }
-export function show(_el, r) { currentName = r.name; tab = r.q?.view === 'runs' ? 'runs' : 'jobs'; if (r.name === 'new' || r.q?.new) { currentName = null; render(); openEditor(null, r.q); } else render(); }
-export function title(r) { return r.name ? (state.jobs.find((j) => j.name === r.name)?.title || r.name) : r.q?.view === 'runs' ? 'Runs' : 'Jobs'; }
+export function show(_el, r) { if (r.q?.view === 'runs') return ctx.go('#/'); currentName = r.name; if (r.name === 'new' || r.q?.new) { currentName = null; render(); openEditor(null, r.q); } else render(); }
+export function title(r) { return r.name ? (state.jobs.find((j) => j.name === r.name)?.title || r.name) : 'Jobs'; }
 
 function trail(j) { return `<span class="ui-trail" title="Last ${j.trail.length} runs">${j.trail.map((s) => `<i class="${s}"></i>`).join('')}${j.running ? '<i class="running"></i>' : ''}</span>`; }
 
-const tabs = () => `<div class="ui-seg"><a href="#/jobs" class="${tab === 'jobs' ? 'on' : ''}">Jobs</a><a href="#/jobs?view=runs" class="${tab === 'runs' ? 'on' : ''}">Runs</a></div>`;
 const NEW_JOB = `#/new?text=${encodeURIComponent('Create a job that ')}`;
 const heading = (eyebrow, title) => `<header class="ui-heading"><div><span class="ui-eyebrow">${eyebrow}</span><h1 class="ui-display">${title}</h1></div>
   <div class="actions"><a class="ui-btn primary" href="${NEW_JOB}">${ui.icon('plus', 'sm')}New job</a></div></header>`;
 // What a job does, in one sentence: its description, or the first sentence of its prompt.
 export const jobSummary = (j) => j.description || (j.type === 'command' ? j.command : (j.prompt || '').trim().split(/\n\s*\n/)[0].split(/(?<=[.!?])\s/)[0]);
 
-// Jobs, grouped (job.json "group"), problems first; Runs, with frequent fine runs folded together.
-let filter = 'all', query = '', runFilter = 'all', runJob = '';
+// Jobs, grouped (job.json "group"), problems first. Their runs are on the Timeline.
+let filter = 'all', query = '';
 const collapsed = new Set(JSON.parse(localStorage.getItem('desk.jobs.collapsed') || '[]'));
 const saveCollapsed = () => { try { localStorage.setItem('desk.jobs.collapsed', JSON.stringify([...collapsed])); } catch {} };
 const failing = (j) => j.last?.status === 'failed' && !j.running;
@@ -70,7 +68,7 @@ function jobsView() {
   const names = [...groups.keys()].sort((a, b) => (a === 'Other') - (b === 'Other') || a.localeCompare(b));
   const one = names.length === 1 && names[0] === 'Other';
   const chip = (id, label, n) => `<button class="ui-chip${filter === id ? ' on' : ''}" data-filter="${id}">${label}${n != null ? ` <span class="ui-mono">${n}</span>` : ''}</button>`;
-  return `<div class="ui-pagebar">${tabs(true)}
+  return `<div class="ui-pagebar">
       <label class="ui-search"><span class="ui-sr-only">Search jobs</span>${ui.icon('search', 'sm')}<input class="ui-input" data-jobq placeholder="Search jobs" value="${ui.esc(query)}" autocomplete="off"></label>
       <div class="ui-chips">${chip('all', 'All', all.length)}${counts.failing ? chip('failing', '<span class="ui-dot danger"></span>Failing', counts.failing) : ''}${counts.running + counts.queued ? chip('running', '<span class="ui-dot run"></span>Running', counts.running + counts.queued) : ''}${counts.paused ? chip('paused', 'Paused', counts.paused) : ''}</div></div>
     ${shown.length ? names.map((g) => {
@@ -82,70 +80,60 @@ function jobsView() {
     }).join('') : `<div class="ui-empty"><h2>No jobs match.</h2><button class="ui-link-action" data-filter="all" data-clear>Show all jobs</button></div>`}`;
 }
 
-// Runs: a day's fine runs of a frequent job fold into one line ("Uptime check · 12 runs, all fine").
-function runsView() {
-  let list = state.threads.filter((t) => t.origin?.startsWith('job:'));
-  if (runJob) list = list.filter((t) => t.origin === `job:${runJob}`);
-  if (runFilter === 'failed') list = list.filter((t) => t.status === 'error');
-  if (runFilter === 'reports') list = list.filter((t) => state.jobs.find((j) => `job:${j.name}` === t.origin)?.report !== false && t.status !== 'error');
-  const fine = (t) => t.status === 'idle' && !t.running;
-  const out = [];
-  for (const t of list) {
-    const day = new Date(t.updated).toDateString(), prev = out[out.length - 1];
-    if (prev && fine(t) && prev.fold && prev.origin === t.origin && prev.day === day) { prev.items.push(t); continue; }
-    out.push(fine(t) ? { fold: true, origin: t.origin, day, items: [t] } : { t });
-  }
-  const jobsSel = `<select class="runs-job" data-runjob aria-label="Job"><option value="">All jobs</option>${state.jobs.map((j) => `<option value="${j.name}"${runJob === j.name ? ' selected' : ''}>${ui.esc(j.title || j.name)}</option>`).join('')}</select>`;
-  const seg = `<div class="ui-seg" data-runfilter>${[['all', 'All'], ['reports', 'Reports'], ['failed', 'Failed']].map(([v, l]) => `<button data-rf="${v}" aria-pressed="${runFilter === v}">${l}</button>`).join('')}</div>`;
-  const row = (t) => runFeed([t]).replace(/<div class="ui-feed-day">[^<]*<\/div>/, ''); // one row, no day heading
-  let html = '', day = null;
-  for (const o of out) {
-    const t = o.t || o.items[0], d = new Date(t.updated).toDateString();
-    if (d !== day) { day = d; html += `<div class="ui-feed-day">${ui.esc(ui.day(t.updated))}</div>`; }
-    if (o.fold && o.items.length >= 3) {
-      const job = state.jobs.find((j) => `job:${j.name}` === t.origin);
-      html += `<a class="ui-feed-row" href="#/jobs/${ui.esc(job?.name || '')}"><span class="time">${ui.time(t.updated)}</span><span class="ui-dot ok"></span>
-        <span class="title">${ui.esc(job?.title || t.title || 'Job')}</span><span class="chev">›</span>
-        <span class="sub">${o.items.length} runs, all fine · since ${ui.esc(ui.time(o.items[o.items.length - 1].updated))}</span></a>`;
-    } else html += (o.items || [o.t]).map(row).join('');
-  }
-  return `<div class="ui-pagebar">${tabs(true)}${jobsSel}${seg}</div><div class="ui-feed runs-feed">${list.length ? html : runFeed([])}</div>`;
-}
-
 async function render() {
   if (currentName) return renderDetail(currentName);
-  ui.morph(el, `<div class="ui-page jobs">${heading('Scheduled work', 'Jobs.')}${tab === 'runs' ? runsView() : jobsView()}</div>`);
+  ui.morph(el, `<div class="ui-page jobs">${heading('Scheduled work', 'Jobs.')}${jobsView()}</div>`);
 }
 
 async function renderDetail(name) {
-  let j;
+  let j, opts = null;
   try { j = await api.get(`api/agent/jobs/${name}`); } catch { ui.morph(el, `<div class="ui-page"><a class="ui-back" href="#/jobs">‹ Jobs</a><div class="ui-empty"><h2>No such job.</h2></div></div>`); return; }
+  if (j.type !== 'command') opts = await api.get(`api/agent/agents/${j.agent || defaultAgent()}/options`).catch(() => null);
   if (currentName !== name) return;
-  const runs = j.runs || [];
+  const runs = j.runs || [], cmd = j.type === 'command';
+  const named = (list, id) => (list || []).find((x) => x.id === id)?.name || id;
+  // The model by the name the agent gives it, and its id when that says something else ("6 Luna", gpt-6-luna).
+  const model = (id) => { const n = named(opts?.models, id); return n.toLowerCase() === id.toLowerCase() ? ui.esc(n) : `${ui.esc(n)} <span class="ui-mono">${ui.esc(id)}</span>`; };
+  const status = j.running ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>'
+    : j.queued ? `<span class="ui-pill">${j.queued.how === 'retry' ? 'Retry queued' : 'Queued'}</span>` : !j.enabled ? '<span class="ui-pill">Paused</span>' : '';
+  const fact = (label, value, sub = '', mono = false) => `<div><dt>${label}</dt><dd${mono ? ' class="ui-mono"' : ''}>${value}${sub ? `<small${mono ? ' class="ui-mono"' : ''}>${sub}</small>` : ''}</dd></div>`;
+  const when = (ts) => new Date(ts).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const facts = [
+    fact('Schedule', ui.esc(j.schedule ? j.describe : 'Manual only'), j.schedule ? `<span class="ui-mono">${ui.esc(j.schedule)}</span>` : 'Runs when you press Run'),
+    fact('Next run', !j.enabled ? 'Paused' : j.next ? ui.esc(when(j.next)) : '—', !j.enabled ? 'Resume to put it back on schedule' : j.catchUp === 'once' ? 'Catches up once if missed' : 'Skips missed runs'),
+    cmd ? fact('Runs', 'A shell command', 'With bash')
+      : fact('Agent', ui.esc(agentName(j.agent || defaultAgent())), [j.model ? model(j.model) : 'Default model', j.effort ? `${ui.esc(named(opts?.effort?.values, j.effort))} thinking` : ''].filter(Boolean).join(' · ')),
+    fact('On the Timeline', j.timeline === 'never' ? 'Never' : j.timeline === 'failures' ? 'Only failures' : 'Every run',
+      j.notify === false ? 'No phone notifications' : j.notify === 'always' ? 'Each result to your phone' : cmd ? 'Phone alert if it fails' : 'Report to your phone'),
+    fact('If it fails', j.retries ? `Retries ${j.retries === 1 ? 'once' : j.retries === 2 ? 'twice' : j.retries + ' times'}, ${ui.esc(j.retryDelay || '5m')} apart` : "Doesn't retry",
+      j.timeout ? `Stopped after ${ui.esc(j.timeout)}` : 'No time limit'),
+    fact('Works in', ui.esc(j.cwd || '~/home'), `~/home/jobs/${ui.esc(j.name)}/`, true),
+  ].join('');
+  // Recent runs by day, like the Timeline: what each said, and how long it took.
+  let day = '';
+  const runRows = runs.slice(0, 8).map((r) => {
+    const d = new Date(r.started).toDateString(), head = d !== day ? `<div class="ui-feed-day">${ui.esc(ui.day(r.started))}</div>` : '';
+    day = d;
+    const said = (r.summary || (r.status === 'running' ? '' : r.status === 'queued' ? (r.not_before ? `Waiting to retry at ${ui.time(r.not_before)}` : 'Queued: waiting for room') : r.status === 'failed' ? 'Failed' : 'Done')).replace(/[#*`_]/g, '');
+    const meta = [r.finished ? ui.duration(r.finished - r.started) : '', r.attempt > 1 ? `try ${r.attempt}` : ''].filter(Boolean).join(' · ');
+    return `${head}<a class="ui-feed-row" href="${r.thread_id ? `#/${j.report === false ? 't' : 'r'}/${r.thread_id}` : '#'}">
+      <span class="time">${ui.time(r.started)}</span><span class="ui-dot ${r.status === 'done' ? 'ok' : r.status === 'failed' ? 'danger' : r.status === 'running' ? 'run' : r.status === 'queued' ? '' : 'warn'}"></span>
+      <span class="title${r.status === 'failed' ? ' danger' : ''}">${r.status === 'running' ? '<span class="ui-shimmer">Running</span>' : ui.esc(said)}</span><span class="meta ui-mono">${ui.esc(meta)}</span><span class="chev">›</span></a>`;
+  }).join('');
   ui.morph(el, `<div class="ui-page narrow job-detail">
     <a class="ui-back" href="#/jobs">${ui.icon('chevron-left', 'sm')}Jobs</a>
-    <header class="ui-heading"><div><span class="ui-eyebrow">${j.running ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>' : j.queued ? (j.queued.how === 'retry' ? 'Retry queued' : 'Queued') : j.enabled ? ui.esc(j.describe) : 'Paused'}${j.group ? ` · ${ui.esc(j.group)}` : ''}</span>
-      <h1 class="ui-display">${ui.esc(j.title || j.name)}</h1></div>
+    <header class="ui-heading"><div><span class="ui-eyebrow">${ui.esc(j.group || 'Job')}${status}</span>
+      <h1 class="ui-display">${ui.esc((j.title || j.name).replace(/\.?$/, '.'))}</h1></div>
       <div class="actions"><button class="ui-icon-btn" data-menu-job="${j.name}" title="More">${ui.icon('ellipsis')}</button>
         <button class="ui-btn" data-edit="${j.name}">Edit</button>${pauseBtn(j)}${runBtn(j)}</div></header>
-    <div class="job-prompt${(j.prompt || '').split('\n').length > 6 || (j.prompt || '').length > 480 ? ' long' : ''}">${j.type === 'command' ? `<div class="text ui-mono">${ui.esc('$ ' + j.command)}</div>` : `<div class="text ui-prose">${ui.markdown(j.prompt || '')}</div>`}
+    <div class="job-prompt${(j.prompt || '').split('\n').length > 6 || (j.prompt || '').length > 480 ? ' long' : ''}">${cmd ? `<div class="text ui-mono">${ui.esc('$ ' + j.command)}</div>` : `<div class="text ui-prose">${ui.markdown(j.prompt || '')}</div>`}
       <button class="ui-link-action more" data-more-prompt>Show the whole prompt</button></div>
-    <dl class="ui-facts">
-      <div><dt>Schedule</dt><dd>${ui.esc(j.schedule ? j.describe : 'Manual only')}<small class="ui-mono">${ui.esc(j.schedule || '')}</small></dd></div>
-      <div><dt>Next run</dt><dd>${j.enabled && j.next ? ui.esc(new Date(j.next).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) : j.enabled ? '—' : 'Paused'}<small>${j.catchUp === 'once' ? 'Catches up once if missed' : 'Skips missed runs'}</small></dd></div>
-      <div><dt>${j.type === 'command' ? 'Runs' : 'Agent'}</dt><dd>${j.type === 'command' ? 'A shell command' : ui.esc(agentName(j.agent || defaultAgent())) + (j.model || j.effort ? ` <span class="ui-muted ui-mono" style="font-size:var(--text-xs)">${ui.esc([j.model, j.effort && j.effort + ' thinking'].filter(Boolean).join(' · '))}</span>` : '')}<small>${j.notify === false ? 'No notifications' : j.type === 'command' ? 'Notifies on failure' : 'Sends its report to your phone'}</small></dd></div>
-      <div><dt>Works in</dt><dd class="ui-mono">${ui.esc(j.cwd || '~/home')}<small class="ui-mono">~/home/jobs/${ui.esc(j.name)}/</small></dd></div>
-      <div><dt>If it fails</dt><dd>${j.retries ? `Tries again ${j.retries === 1 ? 'once' : j.retries + ' times'}` : "Doesn't retry"}<small>${j.retries ? `after ${ui.esc(j.retryDelay || '5m')}` : 'Set retries in Edit'}</small></dd></div>
-      <div><dt>Time limit</dt><dd>${j.timeout ? ui.esc(j.timeout) : 'None'}<small>${j.timeout ? 'Stopped and counted as failed after that' : 'Runs until it finishes'}</small></dd></div>
-    </dl>
-    <section class="ui-section"><header><span class="ui-label">Runs</span></header>
-      ${runs.length ? `<div class="ui-feed">${runs.map((r) => `<a class="ui-feed-row" href="${r.thread_id ? `#/${j.report === false ? 't' : 'r'}/${r.thread_id}` : '#'}">
-        <span class="time">${ui.time(r.started)}</span><span class="ui-dot ${r.status === 'done' ? 'ok' : r.status === 'failed' ? 'danger' : r.status === 'running' ? 'run' : r.status === 'queued' ? '' : 'warn'}"></span>
-        <span class="title">${ui.esc(new Date(r.started).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}${r.finished ? ` <span class="ui-mono ui-faint">${ui.duration(r.finished - r.started)}</span>` : ''}${r.attempt > 1 ? ` <span class="ui-faint">· attempt ${r.attempt}</span>` : ''}</span><span class="chev">›</span>
-        <span class="sub${r.status === 'failed' ? ' danger' : ''}">${ui.esc((r.summary || (r.status === 'running' ? 'Running…' : r.status === 'queued' ? (r.not_before ? `Waiting to retry at ${ui.time(r.not_before)}` : 'Queued: waiting for room') : r.status)).replace(/[#*`_]/g, ''))}</span></a>`).join('')}</div>`
+    <dl class="ui-facts">${facts}</dl>
+    <section class="ui-section"><header><span class="ui-label">Recent runs</span>${j.trail?.length ? trail(j) : ''}<span class="ui-spacer"></span>${runs.length ? `<a class="ui-link-action" href="#/?from=job:${ui.esc(j.name)}">All on the Timeline</a>` : ''}</header>
+      ${runs.length ? `<div class="ui-feed job-runs">${runRows}</div>`
       : `<p class="ui-muted" style="font-size:var(--text-sm)">No runs yet. ${j.enabled && j.next ? `The first one is ${nextLabel(j.next).replace('Next ', 'at ').toLowerCase()}.` : ''}</p>`}
     </section>
-    ${j.type !== 'command' ? `<section class="ui-section"><header><span class="ui-label">The agent's notes</span><span class="ui-faint" style="font-size:var(--text-xs)">NOTES.md, kept between runs</span></header>
+    ${!cmd ? `<section class="ui-section"><header><span class="ui-label">The agent's notes</span><span class="ui-spacer"></span><span class="ui-faint" style="font-size:var(--text-xs)">NOTES.md, kept between runs</span></header>
       <div class="ui-card pad ui-prose notes">${ui.markdown(j.notes || '_Empty._')}</div></section>` : ''}
   </div>`);
 }
@@ -168,8 +156,6 @@ async function onClick(e) {
   if (fl) { filter = fl.dataset.filter; if (fl.dataset.clear != null) query = ''; return render(); }
   const grp = t.closest('[data-group]');
   if (grp) { const g = grp.dataset.group; if (collapsed.has(g)) collapsed.delete(g); else collapsed.add(g); saveCollapsed(); return render(); }
-  const rf = t.closest('[data-rf]');
-  if (rf) { runFilter = rf.dataset.rf; return render(); }
   const tog = t.closest('[data-toggle]');
   if (tog) { e.stopPropagation(); const j = state.jobs.find((x) => x.name === tog.dataset.toggle); await api.patch(`api/agent/jobs/${j.name}`, { enabled: !j.enabled }).catch((err) => ui.toast(err.message)); return; }
   if (t.closest('[data-a="new"]')) return openEditor(null);
@@ -186,7 +172,7 @@ async function onClick(e) {
       ui.closePopover();
       if (x === 'toggle') await api.patch(`api/agent/jobs/${j.name}`, { enabled: !j.enabled });
       if (x === 'ask') ctx.go(`#/new?text=${encodeURIComponent(`Change the job "${j.title || j.name}" (~/home/jobs/${j.name}/job.json) so that `)}`);
-      if (x === 'delete' && await ui.confirm(`Delete "${j.title || j.name}"?`, { body: 'Its runs stay in Runs.', ok: 'Delete', danger: true })) { await api.del(`api/agent/jobs/${j.name}`); ctx.go('#/jobs'); }
+      if (x === 'delete' && await ui.confirm(`Delete "${j.title || j.name}"?`, { body: 'Its runs stay on the Timeline.', ok: 'Delete', danger: true })) { await api.del(`api/agent/jobs/${j.name}`); ctx.go('#/jobs'); }
     };
     ui.popover(mj, m, { temp: true, align: 'end' });
     return;
@@ -200,6 +186,7 @@ async function onClick(e) {
 /* ---------- Editor ---------- */
 // Time limits and retries are per job, off unless the job asks.
 const TIMEOUTS = [['', 'None'], ['5m', '5 minutes'], ['15m', '15 minutes'], ['30m', '30 minutes'], ['1h', '1 hour'], ['2h', '2 hours'], ['6h', '6 hours']];
+const TIMELINE = [['', 'Every run'], ['failures', 'Only failures'], ['never', 'Never']];
 const RETRIES = [['0', "Don't retry"], ['1', 'Retry once'], ['2', 'Retry twice'], ['3', 'Retry 3 times']];
 const DELAYS = [['1m', '1 minute'], ['5m', '5 minutes'], ['15m', '15 minutes'], ['1h', '1 hour']];
 const choices = (list, value) => (list.some(([v]) => v === String(value)) || !value ? list : [...list, [String(value), String(value)]])
@@ -257,6 +244,7 @@ function openEditor(job, q = {}) {
         <div class="ui-field"><label>Time limit</label><select name="timeout">${choices(TIMEOUTS, job?.timeout || '')}</select></div>
         <div class="ui-field"><label>If it fails</label><select name="retries">${choices(RETRIES, String(job?.retries || 0))}</select></div>
         <div class="ui-field w-retry"><label>Try again after</label><select name="retryDelay">${choices(DELAYS, job?.retryDelay || '5m')}</select></div>
+        <div class="ui-field"><label>On the Timeline</label><select name="timeline">${choices(TIMELINE, job?.timeline || '')}</select><span class="hint">A report: every run. A sync or chore: only failures.</span></div>
       </div>
       <label class="ui-hstack t-agent" style="gap:10px;font-size:var(--text-sm)"><input type="checkbox" class="ui-switch" name="report" ${job?.report === false ? '' : 'checked'}> Write a report for each run<span class="ui-faint" style="font-size:var(--text-xs)">(a title, the result, charts; off: the run is just its chat)</span></label>
       <label class="ui-hstack" style="gap:10px;font-size:var(--text-sm)"><input type="checkbox" class="ui-switch" name="notify" ${job?.notify === false ? '' : 'checked'}> Send the result to my phone</label>
@@ -282,12 +270,19 @@ function openEditor(job, q = {}) {
     f.effort.closest('.ui-field').style.display = type === 'agent' && o.effort ? '' : 'none';
   };
   f.agent.addEventListener('change', () => loadOptions(false));
+  // A new job's Timeline choice follows what it is (a report you read: every run; a command or a run
+  // without a report: only failures) until you pick one yourself.
+  let timelinePicked = !!job;
+  f.timeline.addEventListener('change', () => { timelinePicked = true; });
+  const syncTimeline = () => { if (!timelinePicked) f.timeline.value = type === 'agent' && f.report.checked ? '' : 'failures'; };
+  f.report.addEventListener('change', syncTimeline);
   const syncRetry = () => { d.querySelector('.w-retry').style.display = +f.retries.value ? '' : 'none'; };
   f.retries.addEventListener('change', syncRetry); syncRetry();
   loadOptions(true);
   const sync = async () => {
     d.querySelectorAll('.t-agent').forEach((x) => (x.style.display = type === 'agent' ? '' : 'none'));
     d.querySelectorAll('.t-command').forEach((x) => (x.style.display = type === 'command' ? '' : 'none'));
+    syncTimeline();
     d.querySelector('.w-hourly').style.display = preset === 'hourly' ? '' : 'none';
     d.querySelector('.w-time').style.display = ['daily', 'weekdays', 'weekly'].includes(preset) ? '' : 'none';
     d.querySelector('.w-dow').style.display = preset === 'weekly' ? '' : 'none';
@@ -302,14 +297,14 @@ function openEditor(job, q = {}) {
   d.addEventListener('click', async (e) => {
     const ty = e.target.closest('[data-type]'); if (ty) { type = ty.dataset.type; sync(); }
     const pr = e.target.closest('[data-p]'); if (pr) { preset = pr.dataset.p; sync(); }
-    if (e.target.closest('[data-del]')) { if (await ui.confirm('Delete this job?', { body: 'Its runs stay in Runs.', ok: 'Delete', danger: true })) { await api.del(`api/agent/jobs/${job.name}`); d.close(); ctx.go('#/jobs'); } }
+    if (e.target.closest('[data-del]')) { if (await ui.confirm('Delete this job?', { body: 'Its runs stay on the Timeline.', ok: 'Delete', danger: true })) { await api.del(`api/agent/jobs/${job.name}`); d.close(); ctx.go('#/jobs'); } }
     if (e.target.closest('[data-save]')) {
       if (!f.title.value.trim()) return f.title.focus();
       const body = { title: f.title.value.trim(), type, schedule: cronNow() || null, agent: type === 'agent' ? f.agent.value : undefined, cwd: f.cwd.value,
         prompt: type === 'agent' ? f.prompt.value.trim() : undefined, command: type === 'command' ? f.command.value.trim() : undefined,
         notify: f.notify.checked, catchUp: f.catchUp.checked ? 'once' : 'skip', report: type === 'agent' ? f.report.checked : undefined,
         model: type === 'agent' ? f.model.value : undefined, effort: type === 'agent' ? f.effort.value : undefined,
-        group: f.group.value.trim(), timeout: f.timeout.value, retries: +f.retries.value, retryDelay: +f.retries.value ? f.retryDelay.value : '' };
+        group: f.group.value.trim(), timeline: f.timeline.value, timeout: f.timeout.value, retries: +f.retries.value, retryDelay: +f.retries.value ? f.retryDelay.value : '' };
       try {
         const r = job ? await api.patch(`api/agent/jobs/${job.name}`, body) : await api.post('api/agent/jobs', body);
         d.close();

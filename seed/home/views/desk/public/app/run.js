@@ -19,7 +19,7 @@ async function load(id) {
   const mine = (loading = api.get(`api/agent/runs/thread/${id}`).catch((e) => ({ error: e.message })));
   const r = await mine;
   if (loading !== mine || current !== id) return;
-  if (r.error) { el.querySelector('.run-report').hidden = true; ui.morph(el.querySelector('.run-top'), `<a class="ui-back" href="#/jobs?view=runs">${ui.icon('chevron-left', 'sm')}Runs</a><div class="ui-empty"><h2>No such run.</h2><p>${ui.esc(r.error)}</p></div>`); ui.morph(el.querySelector('.run-rest'), ''); return; }
+  if (r.error) { el.querySelector('.run-report').hidden = true; ui.morph(el.querySelector('.run-top'), `<a class="ui-back" href="#/">${ui.icon('chevron-left', 'sm')}Timeline</a><div class="ui-empty"><h2>No such run.</h2><p>${ui.esc(r.error)}</p></div>`); ui.morph(el.querySelector('.run-rest'), ''); return; }
   run = r;
   render();
 }
@@ -29,7 +29,7 @@ function render() {
   const status = r.running || r.status === 'running' ? ['run', 'Running'] : r.status === 'failed' ? ['danger', 'Failed'] : r.status === 'cancelled' ? ['warn', 'Stopped'] : ['ok', 'Done'];
   const took = r.finished ? ui.duration(r.finished - r.started) : '';
   ui.morph(el.querySelector('.run-top'), `
-    <a class="ui-back" href="#/jobs?view=runs">${ui.icon('chevron-left', 'sm')}Runs</a>
+    <a class="ui-back" href="#/">${ui.icon('chevron-left', 'sm')}Timeline</a>
     <header class="run-head">
       <span class="ui-eyebrow">${ui.esc(when.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }))} · ${ui.esc(ui.time(r.started))}</span>
       <h1 class="run-title">${ui.esc(r.title || r.jobTitle)}</h1>

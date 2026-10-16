@@ -1,44 +1,77 @@
-/* Home, Jobs, Connections, Terminal */
+/* Timeline, Jobs, Connections, Keys, Terminal */
 
-/* ---------- Today ---------- */
-.home .ui-heading { margin-bottom: 22px; }
-.today { display: flex; flex-wrap: wrap; gap: 48px; align-items: flex-start; }
-.today-main { flex: 999 1 520px; min-width: 0; }
-.today-aside { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 32px; padding-top: 6px; }
-.today-aside:not(:has(> * > *)) { display: none; }
-#hWeather:empty { display: none; }
-.today-aside .ui-label { display: block; margin: 0 0 10px; }
-.today-aside .ui-label a { color: inherit; }
-.today-brief { margin-bottom: 40px; }
-.brief-text { font-size: var(--text-lg); line-height: var(--leading-prose); max-width: 62ch; text-wrap: pretty; }
-.brief-by { display: block; margin-top: 8px; font-size: var(--text-xs); color: var(--faint); }
-.brief-by a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
-.today-main > .ui-section:first-of-type, .today-brief + .ui-section { margin-top: 0; }
-.today-clear .clear-line { font-size: var(--text-xl); font-weight: 650; letter-spacing: -0.02em; }
-.today-clear .clear-sub { margin-top: 6px; color: var(--muted); }
-#hNeeds .count, #hKnow .count { font-size: var(--text-2xs); }
-#hKnow > header { margin-bottom: 10px; }
-.more-row { width: 100%; border: 0; border-top: 1px solid var(--line); background: none; text-align: left; color: var(--muted); cursor: pointer; }
-.more-row:hover { color: var(--fg); }
-.more-row .sub { font-size: var(--text-sm); }
-#hNeeds .ui-section > header, #hNeeds > header { margin-bottom: 10px; }
-
-
-.today-routine { margin-top: 28px !important; }
-.routine-line { display: flex; align-items: center; gap: 12px; width: calc(100% + 24px); margin: 0 -12px; padding: 10px 12px; border: 0; border-radius: var(--radius-sm);
-  background: none; color: var(--muted); font-size: var(--text-sm); text-align: left; }
-.routine-line:hover { background: var(--surface); color: var(--fg); }
-.routine-line > span:nth-child(2) { flex: 1; }
-.routine-line[aria-expanded="true"] .ui-icon { transform: rotate(180deg); }
-.routine-feed { margin: 14px 0 6px; }
-
-.day-list { display: flex; flex-direction: column; }
-.day-row { display: grid; grid-template-columns: 6rem 1fr; gap: 12px; padding: 6px 0; color: var(--fg); }
-.day-row .ui-mono { font-size: var(--text-xs); color: var(--muted); padding-top: 2px; white-space: nowrap; }
-.today-aside .label-link { display: inline-flex; align-items: center; gap: 6px; }
-.meter { display: grid; grid-template-columns: 4rem 1fr 2.8rem; align-items: center; gap: 10px; min-height: 28px; font-size: var(--text-sm); color: var(--muted); }
-.meter-pct { text-align: right; font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg); }
-.box-note { margin-top: 8px; font-size: var(--text-xs); color: var(--faint); }
+/* ---------- Timeline ---------- */
+.tl-page .ui-heading { margin-bottom: 30px; }
+.tl-page .ui-pagebar { margin: 0 0 28px; }
+/* Every row has the tag and trailing columns, so chevrons, tags and actions line up down the page. */
+.tl-page .ui-feed-row { grid-template-columns: 4.6rem 7px minmax(0, 1fr) auto 30px; }
+.tl-page .ui-feed-row > .chev, .tl-page .ui-feed-row > .acts { grid-column: 5; justify-self: end; }
+.tl-page .ui-feed-row > .acts { margin-right: -10px; }
+.tl-tools { gap: 2px; }
+.tl-tools .ui-icon-btn { color: var(--muted); }
+.tl-tools .ui-icon-btn:hover { color: var(--fg); }
+.tl-tools .ui-icon-btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-tint); }
+/* Upcoming: a scheduled run is a hollow dot (it hasn't happened). */
+.tl-plan .ui-dot.scheduled { background: none; box-shadow: inset 0 0 0 1.5px var(--faint); }
+.tl-page .ui-pagebar .ui-chip .ui-icon { margin-right: -4px; opacity: .7; }
+.tl-filters { width: 300px; }
+.tl-filters .ui-chips { padding: 4px 8px 10px; }
+.tl-filters .clear { padding: 4px 10px 6px; }
+/* What waits on you: feed rows that lead Today, marked by an amber icon. Their buttons take the source tag's
+   place while you're on it (always shown for an approval, a key or a sign-in: keep; none on touch). */
+#tFeed { container-type: inline-size; }
+.tl-wait { position: relative; }
+.tl-wait[data-open] { cursor: pointer; }
+.tl-wait > .lead { color: var(--warn); }
+.tl-wait > .lead.danger { color: var(--danger); }
+.tl-wait > .time { font-size: var(--text-xs); }
+.tl-wait > .code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg); background: none; padding: 0; }
+.tl-wait > .acts { display: flex; align-items: center; gap: 2px; }
+.tl-wait > .acts .more { width: 30px; height: 30px; color: var(--faint); background: none; }
+.tl-wait > .acts .more:hover { color: var(--fg); background: var(--state-hover); }
+.tl-wait > .drawer { grid-column: 3 / -1; margin: 10px 0 2px; }
+.tl-wait > .drawer form { display: flex; gap: 6px; }
+.tl-wait > .drawer .ui-input { flex: 1; min-width: 0; background: var(--bg); border-radius: var(--radius-pill); }
+.tl-more > .title { font-weight: 400; color: var(--muted); font-size: var(--text-sm); }
+/* In the row's own columns, not floating over it: a glass theme's surfaces are see-through, so anything
+   under an overlay showed through (the tag on top of 👍). The title gives way instead. */
+@media (hover: hover) {
+  .tl-wait:not(.keep) > .acts { display: none; }
+  .tl-wait:not(.keep):is(:hover, :focus-within) > .acts { display: flex; grid-column: 4 / 6; }
+  .tl-wait:not(.keep):is(:hover, :focus-within) > .ui-tag { display: none; }
+}
+/* 👍 / 👎: a vote that's in stays lit. */
+#tFeed .vote[aria-pressed="true"] { color: var(--accent); }
+/* Narrow (a phone, or the chat panel open): no source tag; an approval's, key's or sign-in's buttons go
+   under the text; the rest still show on hover. On touch, tapping a row opens its chat: no buttons. */
+@container (max-width: 680px) {
+  .tl-page .ui-feed-row { grid-template-columns: 3.9rem 7px minmax(0, 1fr) auto 30px; }
+  .tl-page .ui-feed-row > .ui-tag { display: none; }
+  .tl-page .ui-feed-row.tl-wait { grid-template-columns: 3.9rem 7px minmax(0, 1fr); }
+  .tl-page .ui-feed-row.tl-wait > .time, .tl-page .ui-feed-row.tl-wait > .lead { grid-row: 1 / 3; }
+  .tl-page .ui-feed-row.tl-wait > .sub { grid-row: 2; grid-column: 3; }
+  .tl-page .ui-feed-row.tl-wait.keep > .acts { grid-row: 3; grid-column: 3; justify-self: start; margin: 6px 0 0 -10px; flex-wrap: wrap; }
+  .tl-page .ui-feed-row.tl-wait:not(.keep):is(:hover, :focus-within) { grid-template-columns: 3.9rem 7px minmax(0, 1fr) auto; }
+  .tl-page .ui-feed-row.tl-wait:not(.keep):is(:hover, :focus-within) > .acts { grid-column: 4; }
+  /* Room for the title: Chat as its icon, and no blank space held for a missing View. */
+  .tl-wait:not(.keep) > .acts [data-ask] { padding: 0 9px; }
+  .tl-wait:not(.keep) > .acts [data-ask] .label, .tl-wait:not(.keep) > .acts > [aria-hidden="true"] { display: none; }
+}
+@media (hover: none) { .tl-wait:not(.keep) > .acts { display: none; } }
+.tl-fold .chev .ui-icon { transition: transform var(--fast); }
+.tl-fold[aria-expanded="true"] .chev .ui-icon { transform: rotate(180deg); }
+.tl-folded { margin-left: 24px; padding-left: 8px; box-shadow: inset 1px 0 0 var(--line); }
+.tl-folded .ui-tag { visibility: hidden; }
+.tl-know { cursor: pointer; }
+.tl-older { margin: 18px 0 0 6px; }
+@media (max-width: 600px) {
+  .tl-page .ui-feed-row { grid-template-columns: 3.9rem 7px minmax(0, 1fr) 30px; }
+  .tl-page .ui-feed-row > .ui-tag { grid-row: 2; grid-column: 3; justify-self: start; margin-top: 4px; }
+  .tl-page .ui-feed-row:has(> .ui-tag) > .sub { grid-row: 3; }
+  .tl-page .ui-feed-row > .chev, .tl-page .ui-feed-row > .acts { grid-column: 4; grid-row: 1 / 4; }
+  .tl-page .ui-feed-row:has(> .ui-tag) > .time, .tl-page .ui-feed-row:has(> .ui-tag) > .ui-dot, .tl-page .ui-feed-row:has(> .ui-tag) > .lead { grid-row: 1 / 4; }
+  .tl-folded { margin-left: 8px; }
+}
 
 /* ---------- A run: title, links, the report ---------- */
 .run-head { margin-bottom: 30px; }
@@ -99,30 +132,55 @@
 .job-prompt.long .more { display: inline-flex; }
 .job-prompt.long:not(.open) .text { max-height: 9.6em; overflow: hidden; mask-image: linear-gradient(to bottom, #000 65%, transparent); }
 .job-detail .notes { font-size: var(--text-sm); }
+/* Six facts, two even rows of three (two columns on a phone). */
+.job-detail .ui-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.job-detail .ui-facts dd { overflow-wrap: anywhere; }
+.job-detail .ui-eyebrow .ui-pill { margin-left: 10px; vertical-align: middle; }
+.job-detail .ui-section > header .ui-trail { margin-left: 12px; }
+/* A run: time · status · what it said · how long it took. */
+.job-runs .ui-feed-row { grid-template-columns: 4.6rem 7px minmax(0, 1fr) auto 14px; }
+.job-runs .ui-feed-row > .title { grid-row: 1 / 3; font-weight: 400; }
+.job-runs .ui-feed-row > .title.danger { color: var(--danger); }
+.job-runs .ui-feed-row > .meta { grid-row: 1 / 3; grid-column: 4; font-size: var(--text-xs); color: var(--faint); }
+.job-runs .ui-feed-row > .chev { grid-column: 5; }
+@media (max-width: 600px) {
+  .job-detail .ui-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
+  .job-runs .ui-feed-row { grid-template-columns: 3.9rem 7px minmax(0, 1fr) auto; }
+  .job-runs .ui-feed-row > .chev { display: none; }
+  .job-runs .ui-feed-row > .title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}
 .job-editor .when-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; font-size: var(--text-sm); color: var(--muted); }
 .job-editor .when-row > span { display: inline-flex; align-items: center; gap: 8px; }
 .job-editor .next-preview { margin-top: 4px; }
 
 /* ---------- Connections ---------- */
-.connections .ui-section > header .count { font-size: var(--text-2xs); }
-/* Key rows: name and note | masked value | age | actions, in the same columns on every row */
-.key-row { display: grid; grid-template-columns: minmax(0, 1fr) 11ch 3rem auto; align-items: start; column-gap: 16px; }
-.key-value { padding-top: 3px; font-size: var(--text-xs); color: var(--muted); text-align: right; white-space: nowrap; }
-.key-row .meta { text-align: right; }
-.key-revealed { margin-top: 4px; font-size: var(--text-xs); overflow-wrap: anywhere; user-select: all; }
-.key-actions { display: flex; align-items: center; gap: 2px; margin: -4px -8px 0 0; }
-.key-actions .ui-icon-btn { width: 30px; height: 30px; color: var(--faint); }
+.connections .ui-section > header .count, .keys .ui-section > header .count { font-size: var(--text-2xs); }
+/* Key rows: name and what it's for | masked value | age | Show and ⋯, in the same columns on every row.
+   A revealed value or the replace form opens under the row, across all columns. */
+.key-row { display: grid; grid-template-columns: minmax(0, 1fr) 15ch 4.5rem auto; align-items: center; column-gap: 16px; }
+.key-row .body { min-width: 0; }
+.key-row .title { font-size: var(--text-base); }
+.key-row .title:not(.ui-mono) { font-weight: 550; }
+.key-row .sub a { color: inherit; text-decoration: none; }
+.key-row .sub a:hover { color: var(--fg); text-decoration: underline; }
+.key-value { font-size: var(--text-xs); color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.key-row .meta { text-align: right; align-self: center; margin: 0; }
+.key-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 5.5rem; margin-right: -8px; }
+.key-actions .ui-icon-btn, .key-actions .spacer { width: 30px; height: 30px; color: var(--faint); }
 .key-actions .ui-icon-btn:hover, .key-actions .ui-icon-btn[aria-expanded="true"] { color: var(--fg); }
+.key-revealed { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 6px 6px 6px 12px; border-radius: var(--radius-sm); background: var(--surface-recessed); }
+.key-revealed code { flex: 1; min-width: 0; padding: 4px 0; font-size: var(--text-xs); line-height: 1.5; overflow-wrap: anywhere; user-select: all; max-height: 9em; overflow: auto; }
+.key-row > .key-form { grid-column: 1 / -1; }
 .conn-icon.sm { display: flex; color: var(--fg); }
 .key-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 10px; }
 .key-form label { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-xs); color: var(--muted); flex: 1 1 200px; }
 .key-form-actions { display: flex; gap: 6px; align-items: center; }
 .key-form .ui-input { background: var(--bg); }
 @media (max-width: 560px) {
-  .key-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
-  .key-row .key-value { grid-row: 2; text-align: left; }
-  .key-row .meta { grid-row: 2; }
-  .key-actions { grid-column: 1 / -1; margin: 0 0 0 -8px; }
+  .key-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }
+  .key-row .key-value { grid-row: 2; grid-column: 1; text-align: left; }
+  .key-row .meta { display: none; }
+  .key-actions { grid-row: 1 / span 2; grid-column: 2; min-width: 0; }
 }
 
 /* ---------- Terminal ---------- */
@@ -140,8 +198,6 @@
 .term-frames iframe.shown { display: block; }
 :root[data-appearance="dark"] .term-frames { box-shadow: inset 0 0 0 1px var(--line); }
 
-.home-composer textarea:focus-visible { outline: none; }
-.home-composer + .ui-section, .home-composer + section { margin-top: 40px; }
 
 /* Connections: sign in with the service's own CLI (device code) */
 .signin-start { display: grid; gap: 14px; }
@@ -177,7 +233,6 @@
 .sg-dialog { width: min(460px, 100vw - 32px); }
 .sg-dialog > header { display: flex; align-items: center; gap: 10px; }
 .sg-dialog > .content { color: var(--fg); }
-.agent-tile { cursor: default; }
-.agent-tile .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
-.agents-default { font-size: var(--text-xs); color: var(--muted); text-decoration: none; }
+.agents-default { font-size: var(--text-xs); color: var(--muted); text-decoration: none; white-space: nowrap; }
 .agents-default:hover { color: var(--fg); }
+.connections .ui-section > header { flex-wrap: wrap; row-gap: 4px; }

@@ -129,7 +129,7 @@
     resolve: (s) => resolve(s || settings),
     ask: (text) => post('/api/ask', { text, view }),
     notify: (text) => post('/api/notify', { text }),
-    // Put an item on Home (Needs you / Worth knowing): { level: 'needs'|'notable', key, title, body, href, icon, note, rev }.
+    // Put an item on the Timeline (Needs you / Worth knowing): { level: 'needs'|'notable', key, title, body, href, icon, note, rev }.
     // An app's server can POST the same to localhost:8090/signals; a whole list at once: syncSignals.
     signal: (item) => post('/api/agent/signals', item),
     syncSignals: (prefix, items, { source, icon, level } = {}) => post('/api/agent/signals/sync', { prefix, items, source, icon, level }),

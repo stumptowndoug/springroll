@@ -11,6 +11,7 @@
   .opt:first-of-type { border-top: 0; }
   .opt > .lbl b { display: block; font-weight: 550; font-size: var(--text-sm); }
   .opt > .lbl span { color: var(--muted); font-size: var(--text-xs); }
+  .opt select { width: min(280px, 100%); }
   @media (max-width: 640px) { .opt { grid-template-columns: 1fr; gap: 8px; } }
 
   .themes { --min: 190px; }
@@ -43,6 +44,36 @@
   .settings-body > .ui-section:first-child { margin-top: 0; }
   @media (max-width: 900px) { .settings-layout { grid-template-columns: 1fr; gap: 16px; } .settings-nav { position: static; display: flex; flex-wrap: wrap; } }
   .keys td:first-child { width: 170px; white-space: nowrap; }
+  /* Default for chat: a copy of the chat composer, its pickers live */
+  .composer-preview { border-radius: 18px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); padding: 14px 14px 10px; max-width: 560px; }
+  .composer-preview .ph { color: var(--faint); font-size: var(--text-sm); padding: 2px 4px 18px; user-select: none; }
+  .composer-preview .foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .composer-preview .ui-combo { font-size: var(--text-sm); }
+  .composer-preview .ui-combo > .ui-icon:first-child:not(.ui-logo) { color: var(--faint); }
+  .composer-preview .send { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-strong); color: var(--muted); margin-left: auto; }
+  .chat-default-lbl { margin-bottom: 12px; }
+  .needs-info { width: 24px; height: 24px; color: var(--faint); }
+  .needs-info:hover, .needs-info[aria-expanded="true"] { color: var(--fg); }
+  .needs-about { padding: 10px 12px; font-size: var(--text-sm); line-height: 1.5; color: var(--muted); }
+  .needs-about p + p { margin-top: 8px; }
+  .needs-pickers { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: -8px; }
+  .needs-pickers .ui-combo { font-size: var(--text-sm); }
+  .needs-pickers .ui-combo > .ui-icon:first-child:not(.ui-logo) { color: var(--faint); }
+  .needs-last { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: var(--text-sm); color: var(--muted); }
+  .opt.top { align-items: start; }
+  .needs-prefs { display: grid; gap: 8px; max-width: 560px; }
+  .needs-instr { display: flex; align-items: center; gap: 10px; font-size: var(--text-sm); color: var(--muted); min-height: 30px; }
+  .needs-prefs textarea { width: 100%; min-height: 84px; resize: vertical; font: inherit; font-size: var(--text-sm); line-height: 1.5; }
+  .needs-instr-acts { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .chat-default-lbl b { display: block; font-weight: 550; font-size: var(--text-sm); }
+  .chat-default-lbl span { color: var(--muted); font-size: var(--text-xs); }
+  .backup-files { margin-top: var(--gap); }
+  .backup-files summary { cursor: pointer; font-size: var(--text-sm); color: var(--muted); padding: 4px 0; }
+  .backup-files .ui-group { margin-top: 8px; }
+  .opt .ui-status { min-width: 0; }
+  .opt .bk-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--text-sm); }
+  .opt .bk-line .text { flex: 1; min-width: 0; color: var(--muted); }
+  .opt .bk-line .text b { color: var(--fg); font-weight: 550; }
   code.topic { user-select: all; background: var(--surface-recessed); padding: 2px 8px; border-radius: var(--radius-sm); }
 </style>
 </head>
@@ -51,17 +82,49 @@
   <header class="ui-heading"><div><span class="ui-eyebrow">This machine</span><h1 class="ui-display">Settings.</h1></div></header>
   <div class="settings-layout">
     <nav class="settings-nav" id="snav">
-      <a href="#agents" data-s="agents">Coding agents</a><a href="#appearance" data-s="appearance">Appearance</a>
-      <a href="#time" data-s="time">Time zone</a><a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
+      <a href="#agents" data-s="agents">Coding agents</a><a href="#personas" data-s="personas">Personas</a><a href="#utilization" data-s="utilization">Utilization</a><a href="#needs" data-s="needs">Needs you</a><a href="#appearance" data-s="appearance">Appearance</a>
+      <a href="#time" data-s="time">Time zone</a><a href="#updates" data-s="updates">Updates</a><a href="#keyvalues" data-s="keyvalues">Keys</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
     </nav>
     <div class="settings-body">
       <section class="ui-section" id="agents">
         <header><span class="ui-label">Coding agents</span></header>
-        <div class="ui-card" style="padding: 4px var(--pad)">
-          <div class="opt"><div class="lbl"><b>Default for chat</b><span>New chats start with it; you can pick another per chat</span></div><div><select id="defaultAgent" style="max-width: 320px"></select></div></div>
+        <div class="ui-card pad">
+          <div class="chat-default-lbl"><b>Default for chat</b><span>Every new chat starts like this. A chat can still change any of it.</span></div>
+          <div class="composer-preview"><div class="ph">Ask anything, or describe something to build…</div>
+            <div class="foot" id="chatDefaults"></div></div>
         </div>
         <p class="ui-note">Signing in, installing and each agent's plan are in <a href="#" data-go="#/connections">Connections</a>. Agents run on this machine with
           full access by default (switch a chat to "Ask first" to approve actions).</p>
+      </section>
+
+      <section class="ui-section" id="personas">
+        <header><span class="ui-label">Personas</span><div class="ui-spacer"></div><button class="ui-btn sm" id="personaNew"><i data-icon="message-square-plus" data-icon-size="sm"></i>Create a persona</button></header>
+        <div class="ui-card" style="padding: 4px var(--pad)">
+          <div class="opt"><div class="lbl"><b>Default persona</b><span>What new chats start with</span></div><div><button class="ui-combo" id="personaDefault"></button></div></div>
+        </div>
+        <p class="ui-note">How the agent talks, never what it does. New chats use the default; any chat can switch in the composer's settings menu or with <code>/persona &lt;name&gt;</code>. Jobs speak plainly unless one sets its own.</p>
+      </section>
+
+      <section class="ui-section" id="utilization">
+        <header><span class="ui-label">Utilization</span></header>
+        <div class="ui-group" id="usageOptions"></div>
+        <p class="ui-note">Choose which quotas appear in the sidebar. Providers appear when installed and signed in.</p>
+      </section>
+
+      <section class="ui-section" id="needs">
+        <header><span class="ui-label">Needs you</span><button class="ui-icon-btn plain needs-info" id="needsInfo" title="About" aria-label="About Needs you" data-icon="info"></button></header>
+        <div class="ui-card" style="padding: 4px var(--pad)">
+          <div class="opt"><div class="lbl"><b>Agent</b></div><div class="needs-pickers" id="needsPickers"></div></div>
+          <div class="opt"><div class="lbl"><b>How often</b></div><div><select id="needsCadence">
+            <option value="live">As things come in</option><option value="hourly">At most hourly</option><option value="manual">Only when I ask</option></select></div></div>
+          <div class="opt"><div class="lbl"><b>Starter prompt</b></div><div><input type="checkbox" class="ui-switch" id="needsStarter" aria-label="Start each chat with the suggested next step"></div></div>
+          <div class="opt"><div class="lbl"><b>Last read</b></div><div class="needs-last" id="needsLast"></div></div>
+          <div class="opt top"><div class="lbl"><b>Instructions</b></div>
+            <div class="needs-prefs"><div class="needs-instr"><span id="needsInstrState"></span><button class="ui-btn sm quiet" id="needsInstrEdit">Edit</button></div>
+              <div id="needsInstrBox" hidden><textarea class="ui-input" id="needsPrefs" rows="4" placeholder="e.g. School emails always matter. PR reviews can wait until Friday. Never show newsletters."></textarea>
+                <div class="needs-instr-acts"><button class="ui-btn sm primary" id="needsPrefsSave">Save</button><button class="ui-btn sm quiet muted" id="needsInstrCancel">Cancel</button>
+                  <span class="ui-spacer"></span><button class="ui-btn sm quiet muted" id="needsInstrReset" style="display:none">Use the default</button></div></div></div></div>
+        </div>
       </section>
 
       <section class="ui-section" id="appearance">
@@ -71,10 +134,10 @@
           <div class="opt"><div class="lbl"><b>Accent</b><span>Buttons, links, selection</span></div><div class="swatches" id="accents"></div></div>
           <div class="opt"><div class="lbl"><b>Font</b><span>Interface and apps</span></div><div><select id="font"></select></div></div>
           <div class="opt"><div class="lbl"><b>Monospace</b><span>Terminals, code, numbers</span></div><div><select id="mono"></select></div></div>
-          <div class="opt"><div class="lbl"><b>Text size</b></div><div class="ui-seg" id="fontSize"></div></div>
-          <div class="opt"><div class="lbl"><b>Density</b><span>Row height and spacing</span></div><div class="ui-seg" id="density"></div></div>
-          <div class="opt"><div class="lbl"><b>Corners</b></div><div class="ui-seg" id="radius"></div></div>
-          <div class="opt"><div class="lbl"><b>Sidebar</b><span>In dark themes: darker than the page, or lighter with the page darkest</span></div><div class="ui-seg" id="sidebar"></div></div>
+          <div class="opt"><div class="lbl"><b>Text size</b></div><div><select id="fontSize"></select></div></div>
+          <div class="opt"><div class="lbl"><b>Density</b><span>Row height and spacing</span></div><div><select id="density"></select></div></div>
+          <div class="opt"><div class="lbl"><b>Corners</b></div><div><select id="radius"></select></div></div>
+          <div class="opt"><div class="lbl"><b>Sidebar</b><span>In dark themes: darker than the page, or lighter with the page darkest</span></div><div><select id="sidebar"></select></div></div>
         </div>
         <p class="ui-note">For anything else, ask the agent ("make lists denser", "use a serif for titles"). It edits <code>/ui/custom.css</code> or the kit itself;
           see every component in the <a href="#" data-open="gallery">Gallery</a>.</p>
@@ -95,11 +158,21 @@
         <p class="ui-note">This machine is your own version of Springroll. Each week an agent merges what's new upstream, keeps your changes, checks everything still works, and sends you what it took, adapted or skipped. Undo is one revert.</p>
       </section>
 
+      <section class="ui-section" id="keyvalues">
+        <header><span class="ui-label">Keys</span></header>
+        <div class="ui-card" style="padding: 4px var(--pad)">
+          <div class="opt"><div class="lbl"><b>Show values</b><span>Reveal and copy keys on the Keys page</span></div><div><input type="checkbox" class="ui-switch" id="keysReveal" aria-label="Show key values on the Keys page"></div></div>
+        </div>
+        <p class="ui-note">Off, every value stays masked in Springroll. Agents, apps and jobs still use the keys; this is only what shows on screen.</p>
+      </section>
+
       <section class="ui-section" id="backups">
         <header><span class="ui-label">Backups</span></header>
-        <div class="ui-card pad ui-stack" id="backupsBox"></div>
-        <p class="ui-note">A backup is one file: your home repo with its history, your apps' data, and (encrypted) your keys and sign-ins.
-          Move to a new machine with <code>install.sh --restore &lt;file&gt;</code>. The nightly backup job keeps the last 7 here; download one now and then to keep a copy elsewhere.</p>
+        <div class="ui-card" style="padding: 4px var(--pad)" id="backupsBox"></div>
+        <div class="backup-files" id="backupFiles"></div>
+        <p class="ui-note">A backup is your home repo with its history, your apps' data, and (encrypted) your keys and sign-ins. The nightly job keeps the last 7
+          on this machine and, once you set it up, sends an encrypted copy to your own storage bucket. Move to a new machine with <code>install.sh --restore &lt;file&gt;</code>
+          (or <code>restore --offsite &lt;bucket&gt;</code>).</p>
       </section>
 
       <section class="ui-section" id="keyboard">
@@ -119,10 +192,11 @@
   </div>
 </main>
 
-<script>
+<script type="module">
+import { USAGE_OPTIONS, usageSettings } from '/app/usage-settings.mjs';
 const ACCENTS = ['#3978c6', '#5b5bd6', '#8b5cb5', '#be587c', '#21858c', '#357953', '#c2410c', '#64748b'];
 const opts = {
-  fontSize: [['small', 'S'], ['medium', 'M'], ['large', 'L'], ['xl', 'XL']],
+  fontSize: [['small', 'Small · 14px'], ['medium-small', 'Medium small · 15px'], ['medium', 'Medium · 16px'], ['medium-large', 'Medium large · 17px'], ['large', 'Large · 18px'], ['xl', 'Extra large · 20px']],
   density: [['compact', 'Compact'], ['comfortable', 'Comfortable'], ['spacious', 'Spacious']],
   radius: [['sharp', 'Sharp'], ['soft', 'Soft'], ['round', 'Round']],
   sidebar: [['recessed', 'Darker'], ['raised', 'Lighter']],
@@ -130,16 +204,32 @@ const opts = {
 let themes = [];
 const $ = (id) => document.getElementById(id);
 
-function seg(id, value) {
-  const el = $(id);
-  el.innerHTML = '';
-  for (const [v, label] of opts[id]) {
-    const b = document.createElement('button');
-    b.textContent = label;
-    b.setAttribute('aria-pressed', value === v);
-    b.onclick = () => desk.save({ [id]: v });
-    el.appendChild(b);
+function renderUsageSettings(s) {
+  const el = $('usageOptions'), preferences = usageSettings(s.utilization);
+  if (!el.children.length) el.innerHTML = USAGE_OPTIONS.map(o => `<label class="ui-row">
+    ${ui.agentMark(o.agent, o.label)}<span class="body"><span class="title">${ui.esc(o.label)}</span><span class="sub">${ui.esc(o.detail)}</span></span>
+    <input type="checkbox" class="ui-switch" data-usage-setting="${o.key}" aria-label="Show ${ui.esc(o.label)} utilization">
+  </label>`).join('');
+  for (const input of el.querySelectorAll('[data-usage-setting]')) input.checked = preferences[input.dataset.usageSetting];
+}
+
+$('usageOptions').addEventListener('change', async e => {
+  const input = e.target.closest('[data-usage-setting]');
+  if (!input) return;
+  try {
+    const response = await desk.save({ utilization: { [input.dataset.usageSetting]: input.checked } });
+    if (!response.ok) throw new Error();
+  } catch {
+    renderUsageSettings(desk.settings);
+    ui.toast('Couldn\'t save utilization settings', { icon: 'circle-alert' });
   }
+});
+
+// A setting with a few fixed choices: a dropdown, like Font.
+function pick(id, value) {
+  const el = $(id);
+  el.innerHTML = opts[id].map(([v, label]) => `<option value="${v}"${value === v ? ' selected' : ''}>${label}</option>`).join('');
+  el.onchange = () => desk.save({ [id]: el.value });
 }
 
 function renderThemes(s) {
@@ -199,53 +289,229 @@ function renderFonts(s) {
   }
 }
 
-// The default chat agent: one that can chat (has an ACP mode), is installed and signed in. Signing in
-// and installing live in Connections (the desk app's sign-in panel). Rebuilt only when something
-// changed: it also runs on focus, and rebuilding under the first click into the page lost the click.
-let agentsShown = '';
-async function renderAgents() {
-  const list = await (await fetch('/api/agents')).json();
-  const ok = list.filter((a) => a.acp && a.installed && a.signedIn && a.acpInstalled);
-  const cur = desk.settings?.defaultAgent || 'claude';
-  const sig = JSON.stringify(ok.map((a) => a.id)) + cur;
-  if (sig === agentsShown) return;
-  agentsShown = sig;
-  const sel = $('defaultAgent');
-  sel.innerHTML = '';
-  for (const a of ok) sel.add(new Option(a.name, a.id, false, a.id === cur));
-  if (!ok.some((a) => a.id === cur)) sel.add(new Option(`${list.find((a) => a.id === cur)?.name || cur} (not signed in)`, cur, false, true));
-  sel.onchange = () => desk.save({ defaultAgent: sel.value });
+// Default for chat: agent, model and reasoning as the chat composer's pickers, in a copy of the composer. Agents that can chat (have an ACP mode),
+// installed and signed in (signing in and installing live in Connections). Model and reasoning come from
+// what that agent offers (agentd remembers it, or asks the agent once) and are kept per agent in
+// desk.json chatDefaults[agent]. Unset model: the one last picked in a chat; unset reasoning: the agent's own.
+// Jobs keep theirs. Rebuilt only when something changed: it also runs on focus and on every settings change.
+let agentsList = [], agentOpts = {}, defaultsShown = '', personas = null; // personas: ~/home/personas, desk.json persona.default
+async function renderAgents(refresh = true) {
+  if (refresh) try { agentsList = await (await fetch('/api/agents')).json(); } catch {}
+  const agent = desk.settings?.defaultAgent || 'claude';
+  if (!agentOpts[agent]) {
+    agentOpts[agent] = fetch(`/api/agent/agents/${encodeURIComponent(agent)}/options`).then((r) => r.json()).catch(() => ({}))
+      .then((o) => { agentOpts[agent] = o; renderAgents(false); });
+  }
+  if (!personas) personas = fetch('/api/personas').then((r) => r.json()).catch(() => []).then((l) => { personas = Array.isArray(l) ? l : []; renderAgents(false); });
+  const o = agentOpts[agent] instanceof Promise ? null : agentOpts[agent];
+  const d = desk.settings?.chatDefaults?.[agent] || {};
+  const ok = agentsList.filter((a) => a.acp && a.installed && a.signedIn && a.acpInstalled);
+  renderPersonas();
+  const sig = JSON.stringify([ok.map((a) => a.id), agent, d, !!o]);
+  if (sig === defaultsShown) return;
+  defaultsShown = sig;
+
+  const name = (id) => agentsList.find((a) => a.id === id)?.name || id;
+  const models = o?.models || [], efforts = o?.effort?.values || [];
+  const hasDefaultEffort = efforts.some((v) => v.id === 'default');
+  const model = models.find((m) => m.id === d.model), effort = efforts.find((v) => v.id === d.effort);
+  // Unset shows what a new chat would actually get: the last picked model (else the agent's), the agent's reasoning.
+  const shownModel = model || models.find((m) => m.id === o?.preferredModel) || models.find((m) => m.id === o?.currentModel);
+  const shownEffort = effort || efforts.find((v) => v.id === o?.effort?.current);
+  const chev = ui.icon('chevron-down');
+  const el = $('chatDefaults');
+  el.innerHTML = `
+    <button class="ui-combo" data-p="agent" title="Agent">${ui.agentMark(agent, name(agent), 'sm')}<span>${ui.esc(name(agent))}</span>${chev}</button>
+    ${o && !models.length ? '' : `<button class="ui-combo" data-p="model" title="Model${model ? '' : ': last picked in a chat'}">${ui.icon('sparkles', 'sm')}<span>${!o ? 'Model' : ui.esc(shownModel?.name || d.model || 'Model')}</span>${chev}</button>`}
+    ${o && !efforts.length ? '' : `<button class="ui-combo" data-p="effort" title="Reasoning${effort ? '' : ": the agent's default"}">${ui.icon('brain', 'sm')}<span>${!o ? 'Reasoning' : ui.esc(!shownEffort ? 'Reasoning' : shownEffort.id === 'default' ? 'Default reasoning' : shownEffort.name)}</span>${chev}</button>`}
+    <span class="send" aria-hidden="true">${ui.icon('arrow-up', 'sm')}</span>`;
+  const save = (k, v) => desk.save({ chatDefaults: { [agent]: { [k]: v || null } } });
+  el.querySelector('[data-p="agent"]').onclick = (e) => ui.combobox(e.currentTarget, {
+    value: agent, width: 280,
+    options: agentsList.filter((a) => a.acp && a.installed).map((a) => {
+      const can = ok.some((x) => x.id === a.id);
+      return { value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), disabled: !can, desc: can ? undefined : !a.signedIn ? 'Not signed in (Connections)' : 'Chat adapter not installed' };
+    }),
+    onSelect: (v) => desk.save({ defaultAgent: v }),
+  });
+  if (el.querySelector('[data-p="model"]')) el.querySelector('[data-p="model"]').onclick = (e) => ui.combobox(e.currentTarget, {
+    value: d.model || '', width: 320, placeholder: 'Search models',
+    escape: { value: '', label: 'Last picked in a chat', icon: 'history', desc: models.find((m) => m.id === o?.preferredModel)?.name },
+    options: models.map((m) => ({ value: m.id, label: m.name || m.id, desc: m.description })),
+    onSelect: (v) => save('model', v),
+  });
+  if (el.querySelector('[data-p="effort"]')) el.querySelector('[data-p="effort"]').onclick = (e) => ui.combobox(e.currentTarget, {
+    value: d.effort || (hasDefaultEffort ? 'default' : ''), width: 220,
+    escape: hasDefaultEffort ? undefined : { value: '', label: "Agent's default" },
+    options: efforts.map((v) => ({ value: v.id, label: v.name || v.id })),
+    onSelect: (v) => save('effort', v === 'default' ? '' : v),
+  });
 }
+
+// Personas (~/home/personas, listed by agentd): the default in a dropdown (desk.json persona.default, off
+// unless set; the dropdown shows each one's description). Creating, changing or deleting one is the agent's
+// job: Create a persona opens a chat.
+function renderPersonas() {
+  const pick = $('personaDefault');
+  if (!pick) return;
+  const list = personas instanceof Promise || !personas ? [] : personas, def = desk.settings?.persona?.default || '';
+  const cur = list.find((p) => p.id === def);
+  pick.innerHTML = `${ui.icon(cur ? cur.icon : 'circle-off', 'sm')}<span>${ui.esc(cur ? cur.name : 'No persona')}</span>${ui.icon('chevron-down')}`;
+  pick.onclick = () => ui.combobox(pick, {
+    value: cur?.id || '', width: 300,
+    escape: { value: '', label: 'No persona', icon: 'circle-off', desc: "The agent's own voice" },
+    options: list.map((p) => ({ value: p.id, label: p.name, lead: ui.icon(p.icon, 'sm'), desc: p.description })),
+    onSelect: (v) => desk.save({ persona: { default: v || null } }),
+  });
+}
+$('personaNew').onclick = () => desk.ask("I'd like a new persona for how the agent talks. Ask me who or what style if I haven't said, then write it in ~/home/personas/ following its README (a few lines of personality, then the style; no examples) and commit.");
+
+// Needs you: which agent sorts the Timeline's Needs you (views/desk/needs.mjs), with what model and
+// reasoning ('' = what a new chat with that agent gets), how often, and the owner's words on what matters.
+let needsCfg = null, needsShown = '', needsPrefs = null;
+// Instructions stay one line (default, or yours and how long) until Edit opens the text box.
+function showInstr() {
+  const p = needsPrefs || {}, lines = (p.text || '').trim().split('\n').filter(Boolean).length;
+  $('needsInstrState').textContent = p.custom ? `Yours · ${lines} line${lines === 1 ? '' : 's'}` : 'The default';
+  $('needsInstrReset').style.display = p.custom ? '' : 'none';
+}
+async function renderNeeds(refresh = true) {
+  if (refresh || !needsCfg) {
+    try {
+      [needsCfg] = await Promise.all([fetch('/api/needs/config').then((r) => r.json()), agentsList.length ? null : fetch('/api/agents').then((r) => r.json()).then((l) => (agentsList = l))]);
+      const [read, prefs] = await Promise.all([fetch('/api/needs').then((r) => r.json()), fetch('/api/needs/preferences').then((r) => r.json())]);
+      needsCfg.read = read;
+      needsPrefs = prefs;
+      if ($('needsInstrBox').hidden) showInstr();
+    } catch { return; }
+  }
+  const c = needsCfg, agent = c.agent;
+  if (!agentOpts[agent]) {
+    agentOpts[agent] = fetch(`/api/agent/agents/${encodeURIComponent(agent)}/options`).then((r) => r.json()).catch(() => ({}))
+      .then((o) => { agentOpts[agent] = o; renderNeeds(false); });
+  }
+  if (agentOpts[agent] instanceof Promise) agentOpts[agent].then(() => renderNeeds(false)); // shared with chat defaults: whoever asked first
+  const o = agentOpts[agent] instanceof Promise ? null : agentOpts[agent];
+  $('needsCadence').value = c.cadence;
+  $('needsStarter').checked = c.starter !== false;
+  const r = c.read || {};
+  const name = (id) => agentsList.find((a) => a.id === id)?.name || id;
+  $('needsLast').innerHTML = r.generating ? '<span class="ui-shimmer">Reading now…</span>'
+    : `${r.error ? `<span class="ui-status" title="${ui.esc(r.error)}"><span class="ui-dot danger"></span>Failed</span>` : r.generated ? `<span title="${ui.esc(`${name(r.agent)}${r.model ? ` ${(o?.models || []).find((m) => m.id === r.model)?.name || r.model}` : ''} · ${r.took}s`)}">${ui.esc(new Date(r.generated).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }))} · ${r.items?.length || 0} item${r.items?.length === 1 ? '' : 's'}</span>` : '<span>Not yet</span>'}
+      <button class="ui-btn sm quiet" id="needsAgain">Read again</button>`;
+  $('needsAgain')?.addEventListener('click', async () => { await fetch('/api/needs/refresh', { method: 'POST' }); setTimeout(() => renderNeeds(), 400); });
+
+  const sig = JSON.stringify([agent, c.model, c.effort, !!o, agentsList.length]);
+  if (sig === needsShown) return;
+  needsShown = sig;
+  const ok = agentsList.filter((a) => a.acp && a.installed && a.signedIn && a.acpInstalled);
+  const models = o?.models || [], efforts = o?.effort?.values || [];
+  const model = models.find((m) => m.id === c.model), effort = efforts.find((v) => v.id === c.effort);
+  const chev = ''; // no carets here: the pickers read as plain text until clicked
+  const el = $('needsPickers');
+  el.innerHTML = `
+    <button class="ui-combo" data-p="agent" title="Agent">${ui.agentMark(agent, name(agent), 'sm')}<span>${ui.esc(name(agent))}</span>${chev}</button>
+    ${o && !models.length ? '' : `<button class="ui-combo" data-p="model" title="Model">${ui.icon('sparkles', 'sm')}<span>${!o ? 'Model' : ui.esc(model?.name || c.model || 'Same as a new chat')}</span>${chev}</button>`}
+    ${o && !efforts.length ? '' : `<button class="ui-combo" data-p="effort" title="Reasoning">${ui.icon('brain', 'sm')}<span>${!o ? 'Reasoning' : ui.esc(effort ? (effort.id === 'default' ? 'Default reasoning' : effort.name) : 'Same as a new chat')}</span>${chev}</button>`}`;
+  const save = async (patch) => {
+    needsCfg = { ...needsCfg, ...(await (await fetch('/api/needs/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) })).json()) };
+    needsShown = ''; renderNeeds();
+  };
+  el.querySelector('[data-p="agent"]').onclick = (e) => ui.combobox(e.currentTarget, {
+    value: agent, width: 280,
+    options: agentsList.filter((a) => a.acp && a.installed).map((a) => {
+      const can = ok.some((x) => x.id === a.id);
+      return { value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), disabled: !can, desc: can ? undefined : !a.signedIn ? 'Not signed in (Connections)' : 'Chat adapter not installed' };
+    }),
+    onSelect: (v) => save({ agent: v }),
+  });
+  el.querySelector('[data-p="model"]')?.addEventListener('click', (e) => ui.combobox(e.currentTarget, {
+    value: c.model || '', width: 320, placeholder: 'Search models',
+    escape: { value: '', label: 'Same as a new chat', icon: 'message-square' },
+    options: models.map((m) => ({ value: m.id, label: m.name || m.id, desc: m.description })),
+    onSelect: (v) => save({ model: v }),
+  }));
+  el.querySelector('[data-p="effort"]')?.addEventListener('click', (e) => ui.combobox(e.currentTarget, {
+    value: c.effort || '', width: 220,
+    escape: { value: '', label: 'Same as a new chat', icon: 'message-square' },
+    options: efforts.map((v) => ({ value: v.id, label: v.name || v.id })),
+    onSelect: (v) => save({ effort: v }),
+  }));
+}
+$('needsInfo').addEventListener('click', (e) => {
+  const m = document.createElement('div');
+  m.className = 'ui-popover needs-about';
+  m.innerHTML = `<p>An agent sorts the Timeline's Needs you. It reads the last day and a half (flagged items, failed runs, reports, how Mail sorted your email), merges what belongs together, ranks it, and says why each matters.</p>
+    <p><b>Starter prompt</b>: Chat on an item opens with its suggested next step already typed, for you to edit or send.</p>
+    <p><b>How often</b>: it only reads again when something changed. <b>Instructions</b> go to the agent with every read, along with your 👍 and 👎 on the Timeline.</p>
+    <p>Approvals, sign-ins and key requests always show as they are.</p>`;
+  ui.popover(e.currentTarget, m, { temp: true });
+});
+$('needsStarter').addEventListener('change', (e) => fetch('/api/needs/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ starter: e.target.checked }) }).then(() => ui.toast(e.target.checked ? 'Chats start with a suggested prompt' : 'Chats start empty')));
+$('needsCadence').addEventListener('change', (e) => fetch('/api/needs/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cadence: e.target.value }) }).then(() => ui.toast('Saved')));
+const instrBox = (open) => { $('needsInstrBox').hidden = !open; $('needsInstrEdit').style.display = open ? 'none' : ''; if (open) { $('needsPrefs').value = needsPrefs?.text || ''; $('needsPrefs').focus(); } else showInstr(); };
+$('needsInstrEdit').addEventListener('click', () => instrBox(true));
+$('needsInstrCancel').addEventListener('click', () => instrBox(false));
+const saveInstr = async (text) => {
+  needsPrefs = await (await fetch('/api/needs/preferences', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })).json();
+  instrBox(false);
+  ui.toast('Saved. Reading again.', { icon: 'check' });
+  setTimeout(() => renderNeeds(), 400);
+};
+$('needsPrefsSave').addEventListener('click', () => saveInstr($('needsPrefs').value));
+$('needsInstrReset').addEventListener('click', () => saveInstr(''));
+// A read starting or finishing (from here or anywhere) shows in Last read.
+try { new EventSource('/api/events').addEventListener('needs', () => renderNeeds()); } catch {}
+renderNeeds();
 
 async function renderBackups() {
   const r = await (await fetch('/api/backups')).json();
-  const el = $('backupsBox');
   const size = (n) => n > 2 ** 20 ? (n / 2 ** 20).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
-  el.innerHTML = `
-    ${r.hasPassphrase ? '' : `<div class="ui-callout attention">${ui.icon('key-round', 'sm')}<div style="flex:1">Set a passphrase so backups include your keys and sign-ins (encrypted). Without one they're left out.
-      <form id="pp" class="ui-hstack" style="margin-top:10px;gap:8px"><input type="password" name="p" placeholder="A long passphrase you'll remember" style="flex:1" autocomplete="new-password"><button class="ui-btn sm">Save</button></form></div></div>`}
-    <div class="ui-hstack"><div style="flex:1">${r.files.length ? `Last backup <b>${ui.ago(r.files[0].at)}</b> ago · ${r.files.length} kept` : 'No backups yet.'}</div>
-      <button class="ui-btn sm" id="bnow">${ui.icon('archive', 'sm')}Back up now</button></div>
-    ${r.files.length ? `<div class="ui-list lined" style="margin: 0 calc(-1 * var(--pad)) calc(-1 * var(--pad))">${r.files.map((f) => `<div class="ui-row">
+  const o = r.offsite, last = o?.last;
+  const setup = 'Set up off-machine backups: follow skills/backup/SKILL.md and walk me through it.';
+  $('backupsBox').innerHTML = `
+    ${r.hasPassphrase ? '' : `<div class="opt top"><div class="lbl"><b>Passphrase</b><span>Encrypts your keys in backups</span></div><div>
+      <form id="pp" class="ui-hstack" style="gap:8px"><input class="ui-input" type="password" name="p" placeholder="A long passphrase you'll keep" style="flex:1" autocomplete="new-password"><button class="ui-btn sm">Save</button></form></div></div>`}
+    <div class="opt"><div class="lbl"><b>On this machine</b><span>Every night, the last 7 kept</span></div>
+      <div class="bk-line"><span class="text">${r.files.length ? `Last <b>${ui.esc(ui.ago(r.files[0].at))}</b> ago · ${size(r.files[0].size)}` : 'No backups yet'}</span>
+        <button class="ui-btn sm" id="bnow">${ui.icon('archive', 'sm')}Back up now</button></div></div>
+    <div class="opt"><div class="lbl"><b>Off this machine</b><span>${o ? ui.esc(o.repository) : 'Your own storage bucket'}</span></div>
+      <div class="bk-line">${!o
+        ? `<span class="text">Not set up. If this machine's disk is lost, its backups go with it.</span><button class="ui-btn sm" id="bsetup">${ui.icon('cloud-upload', 'sm')}Set up</button>`
+        : !last ? `<span class="text">Set up. The first copy goes with the next backup.</span>`
+        : last.ok ? `<span class="ui-status text"><span class="ui-dot ok"></span>Last <b>${ui.esc(ui.ago(Date.parse(last.at)))}</b> ago · ${ui.esc(last.message)}</span>`
+        : `<span class="ui-status text"><span class="ui-dot danger"></span>Failed ${ui.esc(ui.ago(Date.parse(last.at)))} ago: ${ui.esc(last.message)}</span><button class="ui-btn sm quiet" id="bask">Ask about it</button>`}</div></div>`;
+  $('backupFiles').innerHTML = r.files.length ? `<details><summary>${r.files.length} backup${r.files.length === 1 ? '' : 's'} on this machine</summary><div class="ui-group">${r.files.map((f) => `<div class="ui-row">
       <span class="lead">${ui.icon('file-archive', 'sm')}</span><div class="body"><span class="title ui-mono" style="font-size:var(--text-xs)">${ui.esc(f.name)}</span>
       <span class="sub">${new Date(f.at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${size(f.size)}</span></div>
-      <a class="ui-btn sm ghost" href="/api/backups/file/${encodeURIComponent(f.name)}" download>${ui.icon('download', 'sm')}Download</a></div>`).join('')}</div>` : ''}`;
+      <a class="ui-btn sm ghost" href="/api/backups/file/${encodeURIComponent(f.name)}" download>${ui.icon('download', 'sm')}Download</a></div>`).join('')}</div></details>` : '';
   $('bnow').onclick = async (e) => {
-    e.target.disabled = true; e.target.textContent = 'Backing up…';
+    const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="ui-shimmer">Backing up</span>';
     const res = await fetch('/api/backups', { method: 'POST' });
     const out = await res.json();
     ui.toast(out.output || out.error, { icon: res.ok ? 'check' : 'circle-alert' });
     renderBackups();
   };
-  el.querySelector('#pp')?.addEventListener('submit', async (e) => {
+  $('bsetup')?.addEventListener('click', () => desk.ask(setup));
+  $('bask')?.addEventListener('click', () => desk.ask(`The off-machine backup failed: "${last.message}". Find out why (backup offsite, journal of the nightly-backup job) and fix it.`));
+  $('pp')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const res = await fetch('/api/backups/passphrase', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ passphrase: e.target.p.value }) });
     const out = await res.json();
-    ui.toast(out.error || 'Passphrase saved. Keep it somewhere safe: restoring needs it.', { icon: res.ok ? 'check' : 'circle-alert' });
+    ui.toast(out.error || 'Passphrase saved. Keep a copy somewhere else: restoring needs it.', { icon: res.ok ? 'check' : 'circle-alert' });
     if (res.ok) renderBackups();
   });
 }
 renderBackups();
+
+const keysReveal = $('keysReveal');
+keysReveal.checked = desk.settings?.keys?.reveal !== false;
+desk.onTheme?.(() => { keysReveal.checked = desk.settings?.keys?.reveal !== false; });
+keysReveal.addEventListener('change', async () => {
+  const res = await desk.save({ keys: { reveal: keysReveal.checked } }).catch(() => null);
+  if (!res?.ok) { keysReveal.checked = !keysReveal.checked; return ui.toast("Couldn't save", { icon: 'circle-alert' }); }
+  ui.toast(keysReveal.checked ? 'Keys can be shown' : 'Key values stay masked', { icon: 'check' });
+});
 
 // Section nav: scroll to a section, highlight the one in view.
 document.getElementById('snav').addEventListener('click', (e) => {
@@ -302,12 +568,14 @@ function render() {
   renderThemes(s);
   renderAccents(s, themeAccent);
   renderFonts(s);
-  seg('fontSize', s.fontSize);
-  seg('density', s.density);
-  seg('sidebar', s.sidebar);
+  pick('fontSize', s.fontSize);
+  pick('density', s.density);
+  pick('sidebar', s.sidebar);
   renderTz(s);
-  seg('radius', s.radius);
+  pick('radius', s.radius);
   $('topic').textContent = s.ntfyTopic || 'not set up';
+  renderUsageSettings(s);
+  renderAgents(false);
 }
 
 desk.onTheme(render);

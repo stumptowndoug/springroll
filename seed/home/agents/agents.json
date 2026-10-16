@@ -16,6 +16,7 @@
       "~/.config/springroll/claude-token",
       "~/.claude/.credentials.json"
     ],
+    "account": "m=$([ -s ~/.config/springroll/claude-token ] && echo \"Setup token\" || echo \"Claude.ai sign-in\"); env -u CLAUDE_CODE_OAUTH_TOKEN claude auth status 2>/dev/null | jq -c --arg m \"$m\" '{account: .email, plan: .subscriptionType, method: $m}'",
     "start": "claude --dangerously-skip-permissions",
     "continue": "claude --dangerously-skip-permissions --continue",
     "startWithPrompt": "claude --dangerously-skip-permissions {prompt}",
@@ -32,7 +33,20 @@
     "signin": {
       "command": "env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
       "kind": "paste"
-    }
+    },
+    "size": {
+      "cli": 245,
+      "chat": 307
+    },
+    "disk": {
+      "cli": [
+        "~/.local/share/claude"
+      ],
+      "chat": [
+        "npm:@agentclientprotocol/claude-agent-acp"
+      ]
+    },
+    "acpRemove": "npm rm -g @agentclientprotocol/claude-agent-acp"
   },
   {
     "id": "codex",
@@ -49,6 +63,7 @@
     "auth": [
       "~/.codex/auth.json"
     ],
+    "account": "jq -c '(.tokens.id_token // \"\" | try (split(\".\")[1] | @base64d | fromjson) catch {}) as $t | {account: $t.email, plan: $t[\"https://api.openai.com/auth\"].chatgpt_plan_type, method: (if .auth_mode == \"chatgpt\" then \"ChatGPT sign-in\" else \"API key\" end)}' ~/.codex/auth.json",
     "start": "codex --dangerously-bypass-approvals-and-sandbox",
     "continue": "codex resume --last --dangerously-bypass-approvals-and-sandbox",
     "startWithPrompt": "codex --dangerously-bypass-approvals-and-sandbox {prompt}",
@@ -65,7 +80,20 @@
     "signin": {
       "command": "codex login --device-auth",
       "kind": "device"
-    }
+    },
+    "size": {
+      "cli": 432,
+      "chat": 442
+    },
+    "disk": {
+      "cli": [
+        "npm:@openai/codex"
+      ],
+      "chat": [
+        "npm:@agentclientprotocol/codex-acp"
+      ]
+    },
+    "acpRemove": "npm rm -g @agentclientprotocol/codex-acp"
   },
   {
     "id": "opencode",
@@ -82,11 +110,20 @@
     "auth": [
       "~/.local/share/opencode/auth.json"
     ],
+    "account": "jq -c '{method: ((keys | map({openrouter: \"OpenRouter\", anthropic: \"Anthropic\", openai: \"OpenAI\", google: \"Google\", opencode: \"OpenCode Zen\", groq: \"Groq\", deepseek: \"DeepSeek\", mistral: \"Mistral\", xai: \"xAI\"}[.] // .) | join(\", \")) + \" API key\")}' ~/.local/share/opencode/auth.json",
     "providerAuth": {
-      "auth": ["~/.local/share/opencode/auth.json"],
-      "config": ["~/.config/opencode/opencode.json"]
+      "auth": [
+        "~/.local/share/opencode/auth.json"
+      ],
+      "config": [
+        "~/.config/opencode/opencode.json"
+      ]
     },
-    "preferModels": ["claude-sonnet", "gpt-5", "gemini-3-pro"],
+    "preferModels": [
+      "claude-sonnet",
+      "gpt-5",
+      "gemini-3-pro"
+    ],
     "start": "opencode",
     "continue": "opencode --continue",
     "startWithPrompt": "opencode --prompt {prompt}",
@@ -98,7 +135,16 @@
       "opencode",
       "run",
       "{prompt}"
-    ]
+    ],
+    "size": {
+      "cli": 355,
+      "chat": 0
+    },
+    "disk": {
+      "cli": [
+        "npm:opencode-ai"
+      ]
+    }
   },
   {
     "id": "pi",
@@ -115,6 +161,7 @@
     "auth": [
       "~/.pi/agent/auth.json"
     ],
+    "account": "jq -c '{method: ((keys | map({openrouter: \"OpenRouter\", anthropic: \"Anthropic\", openai: \"OpenAI\", google: \"Google\", opencode: \"OpenCode Zen\", groq: \"Groq\", deepseek: \"DeepSeek\", mistral: \"Mistral\", xai: \"xAI\"}[.] // .) | join(\", \")) + \" API key\")}' ~/.pi/agent/auth.json",
     "start": "pi",
     "continue": "pi --continue",
     "startWithPrompt": "pi {prompt}",
@@ -126,7 +173,20 @@
       "pi",
       "-p",
       "{prompt}"
-    ]
+    ],
+    "size": {
+      "cli": 166,
+      "chat": 7
+    },
+    "disk": {
+      "cli": [
+        "npm:@earendil-works/pi-coding-agent"
+      ],
+      "chat": [
+        "npm:pi-acp"
+      ]
+    },
+    "acpRemove": "npm rm -g pi-acp"
   },
   {
     "id": "cursor",
@@ -143,12 +203,13 @@
     "auth": [
       "~/.config/cursor/auth.json"
     ],
+    "account": "cursor-agent status 2>/dev/null | sed \"s/\\x1b\\[[0-9;]*m//g\" | grep -o \"Logged in as [^ ]*\" | head -1 | cut -d\" \" -f4 | jq -Rc '{account: ., method: \"Cursor sign-in\"}'",
     "start": "cursor-agent --force",
     "continue": "cursor-agent --continue --force",
     "startWithPrompt": "cursor-agent --force {prompt}",
     "headless": "cursor-agent -p --trust --force \"<prompt>\"",
     "headlessContinue": "cursor-agent -p --continue --trust --force \"<feedback>\"",
-    "notes": "Cursor subscription via browser sign-in (or CURSOR_API_KEY). Terminal and jobs; not in chat yet. Reads AGENTS.md. A new folder needs --trust when headless.",
+    "notes": "Cursor subscription via browser sign-in (or CURSOR_API_KEY). Chat built in (cursor-agent acp). Reads AGENTS.md. A new folder needs --trust when headless.",
     "waitingPattern": "Run this command\\?|Allow|\\(y\\)|\\[y/n\\]",
     "headlessArgv": [
       "cursor-agent",
@@ -156,6 +217,19 @@
       "--trust",
       "--force",
       "{prompt}"
+    ],
+    "size": {
+      "cli": 557,
+      "chat": 0
+    },
+    "disk": {
+      "cli": [
+        "~/.local/share/cursor-agent"
+      ]
+    },
+    "acp": [
+      "cursor-agent",
+      "acp"
     ]
   },
   {
@@ -164,7 +238,7 @@
     "maker": "Google",
     "plan": "Your Google AI plan",
     "bin": "agy",
-    "logo": "gemini",
+    "logo": "antigravity",
     "install": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
     "login": "agy  # then Google OAuth: open the link, paste the code back",
     "signin": {
@@ -174,12 +248,13 @@
     "auth": [
       "~/.gemini/antigravity-cli/antigravity-oauth-token"
     ],
+    "account": "jq -c '(.id_token // \"\" | try (split(\".\")[1] | @base64d | fromjson) catch {}) as $t | {account: $t.email, method: \"Google sign-in\"}' ~/.gemini/antigravity-cli/antigravity-oauth-token",
     "start": "agy --dangerously-skip-permissions",
     "continue": "agy --continue --dangerously-skip-permissions",
     "startWithPrompt": "agy --dangerously-skip-permissions -i {prompt}",
     "headless": "agy -p \"<prompt>\" --dangerously-skip-permissions --print-timeout 30m",
     "headlessContinue": "agy -p --continue \"<feedback>\" --dangerously-skip-permissions",
-    "notes": "Google AI subscription via Google sign-in (or GEMINI_API_KEY with modelProvider gemini). Terminal and jobs; not in chat yet. Each call loads its conversation history: for many parallel headless calls give each its own HOME sharing only antigravity-oauth-token (see carrot-extract).",
+    "notes": "Google AI subscription via Google sign-in (or GEMINI_API_KEY with modelProvider gemini). Chat runs Google's own runtime (agy-acp-install: pinned, checksummed; ~1 GB), which signs in with Google separately from agy. Each call loads its conversation history: for many parallel headless calls give each its own HOME sharing only antigravity-oauth-token (see carrot-extract).",
     "waitingPattern": "Allow|Approve|\\[y/n\\]",
     "headlessArgv": [
       "agy",
@@ -188,6 +263,32 @@
       "--dangerously-skip-permissions",
       "--print-timeout",
       "30m"
-    ]
+    ],
+    "size": {
+      "cli": 205,
+      "chat": 1008,
+      "chatDownload": 334
+    },
+    "disk": {
+      "cli": [
+        "~/.local/bin/agy"
+      ],
+      "chat": [
+        "~/.local/share/springroll/agy-acp"
+      ]
+    },
+    "acpRemove": "agy-acp-install --remove",
+    "acp": [
+      "agy-acp-server"
+    ],
+    "acpInstall": "agy-acp-install",
+    "chatSignin": {
+      "command": "agy-acp-install --signin",
+      "kind": "paste",
+      "auth": [
+        "~/.gemini/antigravity-acp/acp_token.json"
+      ],
+      "paste": "Paste the address of the page Google sends you to (it won't load; that's expected)"
+    }
   }
 ]

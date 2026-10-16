@@ -1,7 +1,8 @@
 // Keys: the owner's secrets as NAME=value. One store: ~/.config/springroll/secrets.env (mode 600,
 // exported into every new agent session and job), shared with Connections' key fields. Notes and
-// dates live beside it in secrets.json. Values never leave this module except on an explicit reveal.
-// Agents ask for a key with `secret request NAME "why"` (a Home "Needs you" card); the owner's answer
+// dates live beside it in secrets.json. Values never leave this module except on an explicit reveal,
+// which the owner can turn off (Settings → Keys: desk.json keys.reveal).
+// Agents ask for a key with `secret request NAME "why"` (a "Needs you" card on the Timeline and in Keys); the owner's answer
 // is saved here and the asking chat is told it's ready.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,35 +13,59 @@ import { readSecrets, writeSecrets, catalogKeys } from './connections.mjs';
 const HOME = os.homedir();
 const CONF = path.join(HOME, '.config', 'springroll');
 const META = path.join(CONF, 'secrets.json');
+const SETTINGS = path.join(HOME, 'home', 'desk.json');
 const AGENTD = 'http://127.0.0.1:8090';
 export const NAME_RE = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
-// Sign-ins Springroll keeps in their own files: listed so the page covers everything, not editable here.
+// Sign-ins Springroll keeps in their own files: listed so the page covers everything, changed where
+// `href` points. The backup passphrase can be revealed: restoring on a new machine needs it.
 const MANAGED = [
-  { file: 'claude-token', name: 'Claude sign-in', note: 'Claude Code token (Settings → Coding agents)' },
-  { file: 'google.json', name: 'Gmail accounts', note: 'App passwords and Google sign-ins (Connections → Gmail)' },
-  { file: 'backup-passphrase', name: 'Backup passphrase', note: 'Encrypts keys in backups (Settings → Backups)' },
+  { file: 'claude-token', name: 'Claude sign-in', note: 'Claude Code token', href: '#/connections' },
+  { file: 'google.json', name: 'Gmail accounts', note: 'App passwords and Google sign-ins', href: '#/connections' },
+  { file: 'backup-passphrase', name: 'Backup passphrase', note: 'Encrypts backups. Restoring needs it: keep a copy off this machine', href: '#/v/settings#backups', reveal: true },
 ];
+
+export function revealAllowed() {
+  try { return JSON.parse(fs.readFileSync(SETTINGS, 'utf8')).keys?.reveal !== false; } catch { return true; }
+}
 
 const readMeta = () => { try { return JSON.parse(fs.readFileSync(META, 'utf8')); } catch { return {}; } };
 const writeMeta = (m) => { fs.mkdirSync(CONF, { recursive: true }); fs.writeFileSync(META, JSON.stringify(m, null, 2) + '\n', { mode: 0o600 }); };
-const hint = (v) => (v.length >= 12 ? `••••${v.slice(-4)}` : '••••');
+// What a masked value shows: the last four characters of a long token, the kind of a JSON key.
+function hint(v) {
+  if (/^[{[]/.test(v)) { try { const j = JSON.parse(v); return j.type === 'service_account' ? 'service account' : 'JSON'; } catch {} }
+  return v.length >= 12 ? `••••${v.slice(-4)}` : '••••';
+}
+// A key is one line; a pasted JSON file (a service account key) is kept as one line of JSON.
+function normalize(value) {
+  const v = value.trim();
+  if (/^[{[]/.test(v)) { try { return JSON.stringify(JSON.parse(v)); } catch { throw new Error("That looks like JSON but doesn't parse"); } }
+  if (/[\r\n]/.test(v)) throw new Error('A key is one line (a JSON file is fine too)');
+  return v;
+}
+const title = (kind, name) => {
+  try {
+    if (kind === 'app') return fs.readFileSync(path.join(HOME, 'home', 'views', name, 'README.md'), 'utf8').match(/^#\s+(.+)$/m)?.[1].trim() || name;
+    if (kind === 'job') return JSON.parse(fs.readFileSync(path.join(HOME, 'home', 'jobs', name, 'job.json'), 'utf8')).title || name;
+  } catch {}
+  return name;
+};
 
-// Where a key is used: the owner's apps, jobs and connection configs that mention it as a whole word.
+// Where a key is used: the owner's apps and jobs that mention it as a whole word.
 function usedBy(names) {
   if (!names.length) return Promise.resolve({});
   return new Promise((resolve) => {
-    execFile('git', ['-C', path.join(HOME, 'home'), 'grep', '-n', '-w', '-I', ...names.flatMap((n) => ['-e', n]), '--', 'views', 'jobs', 'connections', ':!views/desk', ':!views/settings', ':!views/gallery', ':!connections/catalog.json', ':!connections/README.md'],
+    execFile('git', ['-C', path.join(HOME, 'home'), 'grep', '-n', '-w', '-I', ...names.flatMap((n) => ['-e', n]), '--', 'views', 'jobs', ':!views/desk', ':!views/settings', ':!views/gallery'],
       { maxBuffer: 4 << 20, timeout: 8000 }, (err, out) => {
         const map = {};
         for (const line of (out || '').split('\n')) {
-          const file = line.split(':')[0];
-          if (!file) continue;
-          const where = file.match(/^(views|jobs|connections)\/([^/]+)/);
-          const label = where ? `${where[1] === 'views' ? 'app' : where[1] === 'jobs' ? 'job' : 'connection'} ${where[2]}` : file;
-          for (const n of names) if (new RegExp(`\\b${n}\\b`).test(line.slice(file.length))) (map[n] ||= new Set()).add(label);
+          const where = line.match(/^(views|jobs)\/([^/:]+)/);
+          if (!where) continue;
+          const kind = where[1] === 'views' ? 'app' : 'job', id = `${kind}:${where[2]}`;
+          for (const n of names) if (new RegExp(`\\b${n}\\b`).test(line.slice(line.indexOf(':')))) (map[n] ||= new Map()).set(id, { kind, name: where[2] });
         }
-        resolve(Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v].slice(0, 6)])));
+        resolve(Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v.values()].slice(0, 6).map((u) => ({
+          ...u, title: title(u.kind, u.name), href: u.kind === 'app' ? `#/v/${u.name}` : `#/jobs/${u.name}` }))])));
       });
   });
 }
@@ -50,21 +75,21 @@ export async function listSecrets() {
   const names = Object.keys(secrets).sort();
   const used = await usedBy(names);
   const keys = names.map((name) => ({
-    name, hint: hint(secrets[name]), note: meta[name]?.note || owners[name]?.label || '', updated: meta[name]?.updated || null,
+    name, hint: hint(secrets[name]), note: meta[name]?.note || '', label: owners[name]?.label || '', updated: meta[name]?.updated || null,
     connection: owners[name]?.id || null, connectionName: owners[name]?.name || null, usedBy: used[name] || [],
   }));
   const managed = MANAGED.filter((m) => fs.existsSync(path.join(CONF, m.file))).map((m) => ({ ...m, updated: fs.statSync(path.join(CONF, m.file)).mtimeMs }));
+  const reveal = revealAllowed();
   let requests = [];
   try { requests = (await (await fetch(`${AGENTD}/signals`)).json()).filter((s) => s.key?.startsWith('secret:')).map((s) => ({ name: s.key.slice(7), why: s.body, from: s.source, thread: s.thread_id, at: s.updated, have: !!secrets[s.key.slice(7)] })); } catch {}
-  return { keys, managed, requests };
+  return { keys, managed, requests, reveal };
 }
 
 export async function setSecret({ name, value, note }) {
   if (!NAME_RE.test(name || '')) throw new Error('Names are capital letters, digits and _ (like OPENAI_API_KEY)');
   const secrets = readSecrets(), meta = readMeta();
-  if (value != null && value !== '') {
-    if (/[\r\n]/.test(value)) throw new Error('A key is one line');
-    secrets[name] = value;
+  if (value != null && value.trim() !== '') {
+    secrets[name] = normalize(value);
     writeSecrets(secrets);
     meta[name] = { ...(meta[name] || {}), updated: Date.now() };
   } else if (!secrets[name]) throw new Error('A key needs a value');
@@ -75,9 +100,17 @@ export async function setSecret({ name, value, note }) {
 }
 
 export function revealSecret(name) {
+  if (!revealAllowed()) throw new Error('Showing key values is off (Settings → Keys)');
   const v = readSecrets()[name];
   if (v == null) throw new Error('No such key');
   return { value: v };
+}
+
+export function revealManaged(file) {
+  if (!revealAllowed()) throw new Error('Showing key values is off (Settings → Keys)');
+  const m = MANAGED.find((x) => x.file === file && x.reveal);
+  if (!m) throw new Error("This one can't be shown");
+  try { return { value: fs.readFileSync(path.join(CONF, m.file), 'utf8').trim() }; } catch { throw new Error('Not set'); }
 }
 
 export function deleteSecret(name) {
@@ -89,7 +122,7 @@ export function deleteSecret(name) {
   return { ok: true };
 }
 
-// An agent asked for this key: take the card off Home and tell the asking chat it's there.
+// An agent asked for this key: take the card off the Timeline and tell the asking chat it's there.
 async function answerRequest(name) {
   let sig = null;
   try { sig = (await (await fetch(`${AGENTD}/signals`)).json()).find((s) => s.key === `secret:${name}`); } catch {}
