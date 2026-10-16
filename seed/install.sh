@@ -139,6 +139,10 @@ export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 EOF
 echo "$SEED" > $H/.config/springroll/seed
 chown $U:$U $H/.config/springroll/env $H/.config/springroll/seed
+# Updates pull the seed when it's a git checkout (springroll-upstream). One cloned by root is
+# "dubious ownership" to the agent's git, which then can't read it and updates never pull: trust it.
+SEED_REPO=$(git -C "$SEED" rev-parse --show-toplevel 2>/dev/null || true)
+[ -n "$SEED_REPO" ] && as_agent "git config --global --get-all safe.directory 2>/dev/null | grep -qxF '$SEED_REPO' || git config --global --add safe.directory '$SEED_REPO'"
 grep -q springroll/env $H/.bashrc 2>/dev/null || sed -i "1i . \$HOME/.config/springroll/env" $H/.bashrc 2>/dev/null || echo '. $HOME/.config/springroll/env' >> $H/.bashrc
 as_agent 'command -v claude >/dev/null || curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1'
 as_agent 'npm config set prefix ~/.npm-global; command -v codex >/dev/null || npm i -g @openai/codex playwright >/dev/null 2>&1'
