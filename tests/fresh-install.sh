@@ -56,7 +56,7 @@ check "connections API" "curl -fsS localhost:8000/api/connections | grep -q gith
 check "timeline and keys pages served" "curl -fsS localhost:8000/app/timeline.js -o /dev/null && curl -fsS localhost:8000/app/keys.js -o /dev/null"
 check "upcoming API" "curl -fsS localhost:8000/api/upcoming | jq -e 'type==\"array\"'"
 check "needs-you config" "curl -fsS localhost:8000/api/needs/config | jq -e 'type==\"object\"'"
-check "personas API" "curl -fsS localhost:8000/api/personas | jq -e 'type==\"array\"'"
+check "personas: presets ship, none by default" "curl -fsS localhost:8000/api/personas | jq -e 'length>=4' && curl -fsS localhost:8000/api/settings | jq -e '.persona.default==null'"
 check "to-dos app answers" "for i in \$(seq 1 30); do curl -fsS localhost:8000/v/todos/api/boards | jq -e '.[0].id==\"personal\"' && exit 0; sleep 2; done; exit 1"
 check "housekeeping job" "curl -fsS localhost:8000/api/agent/jobs | grep -q housekeeping"
 check "memory seeded, Claude's own off" "test -s /home/agent/home/notes/memory.md && jq -e '.autoMemoryEnabled==false' /home/agent/.claude/settings.json"

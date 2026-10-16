@@ -32,7 +32,7 @@ your machine has its own version of. On a machine that never changed these files
   `personas/README.md`): one file of what every agent should know about the owner, imported by Claude
   and sent with the first prompt to every other agent; the installer turns Claude's own auto memory
   off. Personas set how the agent talks in a chat (`/persona <id>`, composer menu, Settings default,
-  a job's `persona`); voice only. This seed ships no presets: create one from Settings → Personas.
+  a job's `persona`); voice only. Four starter presets ship (Bourdain, Dolly, Dude, Naval); none is on until the owner picks one, and Settings → Personas creates more.
 - **Background work in chat** (`agentd/background.mjs`, `threads.mjs`, `app/thread.js`, `thread.css`):
   Claude's and Codex's backgrounded commands and subagents come from ACP as rows in their turn, with
   a side pane (live output, Stop). Fixes Codex command output, missing since `codex-acp` (it sends
