@@ -17,11 +17,11 @@ the owner connects **Fly Sprites** in Springroll (Connections → Compute).
 
 ## One Sprite per project, not per task
 
-Name it after the project (`carrot`, not `carrot-run-12`). Set it up once and
+Name it after the project (`acme`, not `acme-run-12`). Set it up once and
 reuse it: the repo, dependencies, browser and sign-ins stay installed.
 
-    sprite create carrot
-    sprite exec -s carrot -- bash -lc 'git clone https://github.com/<owner>/<repo> ~/carrot-extract'
+    sprite create acme
+    sprite exec -s acme -- bash -lc 'git clone https://github.com/<owner>/<repo> ~/acme'
 
 Private repos: pass a token for the clone only and don't leave it in the
 remote URL, e.g. `git clone https://x-access-token:$(gh auth token)@github.com/…`
@@ -39,31 +39,31 @@ once per Sprite. Don't send the owner to a terminal: put the sign-in on the Time
 where **Sign in** runs the agent's login on the Sprite and walks them through it
 (open the page, paste or enter a code):
 
-    signal --needs --key signin:antigravity@carrot --source Carrot \
-      "Sign in to Antigravity on the carrot Sprite" "Carrot's refresh needs it; it's paused until then."
+    signal --needs --key signin:antigravity@acme --source Acme \
+      "Sign in to Antigravity on the acme Sprite" "Acme's refresh needs it; it's paused until then."
 
 The item clears itself once they're signed in. Post the same signal from a job
-that finds a login has lapsed (check first: e.g. `sprite exec -s carrot -- bash -lc
+that finds a login has lapsed (check first: e.g. `sprite exec -s acme -- bash -lc
 '[ -s ~/.gemini/antigravity-cli/antigravity-oauth-token ]'`; `cursor-agent status`).
 Other CLIs that need an interactive sign-in: tell the owner to open Springroll's
-Terminal and run `sprite console -s carrot`, then the login command.
+Terminal and run `sprite console -s acme`, then the login command.
 
-Record it in `~/home/LOCAL.md` ("carrot-extract runs on Sprite `carrot`: repo at
-~/carrot-extract, refresh with `make refresh`") so other agents and jobs find it.
+Record it in `~/home/LOCAL.md` ("acme runs on Sprite `acme`: repo at
+~/acme, refresh with `make refresh`") so other agents and jobs find it.
 
 ## Running work
 
-Short commands (seconds to a few minutes): `sprite exec -s carrot --dir ~/carrot-extract -- make test`.
+Short commands (seconds to a few minutes): `sprite exec -s acme --dir ~/acme -- make test`.
 
 Anything longer: **always `sprite-job`**. A plain `exec` dies when your session
 ends or the Sprite pauses; `sprite-job` runs detached and holds the Sprite awake
 until the work finishes (Sprites Tasks API).
 
-    sprite-job start  carrot refresh --dir ~/carrot-extract -- make refresh
-    sprite-job status carrot             # all jobs: running/done, exit code, duration
-    sprite-job logs   carrot refresh 80  # tail the log
-    sprite-job wait   carrot refresh 300 # block (checks each minute) up to 300 min; exits with its code
-    sprite-job stop   carrot refresh
+    sprite-job start acme refresh --dir ~/acme -- make refresh
+    sprite-job status acme             # all jobs: running/done, exit code, duration
+    sprite-job logs acme refresh 80  # tail the log
+    sprite-job wait acme refresh 300 # block (checks each minute) up to 300 min; exits with its code
+    sprite-job stop acme refresh
 
 From a scheduled job here: start it, `wait` for it (or check back with
 `status` and `logs`), then report the outcome from the log: what ran, how long,
