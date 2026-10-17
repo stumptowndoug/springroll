@@ -266,6 +266,6 @@ div.row[data-side]:focus-visible { outline: 2px solid var(--ring); outline-offse
 .side-note { margin: 0; color: var(--muted); font-size: var(--text-sm); }
 .side-section { display: grid; gap: 4px; }
 .side-working { font-size: var(--text-sm); color: var(--muted); padding: 2px 0; }
-.side-foot { flex: none; display: flex; justify-content: flex-end; padding: 10px 16px 14px; }
+.side-actions { flex: none; display: flex; justify-content: flex-end; padding: 10px 16px 14px; }
 .side-transcript { display: grid; gap: 4px; min-width: 0; }
 .side-transcript .msg-agent { color: var(--muted); font-size: var(--text-sm); }
