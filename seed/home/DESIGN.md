@@ -50,7 +50,10 @@ clickable cards react to hover.
 - `--run`: in progress. `--ok`, `--warn`, `--danger`: outcomes, as a 7px dot
   (`ui-dot`) beside muted text (`ui-status`), or danger text for an error line.
   No colored rows, borders or bars for status.
-- Only two states get a tinted pill (`ui-pill`): **running** and **needs you**.
+- **Running** is a status like the rest: a pulsing `--run` dot, the word, and how long it's been going in
+  mono (`ui.running(startedAt)`: "Running 12m"). No pill.
+- Only **needs you** gets a tinted pill (`ui-pill attention`): the one colored shape on a page asks for
+  the owner. Paused, queued and the rest are a dot and a word.
 - A trail of recent outcomes is `ui-trail`.
 - Everything else is `--fg`, `--muted`, `--faint`, or a surface.
 

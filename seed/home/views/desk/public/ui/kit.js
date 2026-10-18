@@ -97,6 +97,15 @@
     return t.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: s > 300 * 86400 ? 'numeric' : undefined });
   };
   ui.time = (d) => new Date(d).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  // "Running" as a status like any other: a pulsing dot, the word, and how long it's been going when known.
+  // ui.running(startedAt?, label = 'Running'); startedAt in ms or s.
+  ui.elapsed = (d) => {
+    const t = d instanceof Date ? +d : typeof d === 'number' && d < 1e12 ? d * 1000 : +new Date(d);
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    return s < 60 ? s + 's' : s < 3600 ? Math.floor(s / 60) + 'm' : s < 86400 ? Math.floor(s / 3600) + 'h' : Math.floor(s / 86400) + 'd';
+  };
+  ui.running = (since, label = 'Running') =>
+    `<span class="ui-status"><span class="ui-dot run"></span>${ui.esc(label)}${since ? `<span class="ui-mono" title="Started ${ui.esc(new Date(typeof since === 'number' && since < 1e12 ? since * 1000 : since).toLocaleString())}">${ui.elapsed(since)}</span>` : ''}</span>`;
   ui.duration = (ms) => {
     const s = Math.round(ms / 1000);
     if (s < 60) return `${s}s`;

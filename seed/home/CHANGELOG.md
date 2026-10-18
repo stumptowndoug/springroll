@@ -5,6 +5,24 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-18 · Running is a status, not a pill
+
+- **Running** shows like every other status: a pulsing `--run` dot, the word, and how long it's been
+  going in mono ("● Running 47m"). One helper makes it: `ui.running(startedAt, label?)` (and
+  `ui.elapsed(t)`) in `ui/kit.js`; the time is left out when there's no start. The tinted
+  `.ui-pill.run` is gone from `ui/kit.css`, so nothing can bring the old tag look back.
+- Used in Jobs (list rows and the job page heading; a running job's start is its current run,
+  `j.last.started`), System (`templates/system`: Paused) and the Gallery. Paused and Queued drop their
+  pills too: a dot and a word.
+- **Only Needs you keeps a tinted pill** (`ui-pill attention`), so the one colored shape on a page is
+  the one asking for the owner. DESIGN.md says so.
+- Why: the owner found the tinted tag out of place beside every other status, and picked this from
+  six options on the owner's machine.
+- **If you changed this:** any app of your own using `ui-pill run` (or a plain `ui-pill` for a
+  state) loses its tint: switch it to `ui.running(startedAt)` or
+  `<span class="ui-status"><span class="ui-dot …"></span>Word</span>`. `grep -rn "ui-pill" ~/home/views`
+  finds them. An installed System app is a copy of the template: make the same one-line change there.
+
 ## 2026-10-16 · Email asks first by default; migrations; installer re-runs keep folders usable
 
 - **Email: "Ask me first" is the default** (`views/desk/google.mjs`, `app/connections.js`, `bin/gmail`,

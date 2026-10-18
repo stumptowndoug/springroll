@@ -40,7 +40,7 @@
         <div class="detail">
           <div class="ui-hstack"><span class="ui-avatar" style="--hue: var(--accent)">AL</span>
             <div><b>Ada Lovelace</b><div class="ui-muted" style="font-size: var(--text-sm)">to me · <span class="ui-mono">9:41</span></div></div>
-            <div class="ui-spacer"></div><span class="ui-pill run"><span class="ui-dot run"></span>Syncing</span></div>
+            <div class="ui-spacer"></div><span class="ui-status"><span class="ui-dot run"></span>Syncing</span></div>
           <h3 class="ui-title">Notes on the Analytical Engine</h3>
           <div class="ui-prose">The engine might act upon other things besides number, were objects found whose mutual fundamental relations could be expressed by those of the abstract science of operations.</div>
           <div class="ui-hstack" style="gap:8px"><button class="ui-btn primary" data-icon="reply">Reply</button><button class="ui-btn" data-icon="archive">Archive</button><button class="ui-btn quiet">Mark unread</button></div>
@@ -200,12 +200,12 @@
 
   <section class="ui-section">
     <h2>Status</h2>
-    <p class="ui-muted">Status is a dot beside muted text. Only "running" and "needs you" earn a tinted pill. A trail shows recent outcomes.</p>
+    <p class="ui-muted">Status is a dot beside muted text. Running is a status too: a pulsing dot, the word, and how long it's been going (<code>ui.running(startedAt)</code>). Only "needs you" earns a tinted pill. A trail shows recent outcomes.</p>
     <div class="demo">
       <span class="ui-status"><span class="ui-dot ok"></span>Synced</span>
       <span class="ui-status"><span class="ui-dot warn"></span>Token expires soon</span>
       <span class="ui-status"><span class="ui-dot danger"></span>Failed</span>
-      <span class="ui-pill run"><span class="ui-dot run"></span>Running</span>
+      <span id="runningDemo"></span>
       <span class="ui-pill attention"><span class="ui-dot warn"></span>Needs you</span>
       <span class="ui-trail"><i class="done"></i><i class="done"></i><i class="failed"></i><i class="done"></i><i class="done"></i><i class="running"></i></span>
       <span class="ui-badge">3</span><span class="ui-badge accent">New</span>
@@ -306,6 +306,7 @@ Tests: 24 passed, 24 total</div></div>
   </section>
 </main>
 <script>
+document.getElementById('runningDemo').innerHTML = ui.running(Date.now() - 12 * 60000);
 ui.board(document.getElementById('boardDemo'), { onMove: (card, col) => ui.toast(`Moved to ${col}`) });
 const people = [['Grace Hopper', 'The compiler works. Sort of.', '2m', true], ['Linus Torvalds', 'Re: patch series v3', '1h', true],
   ['Ada Lovelace', 'Notes on the Analytical Engine', '9:41', false], ['Alan Turing', 'Can machines think?', 'Tue', false],
