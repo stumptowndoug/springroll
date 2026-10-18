@@ -157,7 +157,6 @@
 .connections .ui-section > header .count, .keys .ui-section > header .count { font-size: var(--text-2xs); }
 /* Key rows: name and what it's for | masked value | age | Show and ⋯, in the same columns on every row.
    A revealed value or the replace form opens under the row, across all columns. */
-.keys-filter { margin: 0 0 var(--gap, 16px); max-width: 360px; }
 .keys-project { margin: 18px 2px 8px; font-weight: 600; font-size: var(--text-sm); }
 .keys-project:first-of-type { margin-top: 0; }
 .key-row { display: grid; grid-template-columns: minmax(0, 1fr) 15ch auto; align-items: center; column-gap: 16px; }

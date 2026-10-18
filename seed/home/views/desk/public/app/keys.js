@@ -42,6 +42,7 @@ function render() {
     <header class="ui-heading"><div><span class="ui-eyebrow">Secrets and sign-ins</span><h1 class="ui-display">Keys.</h1></div>
       <div class="actions"><button class="ui-btn primary" data-k="add">${ui.icon('plus', 'sm')}Add a key</button></div></header>
     <p class="ui-lede">API keys and passwords for everything your agents work with. Add one here, or paste it into the card when an agent asks for one on the Timeline.${keys.reveal ? '' : ' Showing values is off (<a href="#/v/settings#keyvalues">Settings</a>).'}</p>
+    ${keys.keys.length ? `<div class="ui-pagebar"><label class="ui-search"><span class="ui-sr-only">Search keys</span>${ui.icon('search', 'sm')}<input class="ui-input" type="search" data-k-filter placeholder="Search keys" value="${ui.esc(filter)}" autocomplete="off" spellcheck="false"></label></div>` : ''}
     ${keysView()}</div>`);
   el.querySelector('[data-focus]')?.focus();
 }
@@ -68,7 +69,7 @@ function keysView() {
     ${adding ? `<section class="ui-section"><div class="ui-card pad">${keyForm(null, true)}</div></section>` : ''}
     ${list.length ? groupedKeys(list, keyForm)
       : `<section class="ui-section"><div class="ui-empty"><div class="orbit"></div><h2>No keys yet.</h2><p>Add one, or connect a service. Agents can also ask you for one.</p></div></section>`}
-    ${managed.length ? `<section class="ui-section"><header><span class="ui-label">Sign-ins</span></header><div class="ui-group">${managed.map((m) => `
+    ${managed.length && !filter ? `<section class="ui-section"><header><span class="ui-label">Sign-ins</span></header><div class="ui-group">${managed.map((m) => `
       <div class="ui-row key-row"><div class="body"><span class="title">${ui.esc(m.name)}</span><span class="sub">${ui.esc(m.note)}</span></div>
         <span class="key-value ui-mono">••••</span>
         <div class="key-actions">${m.reveal && keys.reveal ? showBtn(`signin:${m.file}`) : `<a class="ui-btn quiet muted" href="${m.href}">Manage</a>`}<span class="spacer"></span></div>
@@ -77,18 +78,17 @@ function keysView() {
 
 // Keys in sections by what uses them, worked out on the server (secrets.mjs listSecrets: section):
 // connections, the owner's apps/jobs/commands, projects (one group per project, from the Dev app's
-// recipes), and nothing found. A filter shows once there are more than 20.
+// recipes), and nothing found. The search box sits in the page bar (render).
 const SECTIONS = [['connections', 'Connections'], ['apps', 'Apps and jobs'], ['projects', 'Projects'], ['unused', 'Not used by anything here']];
 function matches(k, q) {
-  const hay = [k.name, k.note, k.connectionName, ...k.usedBy.map((u) => u.title)].join(' ').toLowerCase();
+  const hay = [k.name, k.note, k.connectionName, ...k.usedBy.flatMap((u) => [u.title, ...(u.vars || [])])].join(' ').toLowerCase();
   return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
 }
 function groupedKeys(all, keyForm) {
   const list = filter ? all.filter((k) => matches(k, filter)) : all;
-  const box = all.length > 20 ? `<div class="keys-filter"><input class="ui-input" type="search" data-k-filter placeholder="Filter ${all.length} keys" value="${ui.esc(filter)}" autocomplete="off" spellcheck="false" aria-label="Filter keys"></div>` : '';
-  if (!list.length) return box + `<section class="ui-section"><p class="ui-muted">No key matches “${ui.esc(filter)}”.</p></section>`;
+  if (!list.length) return `<section class="ui-section"><p class="ui-muted">No key matches “${ui.esc(filter)}”.</p></section>`;
   const rows = (ks) => `<div class="ui-group">${ks.map((k) => keyRow(k, keyForm)).join('')}</div>`;
-  return box + SECTIONS.map(([id, label]) => {
+  return SECTIONS.map(([id, label]) => {
     const ks = list.filter((k) => (k.section || 'apps') === id);
     if (!ks.length) return '';
     const body = id !== 'projects' ? rows(ks) : (keys.projectGroups || []).map((g) => {

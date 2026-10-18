@@ -30,8 +30,8 @@ machine has its own version of those files.
   each key, worked out rather than tagged: Connections, Apps and jobs (the usage search now covers
   `bin/`), Projects (one group per project or `keyPrefix` family, from Dev recipes and from jobs whose
   `cwd` is in `~/projects/<name>`), and Not used by anything here. Each row is the name and one short
-  fact (the full story on hover); one-line lede; no per-section notes, counts or dates; a filter past
-  20 keys; names wrap. **Add a key** has **Used by** (a project) and **As variable**: saving also puts
+  fact (the full story on hover); one-line lede; no per-section notes, counts or dates; a search box
+  in the page bar; names wrap. **Add a key** has **Used by** (a project) and **As variable**: saving also puts
   the key in that project's recipe (the Dev app's new `POST api/projects/<name>/keys`).
 - **Sheets and toasts keep clear of the floating Chat button** (`ui/kit.css`): `.ui-sheet > footer`
   and `.ui-toasts` use `--fab-room`, as `.ui-page` does; the button covered every sheet's Save.
