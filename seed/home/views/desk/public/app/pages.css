@@ -135,7 +135,7 @@
 /* Six facts, two even rows of three (two columns on a phone). */
 .job-detail .ui-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .job-detail .ui-facts dd { overflow-wrap: anywhere; }
-.job-detail .ui-eyebrow .ui-pill { margin-left: 10px; vertical-align: middle; }
+.job-detail .ui-eyebrow .ui-status { margin-left: 12px; vertical-align: middle; font-size: var(--text-xs); font-weight: 600; letter-spacing: 0; text-transform: none; }
 .job-detail .ui-section > header .ui-trail { margin-left: 12px; }
 /* A run: time · status · what it said · how long it took. */
 .job-runs .ui-feed-row { grid-template-columns: 4.6rem 7px minmax(0, 1fr) auto 14px; }

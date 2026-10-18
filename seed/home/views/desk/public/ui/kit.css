@@ -285,15 +285,14 @@ a.ui-card:hover, button.ui-card:hover, .ui-card.hover:hover { background: var(--
 .ui-facts dd { margin: 0; }
 .ui-facts dd small { display: block; color: var(--muted); font-size: var(--text-sm); }
 
-/* ---------- Status: dots beside muted text. Only running and needs-you get a pill. ---------- */
+/* ---------- Status: dots beside muted text. Only needs-you gets a pill. ---------- */
 .ui-badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: var(--radius-pill);
   background: var(--surface); font-size: var(--text-xs); font-weight: 650; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ui-badge.accent { background: var(--accent); color: var(--button-fg); }
+/* The one tinted pill: Needs you. Running is a status like any other (ui.running), not a pill. */
 .ui-pill { display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 11px; border-radius: var(--radius-pill);
   font-size: var(--text-xs); font-weight: 650; white-space: nowrap; background: var(--surface); color: var(--fg); }
-.ui-pill.run { background: var(--run-ground); }
 .ui-pill.attention { background: var(--attention-ground); }
-.ui-pill.danger { background: var(--danger-ground); }
 .ui-dot, .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
 .ui-dot.ok, .dot.ok { background: var(--ok); }
 .ui-dot.warn, .dot.warn { background: var(--warn); }
@@ -301,6 +300,7 @@ a.ui-card:hover, button.ui-card:hover, .ui-card.hover:hover { background: var(--
 .ui-dot.accent { background: var(--accent); }
 .ui-dot.run, .dot.run { background: var(--run); animation: ui-pulse 1.2s ease-in-out infinite; }
 .ui-status { display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); font-weight: 600; color: var(--muted); }
+.ui-status > .ui-mono { font-weight: 400; font-size: var(--text-xs); color: var(--faint); text-transform: none; letter-spacing: 0; }
 @keyframes ui-pulse { 50% { opacity: .25; } }
 /* A trail of recent outcomes, oldest first */
 .ui-trail { display: inline-flex; gap: 5px; align-items: center; }

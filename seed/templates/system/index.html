@@ -122,7 +122,7 @@ function rows(el, list, empty) {
       : g.kind === 'service' ? esc([g.view && g.view !== g.name ? g.view + ' View' : null, g.detail, g.limit ? 'limit ' + fmt(g.limit) : 'no memory limit'].filter(Boolean).join(' · '))
       : esc(g.detail);
     const grow = g.growth > 5 * MB ? `<span class="grow">↑ ${fmt(g.growth)}/min</span>` : '';
-    const paused = g.paused ? '<span class="ui-pill attention"><span class="ui-dot warn"></span>Paused</span>' : '';
+    const paused = g.paused ? '<span class="ui-status"><span class="ui-dot warn"></span>Paused</span>' : '';
     const canAct = g.kind !== 'process' || g.mine;
     return `<div class="ui-row"><span class="lead">${ui.icon(icon)}</span>
       <div class="body"><span class="title">${esc(g.name)} ${paused} ${grow}</span><span class="sub">${sub}</span></div>

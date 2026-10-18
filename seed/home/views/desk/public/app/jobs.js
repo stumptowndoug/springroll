@@ -39,7 +39,7 @@ const pauseBtn = (j, size = '') => `<button class="ui-round ${size} toggle fille
 
 function jobRow(j) {
   const st = stateOf(j);
-  const when = st === 'running' ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>'
+  const when = st === 'running' ? ui.running(j.last?.status === 'running' ? j.last.started : null)
     : st === 'queued' ? `<span class="ui-mono">${j.queued.how === 'retry' && j.queued.at ? `Retry ${ui.esc(nextLabel(j.queued.at).replace(/^Next /, ''))}` : 'Queued'}</span>`
     : !j.enabled ? '<span class="ui-faint">Paused</span>'
     : j.next ? `<span class="ui-mono">${ui.esc(nextLabel(j.next))}</span>` : '<span class="ui-faint">Manual</span>';
@@ -94,8 +94,8 @@ async function renderDetail(name) {
   const named = (list, id) => (list || []).find((x) => x.id === id)?.name || id;
   // The model by the name the agent gives it, and its id when that says something else ("6 Luna", gpt-6-luna).
   const model = (id) => { const n = named(opts?.models, id); return n.toLowerCase() === id.toLowerCase() ? ui.esc(n) : `${ui.esc(n)} <span class="ui-mono">${ui.esc(id)}</span>`; };
-  const status = j.running ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>'
-    : j.queued ? `<span class="ui-pill">${j.queued.how === 'retry' ? 'Retry queued' : 'Queued'}</span>` : !j.enabled ? '<span class="ui-pill">Paused</span>' : '';
+  const status = j.running ? ui.running(j.last?.status === 'running' ? j.last.started : null)
+    : j.queued ? `<span class="ui-status"><span class="ui-dot"></span>${j.queued.how === 'retry' ? 'Retry queued' : 'Queued'}</span>` : !j.enabled ? '<span class="ui-status"><span class="ui-dot"></span>Paused</span>' : '';
   const fact = (label, value, sub = '', mono = false) => `<div><dt>${label}</dt><dd${mono ? ' class="ui-mono"' : ''}>${value}${sub ? `<small${mono ? ' class="ui-mono"' : ''}>${sub}</small>` : ''}</dd></div>`;
   const when = (ts) => new Date(ts).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const facts = [
