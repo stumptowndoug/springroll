@@ -1,12 +1,69 @@
 #!/usr/bin/env bash
-# Publish a local port privately on the tailnet and open it in Springroll:
-#   preview <port>        e.g. a dev server on :5173
+# Publish a local port privately and open it in Springroll:
+#   preview <port>              e.g. a dev server on :5173 (prints the URL, opens it)
+#   preview <port> --no-show    publish and print the URL only
 #   preview <port> off
+#   preview list [--json]       what's published
+# How depends on how this machine is reached: on Tailscale, `tailscale serve` gives
+# https://<machine>.<tailnet>.ts.net:<port>/; on exe.dev (springroll-exe-proxy), exe.dev's
+# private proxy already serves ports 3000-9999 at https://<vm>.exe.xyz:<port>/ to whoever can
+# reach the VM, so a socat unit (preview-<port>) forwards the VM's address to 127.0.0.1:<port>.
 set -euo pipefail
-port=${1:?usage: preview <port> [off]}
+
+mode() {
+  if systemctl is-active -q tailscaled 2>/dev/null && timeout 3 tailscale status >/dev/null 2>&1; then echo tailscale
+  elif systemctl cat springroll-exe-proxy >/dev/null 2>&1; then echo exe
+  else echo none; fi
+}
+
+ts_url() { echo "https://$(tailscale status --json | jq -r .Self.DNSName | sed 's/\.$//'):$1/"; }
+exe_url() { echo "https://$(hostname).exe.xyz:$1/"; }
+
+if [ "${1:-}" = list ]; then
+  m=$(mode); declare -A urls=()
+  if [ "$m" = tailscale ]; then
+    for p in $(sudo tailscale serve status --json 2>/dev/null | jq -r '.TCP // {} | keys[]'); do urls[$p]=$(ts_url "$p"); done
+  elif [ "$m" = exe ]; then
+    for u in $(systemctl --user list-units --plain --no-legend --state=active 'preview-*.service' | awk '{print $1}'); do
+      p=${u#preview-}; p=${p%.service}; urls[$p]=$(exe_url "$p"); done
+  fi
+  if [ "${2:-}" = --json ]; then
+    for p in "${!urls[@]}"; do printf '%s\n%s\n' "$p" "${urls[$p]}"; done | jq -Rn '[inputs] as $a | [range(0; $a|length; 2) | {($a[.]): $a[.+1]}] | add // {}'
+  else
+    for p in "${!urls[@]}"; do echo "$p ${urls[$p]}"; done | sort -n
+  fi
+  exit
+fi
+
+port=${1:?usage: preview <port> [--no-show|off] | preview list}
 [[ "$port" =~ ^[0-9]+$ ]] || { echo "port must be a number" >&2; exit 1; }
-if [ "${2:-}" = off ]; then sudo tailscale serve --https="$port" off; exit; fi
-sudo tailscale serve --bg --https="$port" "http://127.0.0.1:$port" >/dev/null
-url="https://$(tailscale status --json | jq -r .Self.DNSName | sed 's/\.$//'):$port/"
+m=$(mode)
+
+if [ "${2:-}" = off ]; then
+  case $m in
+    tailscale) sudo tailscale serve --https="$port" off ;;
+    exe) systemctl --user stop "preview-$port.service" 2>/dev/null || true ;;
+  esac
+  exit
+fi
+
+case $m in
+  tailscale)
+    sudo tailscale serve --bg --https="$port" "http://127.0.0.1:$port" >/dev/null
+    url=$(ts_url "$port") ;;
+  exe)
+    (( port >= 3000 && port <= 9999 )) || { echo "exe.dev's proxy only serves ports 3000-9999; use one of those" >&2; exit 1; }
+    ip=$(hostname -I | cut -d' ' -f1)
+    # Something already listening on all addresses (0.0.0.0/::) is reachable as it is.
+    if ! ss -ltnH "sport = :$port" | awk '{print $4}' | grep -qE '^(0\.0\.0\.0|\*|\[::\]):'; then
+      if ! systemctl --user is-active -q "preview-$port.service"; then
+        systemctl --user reset-failed "preview-$port.service" 2>/dev/null || true
+        systemd-run --user --quiet --unit "preview-$port" -p MemoryMax=50M \
+          socat "TCP-LISTEN:$port,bind=$ip,fork,reuseaddr" "TCP:127.0.0.1:$port"
+      fi
+    fi
+    url=$(exe_url "$port") ;;
+  *) echo "This machine has neither Tailscale nor exe.dev's proxy; open an SSH tunnel: ssh -L $port:localhost:$port $(hostname)" >&2; exit 1 ;;
+esac
 echo "$url"
-show "$url" >/dev/null || true
+[ "${2:-}" = --no-show ] || show "$url" >/dev/null || true

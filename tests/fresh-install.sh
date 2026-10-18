@@ -58,6 +58,8 @@ check "upcoming API" "curl -fsS localhost:8000/api/upcoming | jq -e 'type==\"arr
 check "needs-you config" "curl -fsS localhost:8000/api/needs/config | jq -e 'type==\"object\"'"
 check "personas: presets ship, none by default" "curl -fsS localhost:8000/api/personas | jq -e 'length>=4' && curl -fsS localhost:8000/api/settings | jq -e '.persona.default==null'"
 check "to-dos app answers" "for i in \$(seq 1 30); do curl -fsS localhost:8000/v/todos/api/boards | jq -e '.[0].id==\"personal\"' && exit 0; sleep 2; done; exit 1"
+check "dev app answers" "for i in \$(seq 1 30); do curl -fsS localhost:8000/v/dev/api/projects | jq -e 'type==\"array\"' && exit 0; sleep 2; done; exit 1"
+check "dev command sees the ports" "$U HOME=/home/agent /home/agent/home/bin/dev ports --json | jq -e 'any(.port==8000)'"
 check "email asks first by default" "curl -fsS localhost:8000/api/google | jq -e '.policy.send==\"ask\"'"
 check "housekeeping job" "curl -fsS localhost:8000/api/agent/jobs | grep -q housekeeping"
 check "memory seeded, Claude's own off" "test -s /home/agent/home/notes/memory.md && jq -e '.autoMemoryEnabled==false' /home/agent/.claude/settings.json"

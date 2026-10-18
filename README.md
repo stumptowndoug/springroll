@@ -31,7 +31,7 @@ sudo git clone https://github.com/stumptowndoug/springroll /opt/springroll && su
 
 - **Timeline**: what needs you, what's running, and every job's report, in one feed.
 - **Chat** with Claude, Codex, Cursor and others; they build and fix things on the box.
-- **Apps** your agents build (Mail, To-dos, a browser you can watch), and **Jobs** on a schedule.
+- **Apps** your agents build (Mail, To-dos, a browser you can watch, Dev for your projects' servers and previews), and **Jobs** on a schedule.
 - **Keys and Connections** kept on the machine, nightly backups, and weekly updates the agent merges
   around your own changes.
 

@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""dev: run the owner's projects (~/projects/<name>) without remembering how. Each project's recipe
+(~/home/views/dev/recipes/<name>.json) says how it runs; the Dev app shows the same thing.
+
+  dev                                   every project: servers, ports, previews, branch
+  dev show <project>                    one project: servers, commands, recent commits
+  dev up <project> [server…]            start its dev server(s) and publish them (preview URL)
+  dev down <project> [server…]          stop them
+  dev restart <project> [server…]
+  dev logs <project> [server|command] [-n N]   recent output (default: its first server)
+  dev run <project> <command> [--bg]    a saved command (test, lint, …) here, or in the background
+  dev setup <project>                   install its dependencies (the recipe's setup)
+  dev ports                             every open port and who owns it
+  dev detect <project>                  what its Makefile / package.json offer (to write a recipe)
+  add --json to any listing for the machine-readable form
+
+A recipe:
+  {"title": "…", "about": "…", "setup": "npm ci",
+   "env": {…}, "secrets": {"ENV_VAR": "SECRET_NAME"},
+   "secretFiles": {"GOOGLE_APPLICATION_CREDENTIALS": "SECRET_NAME"},   (the key written to a 0600 file)
+   "servers": {"web": {"run": "npx next dev -H 127.0.0.1 -p $PORT", "port": 3000,
+                       "env": {…}, "secrets": {…}, "preview": true, "memory": ["1500M", "3G"]}},
+   "commands": {"test": "npm test", "check": {"run": "npm run check", "about": "lint + types + tests"}},
+   "notes": "markdown for the next agent"}
+Servers bind 127.0.0.1 on a port in 3000-3999 (exe.dev's proxy serves 3000-9999; 8000-8199 are
+Springroll's). Keys come from Keys at run time, never written into the recipe.
+"""
+import json, os, subprocess, sys, time
+
+sys.path.insert(0, os.path.expanduser("~/home/views/dev"))
+import devlib  # noqa: E402
+
+args = sys.argv[1:]
+as_json = "--json" in args
+args = [a for a in args if a != "--json"]
+
+
+def out(obj, text):
+    print(json.dumps(obj, indent=2, default=list) if as_json else text)
+
+
+def ago(t):
+    if not t: return ""
+    s = int(time.time() - t)
+    for n, u in ((86400, "d"), (3600, "h"), (60, "m")):
+        if s >= n: return f"{s // n}{u}"
+    return f"{s}s"
+
+
+def line_for(p):
+    g = p.get("git") or {}
+    bits = [g.get("branch", "")]
+    if g.get("changed"): bits.append(f"{len(g['changed'])} changed")
+    if g.get("ahead"): bits.append(f"{g['ahead']} ahead")
+    if g.get("commits"): bits.append(f"last commit {ago(g['commits'][0]['time'])} ago")
+    head = f"{p['name']}  ({' · '.join(b for b in bits if b)})"
+    if not p["recipe"]: return head + "\n  no recipe yet: `dev detect " + p["name"] + "`"
+    rows = []
+    for s in p["servers"]:
+        st = "running" if s["state"] == "active" else s["state"]
+        rows.append(f"  {s['name']:<10} :{s['port']:<5} {st}{' ' + ago(s['since']) if s['since'] else ''}"
+                    f"{'  ' + s['preview'] if s['preview'] and s['state'] == 'active' else ''}")
+    if p["commands"]: rows.append("  commands: " + ", ".join(c["name"] for c in p["commands"]))
+    return "\n".join([head, *rows])
+
+
+def fail(e):
+    sys.exit(f"dev: {e}")
+
+
+def first_server(name):
+    r = devlib.need(name)
+    return next(iter(r["servers"]), None)
+
+
+def run_exec(name, kind, key):
+    """ExecStart of a dev unit: the recipe's command in the project, with its env and keys."""
+    r = devlib.need(name)
+    spec = {"run": r["setup"]} if (kind == "cmd" and key == "setup") else (r["servers"] if kind == "server" else r["commands"])[key]
+    env, missing = devlib.exec_env(name, r, spec)
+    if missing: print(f"dev: missing keys {', '.join(missing)} (Keys, or `secret request`)", flush=True)
+    d = devlib.project_dir(name, r)
+    print(f"$ {spec['run']}   (in {d})", flush=True)
+    if kind == "server":
+        os.chdir(d)
+        os.execvpe("bash", ["bash", "-lc", spec["run"]], env)
+    os.makedirs(os.path.join(devlib.DATA, "runs"), exist_ok=True)
+    rec = {"command": key, "run": spec["run"], "started": time.time()}
+    rc = subprocess.call(["bash", "-lc", spec["run"]], cwd=d, env=env)
+    rec.update(ended=time.time(), exit=rc)
+    f = os.path.join(devlib.DATA, "runs", f"{name}--{key}.json")
+    json.dump(rec, open(f + ".tmp", "w")); os.replace(f + ".tmp", f)
+    print(f"[exit {rc} after {int(rec['ended'] - rec['started'])}s]", flush=True)
+    sys.exit(rc)
+
+
+try:
+    cmd = args[0] if args else "list"
+    if cmd in ("list", "ls", "status"):
+        ps = devlib.all_status()
+        out(ps, "\n\n".join(line_for(p) for p in ps))
+    elif cmd == "show":
+        p = devlib.status(args[1])
+        text = [line_for(p)]
+        if p.get("commands"):
+            text.append("\ncommands:")
+            for c in p["commands"]:
+                last = c["last"]
+                res = f"  last: exit {last['exit']} {ago(last['ended'])} ago" if last and "exit" in last else ""
+                text.append(f"  {c['name']:<12} {c['run']}{res}")
+        if p.get("setup"): text.append(f"setup: {p['setup']}")
+        if (p.get("git") or {}).get("commits"):
+            text.append("\nrecent commits:")
+            text += [f"  {c['hash']} {ago(c['time']):>4}  {c['subject']}" for c in p["git"]["commits"]]
+        if p.get("notes"): text.append("\n" + p["notes"])
+        out(p, "\n".join(text))
+    elif cmd in ("up", "start"):
+        res = devlib.up(args[1], args[2:] or None)
+        out(res, "\n".join(f"{r['name']}: {'already running' if r.get('already') else 'started'} ({r['unit']})"
+                           f"{'  ' + r['preview'] if r.get('preview') else ''}"
+                           f"{'  preview failed: ' + r['previewError'] if r.get('previewError') else ''}" for r in res)
+            + f"\nlogs: dev logs {args[1]}")
+    elif cmd in ("down", "stop"):
+        res = devlib.down(args[1], args[2:] or None)
+        out(res, "\n".join(f"{r['name']}: stopped" for r in res))
+    elif cmd == "restart":
+        devlib.down(args[1], args[2:] or None)
+        res = devlib.up(args[1], args[2:] or None)
+        out(res, "\n".join(f"{r['name']}: restarted{'  ' + r['preview'] if r.get('preview') else ''}" for r in res))
+    elif cmd == "logs":
+        n = 100
+        if "-n" in args: i = args.index("-n"); n = int(args[i + 1]); del args[i:i + 2]
+        name = args[1]
+        r = devlib.need(name)
+        key = args[2] if len(args) > 2 else first_server(name)
+        kind = "server" if key in r["servers"] else "cmd"
+        u = devlib.unit(name, kind, key)
+        since = devlib.unit_state(u)["since"] if kind == "server" else (devlib.last_run(name, key) or {}).get("started")
+        if kind == "cmd" and devlib.unit_state(u)["state"] in ("active", "activating"): since = None
+        print(devlib.logs(u, n, since), end="")
+    elif cmd == "run":
+        name, key = args[1], args[2]
+        if "--bg" in args:
+            res = devlib.start_command(name, key)
+            out(res, f"{key}: {'already running' if res.get('already') else 'started'} in the background; `dev logs {name} {key}`")
+        else:
+            r = devlib.need(name)
+            if key not in r["commands"]: fail(f"{name} has no command {key!r} (has: {', '.join(r['commands']) or 'none'})")
+            env, missing = devlib.exec_env(name, r, r["commands"][key])
+            if missing: print(f"dev: missing keys {', '.join(missing)}", file=sys.stderr)
+            sys.exit(subprocess.call(["bash", "-lc", r["commands"][key]["run"]], cwd=devlib.project_dir(name, r), env=env))
+    elif cmd == "setup":
+        r = devlib.need(args[1])
+        if not r.get("setup"): fail(f"{args[1]} has no setup")
+        sys.exit(subprocess.call(["bash", "-lc", r["setup"]], cwd=devlib.project_dir(args[1], r)))
+    elif cmd == "ports":
+        ps = devlib.ports()
+        out(ps, "\n".join(f":{p['port']:<6} {p['kind']:<10} {p['owner'] or '?'}"
+                          f"{' (' + p['server'] + ')' if p.get('server') else ''}"
+                          f"{'  ' + p['process'] if p['process'] and p['kind'] in ('other', 'stray') else ''}"
+                          f"{'  ' + p['preview'] if p['preview'] else ''}" for p in ps))
+    elif cmd == "detect":
+        d = devlib.detect(args[1])
+        out(d, "\n".join(f"{x['source']:<5} {x['name']:<28} {x['about'][:90]}" for x in d) or "nothing found")
+    elif cmd == "_exec":
+        run_exec(*args[1:4])
+    elif cmd in ("-h", "--help", "help"):
+        print(__doc__)
+    else:
+        fail(f"unknown command {cmd!r}; `dev help`")
+except IndexError:
+    print(__doc__); sys.exit(2)
+except (LookupError, RuntimeError, ValueError) as e:
+    fail(e)
