@@ -1,4 +1,6 @@
-# Springroll (v2)
+# Springroll: build notes
+
+> Build notes from 2026-10-08/09, kept as history and detail for contributors (chat rendering, Files, Browser, the kit). The current picture is [How it works](../how-it-works.md).
 
 Built 2026-10-08/09. What the owner sees and uses: a sidebar shell in the
 browser (installable as an app), where they chat with coding agents, open

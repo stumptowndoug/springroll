@@ -4,10 +4,12 @@
 
 - **The seed** (`seed/` in this repo, ours):
   - `install.sh`, `bootstrap.sh`
-  - `home/`: the core every machine gets: Springroll, Settings, Gallery, the
-    design kit, `AGENTS.md`, `DESIGN.md`, `bin/` (show, notify, focus, desk,
-    preview, add-view, in-scope, check-themes), the agent registry, skills.
-  - `templates/<name>/`: optional Views (today: `system`, `mail`). A
+  - `home/`: the core every machine gets: Springroll and agentd, the apps
+    (Files, Browser, Dev, To-dos, Settings, Gallery; Calendar as a
+    placeholder), the design kit, `AGENTS.md`, `DESIGN.md`, `bin/` (show,
+    notify, signal, secret, gmail, dev, browser, backup, …), the agent
+    registry, the connections catalog, skills, personas and the starter jobs.
+  - `templates/<name>/`: optional apps (today: `system`, `mail`). A
     template is a working View folder, plus a `SETUP.md` if it needs accounts
     or keys; an agent session walks the owner through it.
   - `profiles/*.txt`: lists of templates to start with (`minimal`,
@@ -16,7 +18,7 @@
   starts as a copy of `seed/home` plus the chosen templates, then diverges.
   The installer never overwrites it.
 
-Adding Views later: Springroll → Settings → Views, or `add-view <name>` /
+Adding apps later: Springroll → Apps → Ready to add, or `add-view <name>` /
 `add-view --list` on the box. The installer records where its seed is
 (`~/.config/springroll/seed`) so the catalog keeps working.
 
@@ -37,7 +39,7 @@ internet) and stops. The installer adds a 2 GB swap file on machines under
 
 After install, the human steps: `tailscale up` (unless `--no-tailscale`, in
 which case Springroll is reached over `ssh -L 8000:127.0.0.1:8000`), and
-signing agents in (Settings → Coding agents).
+signing agents in (Connections → Coding agents).
 
 ## Moving to a new machine
 
@@ -84,8 +86,8 @@ Codex session with its helpers ~700 MB). Tools take about 3 GB of disk
 
 ## Next
 
-1. **Public repo + one line**: `curl -fsSL <url>/install | sudo bash`, where
-   the script clones the repo to `/opt/springroll-seed` and runs `install.sh`.
+1. **One line**: the repo is public; next is `curl -fsSL <url>/install | sudo bash`,
+   where the script clones it to `/opt/springroll` and runs `install.sh`.
 2. **Updates are merges the agent does** (built): each machine is the owner's
    fork. `springroll-upstream` snapshots the seed (and installed templates) onto
    an `upstream` branch in `~/home`; the weekly **Update Springroll** job follows
@@ -93,7 +95,7 @@ Codex session with its helpers ~700 MB). Tools take about 3 GB of disk
    choices (`LOCAL.md`, `DESIGN.md`), run changelog migrations, check Springroll
    and Views, then report Took / Adapted / Skipped / Needs you. Upstream writes
    `CHANGELOG.md` for that agent: what, why, and "if you changed this".
-   Remaining: the seed should be a git checkout (public or private repo) so
-   the job can pull it instead of waiting for bootstrap.sh to copy it.
+   When the seed is a git checkout (the default install), `springroll-upstream`
+   pulls it first.
 3. **CI for the test matrix**: run `tests/fresh-install.sh` per distro on
    every change to `seed/`.
