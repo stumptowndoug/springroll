@@ -390,11 +390,13 @@ dialog.ui-sheet { margin: 0 0 0 auto; height: 100dvh; max-height: none; width: m
   background: var(--bg); color: var(--fg); box-shadow: var(--shadow-lg); }
 dialog.ui-sheet[open] { animation: ui-slide var(--med); display: flex; flex-direction: column; }
 .ui-sheet > .body { flex: 1; overflow: auto; padding: 8px var(--pad) var(--pad); }
-.ui-sheet > footer { display: flex; gap: 8px; justify-content: flex-end; padding: 14px var(--pad); border-top: 1px solid var(--line); }
+/* A sheet's footer and the toasts keep the same lane clear as .ui-page, so Springroll's floating Chat
+   button (bottom right, --fab-room wide where it shows) never covers a sheet's Save or a toast. */
+.ui-sheet > footer { display: flex; gap: 8px; justify-content: flex-end; padding: 14px max(var(--pad), var(--fab-room, 0px)) 14px var(--pad); border-top: 1px solid var(--line); }
 @keyframes ui-pop { from { opacity: 0; transform: translateY(4px) scale(.985); } }
 @keyframes ui-slide { from { transform: translateX(28px); opacity: 0; } }
 
-.ui-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: grid; gap: 8px; }
+.ui-toasts { position: fixed; right: max(16px, var(--fab-room, 0px)); bottom: 16px; z-index: 60; display: grid; gap: 8px; }
 .ui-toast { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: var(--surface-overlay); border: 1px solid var(--line);
   border-radius: var(--radius); box-shadow: var(--shadow-lg); font-size: var(--text-sm); max-width: 380px; animation: ui-pop var(--med); }
 .ui-toast > .ui-icon { color: var(--ok); }

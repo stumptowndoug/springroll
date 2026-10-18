@@ -60,10 +60,12 @@ check "personas: presets ship, none by default" "curl -fsS localhost:8000/api/pe
 check "to-dos app answers" "for i in \$(seq 1 30); do curl -fsS localhost:8000/v/todos/api/boards | jq -e '.[0].id==\"personal\"' && exit 0; sleep 2; done; exit 1"
 check "dev app answers" "for i in \$(seq 1 30); do curl -fsS localhost:8000/v/dev/api/projects | jq -e 'type==\"array\"' && exit 0; sleep 2; done; exit 1"
 check "dev command sees the ports" "$U HOME=/home/agent /home/agent/home/bin/dev ports --json | jq -e 'any(.port==8000)'"
+check "keys API groups keys and lists projects" "curl -fsS localhost:8000/api/secrets | jq -e '(.keys|type==\"array\") and (.projects|type==\"array\") and (.projectGroups|type==\"array\")'"
+check "dev env sorts a pasted .env" "sudo -u agent bash -lc 'R=~/home/views/dev/recipes/envtest.json; echo {\\\"title\\\":\\\"t\\\"} > \$R; o=\$(printf \"SOME_TOKEN=abc123456789\\nPORT=9\\n\" | ~/home/bin/dev env envtest -); rm -f \$R; echo \"\$o\" | grep -Eq \"^key +SOME_TOKEN\" && echo \"\$o\" | grep -Eq \"^skip +PORT\"'"
 check "email asks first by default" "curl -fsS localhost:8000/api/google | jq -e '.policy.send==\"ask\"'"
 check "housekeeping job" "curl -fsS localhost:8000/api/agent/jobs | grep -q housekeeping"
 check "memory seeded, Claude's own off" "test -s /home/agent/home/notes/memory.md && jq -e '.autoMemoryEnabled==false' /home/agent/.claude/settings.json"
-check "skills linked for every agent" "test -e /home/agent/.claude/skills/timeline/SKILL.md && test -e /home/agent/.codex/skills/jobs/SKILL.md && test -e /home/agent/.pi/agent/skills/machine/SKILL.md"
+check "skills linked for every agent" "test -e /home/agent/.claude/skills/timeline/SKILL.md && test -e /home/agent/.codex/skills/jobs/SKILL.md && test -e /home/agent/.pi/agent/skills/machine/SKILL.md && test -e /home/agent/.claude/skills/dev/SKILL.md"
 if [ -n "${BACKUP:-}" ]; then
   check "restored: chats" "[ \$(curl -fsS localhost:8000/api/agent/threads | jq length) -gt 0 ]"
   check "restored: jobs" "curl -fsS localhost:8000/api/agent/jobs | grep -q disk-check"

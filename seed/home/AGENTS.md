@@ -72,6 +72,7 @@ Read the one that fits before you start:
 | Creating or changing a job, or running as one | `skills/jobs/SKILL.md`, `skills/report/SKILL.md` |
 | Putting things on the Timeline, connecting a source of to-dos | `skills/timeline/SKILL.md` |
 | Connecting a service, keys, coding-agent sign-ins | `skills/connections/SKILL.md` |
+| Running a project (`dev`): its recipe, which env vars it needs, a dev database | `skills/dev/SKILL.md` |
 | Memory, CPU or disk trouble; housekeeping; backups; updates | `skills/machine/SKILL.md` |
 | Websites: search, scrape, a real browser | `skills/web/SKILL.md` |
 | Heavy or hours-long work (a Sprite) | `skills/sprites/SKILL.md` |

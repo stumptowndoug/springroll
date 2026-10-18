@@ -5,6 +5,42 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-18 · Keys for dev servers, dev databases, paste a .env; Keys page grouped and quieter
+
+- **A project's keys in the Dev app** (`views/dev/devlib.py`, `server.py`, `index.html`, `bin/dev`):
+  a project page lists every key its recipe names, set or missing in Keys, with **Add** (opens Keys
+  with the name, project and variable filled in); `dev keys <project> [--add VAR=KEY]`. Keys stay in
+  Keys and reach servers as environment variables at each start: never a .env file.
+- **Paste a .env**: a project's .env pasted once is sorted line by line into keys (saved into Keys
+  as `<keyPrefix>_DEV_<NAME>`, reusing a key already there or earlier in the paste with the same
+  value), settings (the recipe's `env`) and skips (what the Dev app supplies, live `sk_live_`/`pk_live_`
+  keys, analytics IDs, localhost URLs on Springroll's ports 8000-8199, anything the recipe sets),
+  shown for a check before anything is saved; the text is never written to disk. `dev env <project>
+  <file> [--apply]` for agents. Typing twenty keys one at a time was too much; a kept .env file would
+  dodge chat masking and go stale.
+- **Dev databases**: a recipe's `"database": {"neon": "<project id>", "from": "production"}` gives
+  its servers a Neon branch `dev-<project>`, copied on first `dev up` and reused; the connection
+  string is fetched from Neon at each start (NEON_API_KEY), never stored. Reset (a fresh copy) and
+  Delete in the app, `dev db <project> [reset|delete]`. Only `dev-*` branches are ever made, reset or
+  deleted; a default or protected branch is refused.
+- **`skills/dev/SKILL.md`** (new, in the AGENTS.md skills table): running a project here, which of
+  its environment variables dev actually needs, asking for keys when the work needs them (test-mode
+  only), the .env import, dev databases.
+- **Keys page** (`views/desk/secrets.mjs`, `public/app/keys.js`, `pages.css`): sections by what uses
+  each key, worked out rather than tagged: Connections, Apps and jobs (the usage search now covers
+  `bin/`), Projects (one group per project or `keyPrefix` family, from Dev recipes and from jobs whose
+  `cwd` is in `~/projects/<name>`), and Not used by anything here. Each row is the name and one short
+  fact (the full story on hover); one-line lede; no per-section notes, counts or dates; a search box
+  in the page bar; names wrap. **Add a key** has **Used by** (a project) and **As variable**: saving also puts
+  the key in that project's recipe (the Dev app's new `POST api/projects/<name>/keys`).
+- **Sheets and toasts keep clear of the floating Chat button** (`ui/kit.css`): `.ui-sheet > footer`
+  and `.ui-toasts` use `--fab-room`, as `.ui-page` does; the button covered every sheet's Save.
+
+**If you changed this:** the Dev app pieces are additive (new recipe fields: `keyPrefix`, `keyNotes`,
+`database`; new API routes). If this machine's Keys page differs, the grouping lives in
+`listSecrets()` (`section`, `projectKeys`, `jobProject`) and `groupedKeys()`/`keyFacts()` in keys.js;
+carry those over and keep your own rows. The kit change is two declarations.
+
 ## 2026-10-18 · Dev app and `dev`; `preview` on exe.dev; `show` opens pages inside apps
 
 - **Dev app** (`views/dev/`, service `dev.service` on :8106) **and the `dev` command** (`bin/dev`):

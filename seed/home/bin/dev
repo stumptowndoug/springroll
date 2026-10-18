@@ -12,6 +12,11 @@
   dev setup <project>                   install its dependencies (the recipe's setup)
   dev ports                             every open port and who owns it
   dev detect <project>                  what its Makefile / package.json offer (to write a recipe)
+  dev keys <project> [--add VAR=KEY]    the keys its recipe names, and which are missing from Keys;
+                                        --add has its servers read Keys' KEY as $VAR
+  dev env <project> [file] [--apply]    sort a .env (file or stdin): settings, keys, skipped; --apply
+                                        saves the keys into Keys and the rest into the recipe
+  dev db <project> [reset|delete]       its dev database (a Neon branch): show, reset to a fresh copy, delete
   add --json to any listing for the machine-readable form
 
 A recipe:
@@ -20,10 +25,17 @@ A recipe:
    "secretFiles": {"GOOGLE_APPLICATION_CREDENTIALS": "SECRET_NAME"},   (the key written to a 0600 file)
    "servers": {"web": {"run": "npx next dev -H 127.0.0.1 -p $PORT", "port": 3000,
                        "env": {…}, "secrets": {…}, "preview": true, "memory": ["1500M", "3G"]}},
-   "commands": {"test": "npm test", "check": {"run": "npm run check", "about": "lint + types + tests"}},
+   "commands": {"test": "npm test", "check": {"run": "npm run check", "about": "lint + types + tests"},
+                "migrate": {"run": "make migrate", "database": true}},
+   "keyNotes": {"SECRET_NAME": "what it's for, shown when it's missing"},
+   "database": {"neon": "<neon project id>", "from": "production", "env": "DATABASE_URL",
+                "name": "neondb", "role": "neondb_owner"},
    "notes": "markdown for the next agent"}
 Servers bind 127.0.0.1 on a port in 3000-3999 (exe.dev's proxy serves 3000-9999; 8000-8199 are
-Springroll's). Keys come from Keys at run time, never written into the recipe.
+Springroll's). Keys come from Keys at run time, never written into the recipe, and never a .env file:
+`dev env` (or Paste a .env in the app) imports one, keys into Keys as <keyPrefix>_DEV_<NAME>.
+"database" gives the servers (and commands with "database": true) a Neon branch dev-<project>: a copy
+of `from` made on first start and reused after; NEON_API_KEY makes it. Never production.
 """
 import json, os, subprocess, sys, time
 
@@ -64,6 +76,22 @@ def line_for(p):
     return "\n".join([head, *rows])
 
 
+def up_line(r):
+    if r["name"] == "database" and "branch" in r:
+        return f"database: {'made' if r['made'] else 'using'} Neon branch {r['branch']}"
+    return (f"{r['name']}: {'already running' if r.get('already') else 'started'} ({r['unit']})"
+            f"{'  ' + r['preview'] if r.get('preview') else ''}"
+            f"{'  preview failed: ' + r['previewError'] if r.get('previewError') else ''}")
+
+
+def db_text(d):
+    if not d: return "no database in its recipe"
+    if d.get("error"): return f"{d['branch']}: {d['error']}"
+    if not d["exists"]: return f"{d['branch']}: not made yet (a copy of {d['from']}; `dev up` makes it)"
+    size = f", {d['size'] / 1e6:.0f} MB" if d.get("size") else ""
+    return f"{d['branch']}: a copy of {d['from']} in Neon project {d['project']}{size}, made {d.get('createdAt', '')[:10]}; {d['env']} for its servers"
+
+
 def fail(e):
     sys.exit(f"dev: {e}")
 
@@ -77,8 +105,8 @@ def run_exec(name, kind, key):
     """ExecStart of a dev unit: the recipe's command in the project, with its env and keys."""
     r = devlib.need(name)
     spec = {"run": r["setup"]} if (kind == "cmd" and key == "setup") else (r["servers"] if kind == "server" else r["commands"])[key]
-    env, missing = devlib.exec_env(name, r, spec)
-    if missing: print(f"dev: missing keys {', '.join(missing)} (Keys, or `secret request`)", flush=True)
+    env, missing = devlib.exec_env(name, r, spec, kind)
+    if missing: print(f"dev: missing {'; '.join(missing)} (`dev keys {name}`, `dev db {name}`)", flush=True)
     d = devlib.project_dir(name, r)
     print(f"$ {spec['run']}   (in {d})", flush=True)
     if kind == "server":
@@ -116,17 +144,14 @@ try:
         out(p, "\n".join(text))
     elif cmd in ("up", "start"):
         res = devlib.up(args[1], args[2:] or None)
-        out(res, "\n".join(f"{r['name']}: {'already running' if r.get('already') else 'started'} ({r['unit']})"
-                           f"{'  ' + r['preview'] if r.get('preview') else ''}"
-                           f"{'  preview failed: ' + r['previewError'] if r.get('previewError') else ''}" for r in res)
-            + f"\nlogs: dev logs {args[1]}")
+        out(res, "\n".join(up_line(r) for r in res) + f"\nlogs: dev logs {args[1]}")
     elif cmd in ("down", "stop"):
         res = devlib.down(args[1], args[2:] or None)
         out(res, "\n".join(f"{r['name']}: stopped" for r in res))
     elif cmd == "restart":
         devlib.down(args[1], args[2:] or None)
         res = devlib.up(args[1], args[2:] or None)
-        out(res, "\n".join(f"{r['name']}: restarted{'  ' + r['preview'] if r.get('preview') else ''}" for r in res))
+        out(res, "\n".join(up_line(r) if r["name"] == "database" else f"{r['name']}: restarted{'  ' + r['preview'] if r.get('preview') else ''}" for r in res))
     elif cmd == "logs":
         n = 100
         if "-n" in args: i = args.index("-n"); n = int(args[i + 1]); del args[i:i + 2]
@@ -146,8 +171,9 @@ try:
         else:
             r = devlib.need(name)
             if key not in r["commands"]: fail(f"{name} has no command {key!r} (has: {', '.join(r['commands']) or 'none'})")
+            if devlib.uses_db(r, "cmd", r["commands"][key]): devlib.db_ensure(name)
             env, missing = devlib.exec_env(name, r, r["commands"][key])
-            if missing: print(f"dev: missing keys {', '.join(missing)}", file=sys.stderr)
+            if missing: print(f"dev: missing {'; '.join(missing)}", file=sys.stderr)
             sys.exit(subprocess.call(["bash", "-lc", r["commands"][key]["run"]], cwd=devlib.project_dir(name, r), env=env))
     elif cmd == "setup":
         r = devlib.need(args[1])
@@ -162,6 +188,38 @@ try:
     elif cmd == "detect":
         d = devlib.detect(args[1])
         out(d, "\n".join(f"{x['source']:<5} {x['name']:<28} {x['about'][:90]}" for x in d) or "nothing found")
+    elif cmd == "keys" and "--add" in args:
+        var, _, sec = args[args.index("--add") + 1].partition("=")
+        d = devlib.add_key(args[1], var, sec or var)
+        out(d, f"{args[1]} reads {d['secret']} as ${d['var']}" + (f" (was {d['replaced']})" if d["replaced"] else "")
+            + ("" if sec and sec in devlib.secret_names() else f"; {d['secret']} isn't in Keys yet"))
+    elif cmd == "keys":
+        ks = devlib.keys(args[1])
+        out(ks, "\n".join(f"{'set    ' if k['set'] else 'MISSING'} {k['name']:<28} {', '.join(k['vars']) or '-'}  (used by {', '.join(k['usedBy'])})"
+                          f"{'  ' + k['about'] if k['about'] and not k['set'] else ''}" for k in ks)
+            + ("\nAsk for a missing one with `secret request NAME \"what it's for\"`." if any(not k["set"] for k in ks) else "")
+            if ks else "its recipe names no keys")
+    elif cmd == "env":
+        apply = "--apply" in args
+        rest = [a for a in args[2:] if a != "--apply"]
+        text = open(rest[0]).read() if rest and rest[0] != "-" else sys.stdin.read()
+        if apply:
+            d = devlib.import_env(args[1], text)
+            out(d, f"saved {len(d['keys'])} keys to Keys ({', '.join(k['secret'] for k in d['keys']) or 'none'}), "
+                   f"{len(d['settings'])} settings to the recipe; skipped {', '.join(d['skipped']) or 'none'}")
+        else:
+            rows = devlib.env_plan(args[1], text)
+            out(rows, "\n".join(f"{r['action']:<5} {r['name']:<34} {('→ ' + r['secret']) if r['action'] == 'key' else r['preview'][:48]}"
+                                f"{'  (' + r['reason'] + ')' if r['reason'] else ''}" for r in rows)
+                + "\n\n`dev env " + args[1] + " <file> --apply` does it.")
+    elif cmd == "db":
+        act = args[2] if len(args) > 2 else "show"
+        if act == "show": d = devlib.db_status(args[1], fresh=True)
+        elif act == "reset": d = devlib.db_reset(args[1])
+        elif act in ("delete", "drop"): d = devlib.db_drop(args[1])
+        else: fail(f"dev db {args[1]} [reset|delete]")
+        note = " (reset to a fresh copy)" if d and d.get("reset") else " (deleted; the next start makes a new one)" if d and d.get("deleted") else ""
+        out(d, db_text(d) + note)
     elif cmd == "_exec":
         run_exec(*args[1:4])
     elif cmd in ("-h", "--help", "help"):

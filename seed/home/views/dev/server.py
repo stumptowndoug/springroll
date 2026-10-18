@@ -59,6 +59,17 @@ class H(BaseHTTPRequestHandler):
                     return self.send(200, devlib.up(name, b.get("servers")))
                 if method == "POST" and act == "run": return self.send(200, devlib.start_command(name, b["command"]))
                 if method == "POST" and act == "stop": return self.send(200, devlib.stop_command(name, b["command"]))
+                if method == "GET" and act == "keys": return self.send(200, devlib.keys(name))
+                if method == "POST" and act == "keys": return self.send(200, devlib.add_key(name, b.get("var"), b.get("secret"), b.get("note")))
+                if method == "POST" and act == "env" and p[3:] == ["preview"]:
+                    return self.send(200, {"rows": devlib.env_plan(name, b.get("text", "")), "prefix": devlib.key_prefix(name, devlib.need(name))})
+                if method == "POST" and act == "env" and p[3:] == ["import"]:
+                    return self.send(200, devlib.import_env(name, b.get("text", ""), b.get("choices") or {}))
+                if act == "database":
+                    if method == "GET": return self.send(200, devlib.db_status(name, fresh=True))
+                    do = {"create": devlib.db_ensure, "reset": devlib.db_reset, "delete": devlib.db_drop}.get(b.get("action"))
+                    if not do: return self.send(400, {"error": "action is create, reset or delete"})
+                    return self.send(200, do(name))
             return self.send(404, {"error": "not found"})
         except LookupError as e:
             return self.send(404, {"error": str(e).strip("'\"")})

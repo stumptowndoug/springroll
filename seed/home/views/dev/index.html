@@ -12,6 +12,7 @@
   .srv .title .ui-mono, .cmd .title .ui-mono { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: var(--text-sm); }
   .ui-row .acts { display: flex; align-items: center; gap: 4px; flex: none; }
   .ui-row .sub.mono { font-family: var(--font-mono); font-size: var(--text-xs); }
+  .ui-row.wrap .title, .ui-row.wrap .sub { white-space: normal; overflow-wrap: anywhere; }
   .ui-row .result { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
   .hash { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--faint); flex: none; width: 4.5rem; }
   .port { font-family: var(--font-mono); font-size: var(--text-sm); flex: none; width: 4.2rem; color: var(--fg); }
@@ -20,6 +21,14 @@
   #logSheet .body { display: grid; }
   #logSheet .ui-terminal > .out { max-height: none; min-height: 60vh; }
   @media (max-width: 560px) { .ui-row .hide-sm { display: none; } }
+  .ui-section > header .ui-spacer { flex: 1; }
+  #envSheet { width: min(640px, 100vw); }
+  #envText { width: 100%; min-height: 260px; font-family: var(--font-mono); font-size: var(--text-xs); }
+  .env-row { flex-wrap: wrap; row-gap: 8px; }
+  .env-row .body { flex: 1 1 220px; min-width: 0; }
+  .env-row .title { font-family: var(--font-mono); font-size: var(--text-sm); }
+  .env-row .ui-seg, .env-row .result { flex: none; margin-left: auto; }
+  .env-row .ui-seg button { padding: 0 10px; font-size: var(--text-xs); }
 </style>
 </head>
 <body>
@@ -29,6 +38,13 @@
   <div class="ui-toolbar"><span class="ui-title" id="logTitle">Logs</span><div class="ui-spacer"></div>
     <button class="ui-icon-btn plain" data-close data-icon="x" title="Close"></button></div>
   <div class="body"><div class="ui-terminal"><div class="cmd" id="logCmd"></div><div class="out" id="logOut"></div></div></div>
+</dialog>
+
+<dialog class="ui-sheet" id="envSheet">
+  <div class="ui-toolbar"><span class="ui-title" id="envTitle">Paste a .env</span><div class="ui-spacer"></div>
+    <button class="ui-icon-btn plain" data-close data-icon="x" title="Close"></button></div>
+  <div class="body" id="envBody"></div>
+  <footer id="envFoot"></footer>
 </dialog>
 
 <script>
@@ -53,6 +69,7 @@ function gitLine(g) {
   return bits.join(' · ');
 }
 const running = (p) => (p.servers || []).filter((s) => s.state === 'active');
+const missingKeys = (p) => (p.keys || []).filter((k) => !k.set);
 const failed = (p) => (p.servers || []).filter((s) => s.state === 'failed');
 
 function chatNote(p) {
@@ -68,7 +85,8 @@ function tile(p) {
   const r = running(p), f = failed(p);
   const trail = r.length ? ui.running(Math.min(...r.map((s) => s.since || Date.now() / 1000)))
     : f.length ? `<span class="ui-status"><span class="ui-dot danger"></span>Stopped with an error</span>`
-    : !p.recipe ? `<span class="ui-status">No recipe yet</span>` : '';
+    : !p.recipe ? `<span class="ui-status">No recipe yet</span>`
+    : missingKeys(p).length ? `<span class="ui-status"><span class="ui-dot warn"></span>${missingKeys(p).length === 1 ? 'A key' : missingKeys(p).length + ' keys'} missing</span>` : '';
   const servers = (p.servers || []).map((s) => `${esc(s.name)} <span class="ui-mono">:${s.port}</span>`).join(' · ');
   const foot = p.recipe ? (servers || `${p.commands.length} commands`) : `${p.detected.length} scripts found`;
   const open = r.find((s) => s.preview);
@@ -110,6 +128,30 @@ function commandRow(p, c, key = c.name) {
       ${last && last.exit ? `<button class="ui-btn quiet hide-sm" data-chat="${esc(p.name)}" data-extra="Its \`${esc(key)}\` command failed with exit ${last.exit}; read \`dev logs ${esc(p.name)} ${esc(key)}\`." data-icon="message-square">Chat</button>` : ''}
       ${last || c.running ? `<button class="ui-icon-btn" data-logs="${esc(c.unit)}" data-since="${c.running ? '' : last?.started || ''}" data-cmd="${esc(c.run)}" data-label="${esc(p.title)} · ${esc(key)}" data-icon="scroll-text" title="Output"></button>` : ''}
       ${c.running ? `<button class="ui-btn quiet" data-stop="${esc(key)}">Stop</button>` : `<button class="ui-btn quiet" data-run="${esc(key)}" data-icon="play">Run</button>`}
+    </span></div>`;
+}
+
+function keyRow(p, k) {
+  const vars = k.vars.length ? k.vars.join(', ') : '';
+  return `<div class="ui-row wrap">
+    <span class="ui-dot ${k.set ? 'ok' : 'warn'}"></span>
+    <div class="body"><span class="title ui-mono">${esc(k.name)}</span>
+      <span class="sub">${vars ? esc(vars) + ' · ' : ''}used by ${esc(k.usedBy.join(', '))}${!k.set && k.about ? ' · ' + esc(k.about) : ''}</span></div>
+    <span class="acts">${k.set ? '<span class="result">Set</span>'
+      : `<button class="ui-btn quiet" data-add-key="${esc(k.name)}" data-add-var="${esc((k.vars.find((v) => !v.includes(' ')) || ''))}" data-icon="plus">Add</button>`}</span></div>`;
+}
+
+function databaseRow(p, d) {
+  const size = d.size ? ` · ${Math.round(d.size / 1048576)} MB` : '';
+  const sub = d.error ? `<span class="danger">${esc(d.error)}</span>`
+    : d.exists === false ? `Not made yet: starting a server makes it, a copy of ${esc(d.from)}`
+    : `A copy of ${esc(d.from)}, made ${d.createdAt ? esc(ui.ago(new Date(d.createdAt))) : ''}${size} · ${esc(d.env)} for its servers`;
+  return `<div class="ui-row wrap">
+    <span class="ui-dot ${d.error ? 'danger' : d.exists ? 'ok' : ''}"></span>
+    <div class="body"><span class="title ui-mono">${esc(d.branch)}</span><span class="sub">${sub}</span></div>
+    <span class="acts">
+      ${d.error ? `<button class="ui-btn quiet" data-chat="${esc(p.name)}" data-extra="Its dev database (Neon branch ${esc(d.branch)}) has a problem: ${esc(d.error)}. \`dev db ${esc(p.name)}\`." data-icon="message-square">Chat</button>` : ''}
+      ${d.exists ? `<button class="ui-btn quiet" data-db="reset">Reset</button><button class="ui-btn quiet" data-db="delete">Delete</button>` : ''}
     </span></div>`;
 }
 
@@ -169,6 +211,16 @@ function projectPage(name) {
       : '<div class="ui-row"><div class="body"><span class="sub">No Makefile or package.json.</span></div></div>'}</div>
       <p class="ui-note">An agent turns these into a recipe: which one is the dev server, its port, and the commands worth keeping, each checked by running it.</p></section>`;
   }
+  if (p.recipe) {
+    html += `<section class="ui-section"><header><span class="ui-label">Keys</span><span class="ui-spacer"></span>
+        <button class="ui-btn quiet sm" data-env-import data-icon="clipboard-paste">Paste a .env</button></header>
+      ${p.keys.length ? `<div class="ui-group">${p.keys.map((k) => keyRow(p, k)).join('')}</div>` : ''}
+      <p class="ui-note">${p.keys.length ? '' : 'Its recipe names no keys yet. '}Read from <a href="/#/keys" target="_top">Keys</a> each time a server or command starts, as environment variables. Paste a project's .env once: its keys go into Keys and its settings into the recipe, and no .env file is kept.</p></section>`;
+  }
+  if (p.database) {
+    html += `<section class="ui-section"><span class="ui-label">Database</span><div class="ui-group">${databaseRow(p, p.database)}</div>
+      <p class="ui-note">A Neon branch of its own, never ${esc(p.database.from)} itself. Reset makes it a fresh copy; Delete removes it, and the next start makes a new one.</p></section>`;
+  }
   const g = p.git;
   if (g) {
     html += `<section class="ui-section"><span class="ui-label">Recent changes</span><div class="ui-group">
@@ -208,6 +260,15 @@ async function act(fn, label) {
   if (label) ui.toast(label);
 }
 
+async function dbAction(p, action) {
+  const db = p.database;
+  const ask = action === 'reset'
+    ? [`Reset ${db.branch}?`, { body: `It becomes a fresh copy of ${db.from}. Anything written to it in dev is lost, and running servers lose their connections for a moment.`, ok: 'Reset', danger: true }]
+    : [`Delete ${db.branch}?`, { body: `The branch and everything written to it go. ${db.from} isn't touched; the next start makes a new copy.`, ok: 'Delete', danger: true }];
+  if (!(await ui.confirm(...ask))) return;
+  await act(() => api(`api/projects/${p.name}/database`, { action }), action === 'reset' ? 'Reset to a fresh copy' : 'Deleted');
+}
+
 const current = () => projects?.find((x) => x.name === decodeURIComponent(location.hash.slice(3)));
 
 document.addEventListener('click', (e) => {
@@ -227,12 +288,82 @@ document.addEventListener('click', (e) => {
   if (d.down !== undefined && p) return act(() => api(`api/projects/${p.name}/down`, { servers: [d.down] }));
   if (d.upAll !== undefined && p) return act(() => api(`api/projects/${p.name}/up`, {}));
   if (d.downAll !== undefined && p) return act(() => api(`api/projects/${p.name}/down`, {}));
+  // Keys opens its form filled in: the name, and (for a plain variable) this project and the variable.
+  if (d.addKey) return desk.go('#/keys?add=' + encodeURIComponent(d.addKey) + (d.addVar && p ? `&for=${encodeURIComponent(p.name)}&var=${encodeURIComponent(d.addVar)}` : ''));
+  if (d.envImport !== undefined && p) return envOpen(p);
+  if (d.envSort !== undefined && p) return envSort(p);
+  if (d.envBack !== undefined && p) return envOpen(p, true);
+  if (d.envSave !== undefined && p) return envSave(p);
+  if (d.envChoice) { envChoices[d.envVar] = d.envChoice; return envShowPlan(); }
+  if (d.db && p) return dbAction(p, d.db);
   if (d.run && p) return act(() => api(`api/projects/${p.name}/run`, { command: d.run }));
   if (d.stop && p) return act(() => api(`api/projects/${p.name}/stop`, { command: d.stop }));
   if (d.href && !e.target.closest('a, button')) location.hash = d.href;
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.dataset?.href) location.hash = e.target.dataset.href; });
 addEventListener('hashchange', () => { if (!location.hash.startsWith('#p/')) desk.context({}); lastRender = ''; render(true); refresh(); scrollTo(0, 0); });
+
+/* ---------- paste a .env ---------- */
+let envRows = [], envChoices = {}, envPrefix = '';
+const ENV_KIND = { setting: 'Setting', key: 'Key', supplied: 'Supplied' };
+
+function envOpen(p, keep) {
+  const text = keep ? envText : '';
+  $('envTitle').textContent = `Paste a .env · ${p.title}`;
+  $('envBody').innerHTML = `<p class="ui-muted">Paste the whole file. Nothing is saved until you check the list on the next step.</p>
+    <textarea class="ui-textarea" id="envText" spellcheck="false" autocomplete="off" placeholder="STRIPE_SECRET_KEY=sk_test_…&#10;ENVIRONMENT=development"></textarea>`;
+  $('envText').value = text;
+  $('envFoot').innerHTML = `<button class="ui-btn" data-close>Cancel</button><button class="ui-btn primary" data-env-sort>Sort it</button>`;
+  ui.hydrate?.($('envSheet'));
+  if (!$('envSheet').open) $('envSheet').showModal();
+  $('envText').focus();
+}
+
+async function envSort(p) {
+  const text = $('envText').value;
+  if (!text.trim()) return ui.toast('Paste the .env first');
+  try {
+    const r = await api(`api/projects/${p.name}/env/preview`, { text });
+    if (!r.rows.length) return ui.toast('No VAR=value lines in that');
+    envRows = r.rows; envPrefix = r.prefix; envChoices = {};
+    envText = text;
+    envShowPlan();
+  } catch (e) { ui.toast(e.message); }
+}
+let envText = '';
+
+function envShowPlan() {
+  const choice = (r) => envChoices[r.name] || r.action;
+  const opts = (r) => r.kind === 'supplied' ? [] : r.kind === 'key' ? ['key', 'skip'] : ['env', 'key', 'skip'];
+  const label = { env: 'Setting', key: 'Key', skip: 'Skip' };
+  const n = (a) => envRows.filter((r) => choice(r) === a).length;
+  $('envBody').innerHTML = `<p class="ui-muted">Keys go into Keys (new ones as <span class="ui-mono">${esc(envPrefix)}…</span>), settings into the recipe. Change any row before saving.</p>
+    <div class="ui-group">${envRows.map((r) => {
+      const c = choice(r);
+      const dest = c === 'key' ? `→ ${esc(r.secret || envPrefix + r.name)}${r.exists === 'same' ? ' (already there)' : ''}` : c === 'env' ? esc(r.preview) : '';
+      return `<div class="ui-row wrap env-row">
+        <span class="ui-dot ${c === 'skip' ? '' : c === 'key' ? 'ok' : 'run'}"></span>
+        <div class="body"><span class="title">${esc(r.name)}</span>
+          <span class="sub">${dest}${r.reason ? `${dest ? ' · ' : ''}${esc(r.reason)}` : ''}</span></div>
+        ${opts(r).length ? `<div class="ui-seg">${opts(r).map((o) => `<button data-env-var="${esc(r.name)}" data-env-choice="${o}" aria-pressed="${c === o}">${label[o]}</button>`).join('')}</div>`
+          : `<span class="result">${ENV_KIND[r.kind]}</span>`}
+      </div>`;
+    }).join('')}</div>`;
+  $('envFoot').innerHTML = `<button class="ui-btn" data-env-back>Back</button>
+    <button class="ui-btn primary" data-env-save ${n('key') + n('env') ? '' : 'disabled'}>Save ${n('key')} key${n('key') === 1 ? '' : 's'} and ${n('env')} setting${n('env') === 1 ? '' : 's'}</button>`;
+}
+
+async function envSave(p) {
+  const choices = Object.fromEntries(envRows.map((r) => [r.name, envChoices[r.name] || r.action]));
+  try {
+    const d = await api(`api/projects/${p.name}/env/import`, { text: envText, choices });
+    envText = ''; envRows = []; envChoices = {};
+    $('envSheet').close();
+    await refresh();
+    ui.toast(`Saved ${d.keys.length} key${d.keys.length === 1 ? '' : 's'} and ${d.settings.length} setting${d.settings.length === 1 ? '' : 's'}. Restart its servers to use them.`);
+  } catch (e) { ui.toast(e.message); }
+}
+$('envSheet').addEventListener('close', () => { envText = ''; envRows = []; envChoices = {}; $('envBody').innerHTML = ''; });
 
 /* ---------- logs ---------- */
 let logTimer = null;
