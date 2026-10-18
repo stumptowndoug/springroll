@@ -58,7 +58,7 @@ own puts a row in the chat with live output and Stop. Work that must outlive the
 
 `show <app|file[:lines]|url>` · `notify "<text>"` · `signal …` (the Timeline) · `secret
 request|get|list|set` · `gmail accounts|search|show|reply|send|archive|move` · `report` (a job's
-report) · `focus` (what the owner's looking at) · `add-view` · `preview <port>` · `browser
+report) · `focus` (what the owner's looking at) · `add-view` · `preview <port>` · `dev` (run ~/projects: servers, commands, ports) · `browser
 start|list|stop` · `backup` / `restore` · `springroll-upstream` · `sprite`, `sprite-job` ·
 `desk theme`
 

@@ -625,6 +625,13 @@ on('desk:views', (views) => {
 on('desk:show', (v) => {
   if (v.hash) return go(v.hash);
   if (v.url && !v.url.startsWith('/v/')) { window.open(v.url, '_blank'); return; }
+  // A page inside an app (/v/gallery/other.html): open the app's frame at that page.
+  const sub = v.url?.match(/^\/v\/([^/]+)\/(.+)$/);
+  if (sub) {
+    const app = state.views.find((x) => x.name === sub[1]) || { name: sub[1], title: sub[1], url: `/v/${sub[1]}/` };
+    frameFor(app).src = v.url;
+    return go(`#/v/${app.name}`);
+  }
   const f = viewFrames.get(v.name);
   if (f) f.src = f.src;
   go(`#/v/${v.name}`);

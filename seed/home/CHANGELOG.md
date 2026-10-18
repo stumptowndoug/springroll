@@ -5,6 +5,32 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-18 · Dev app and `dev`; `preview` on exe.dev; `show` opens pages inside apps
+
+- **Dev app** (`views/dev/`, service `dev.service` on :8106) **and the `dev` command** (`bin/dev`):
+  how each project in `~/projects` runs, so nobody remembers per-repo Makefile and npm variations.
+  A recipe per project (`views/dev/recipes/<project>.json`, format in `dev help`) names its dev
+  servers (command, port, env, keys by name) and saved commands (test, lint, check). `dev up` starts
+  servers as transient systemd user units with memory limits and publishes them with `preview`;
+  `dev run` runs a command; `dev logs`, `dev ports`, `dev detect` (what a Makefile/package.json
+  offers, for writing a recipe). The app shows projects with branch, uncommitted files and recent
+  commits; servers with Start/Stop, logs and Open; commands with their last result; and every open
+  port with who owns it (a project started outside `dev` is flagged). A sidebar chip shows "N running".
+  No recipes ship: a project without one shows what its files offer and a "Write a recipe" chat.
+- **`preview` works on exe.dev**: it uses `tailscale serve` when tailscaled answers, otherwise
+  (springroll-exe-proxy present) a socat user unit `preview-<port>` so exe.dev's private proxy serves
+  `https://<vm>.exe.xyz:<port>/` (ports 3000-9999). New: `--no-show`, `list [--json]`. It checks the
+  tailscaled unit first, so a stopped daemon no longer costs 5 s per call. Before, on exe.dev it
+  printed a ts.net URL that couldn't work.
+- **`show /v/<app>/<page>`** opens that page inside the app (`app/main.js`); a path below an app was
+  read as an app name and fell through to the Timeline.
+- AGENTS.md lists `dev`. `tests/fresh-install.sh` checks the Dev app and `dev ports`.
+- **Migration**: start the Dev app's server:
+  `systemctl --user link ~/home/views/dev/dev.service && systemctl --user enable --now dev`
+- **If you changed this:** a machine that already has its own `views/dev` (or a `bin/dev`) should keep
+  its own and read this one for ideas. Recipes are the machine's own and never come from upstream.
+  A changed `bin/preview`: keep the exe.dev branch and the fast tailscaled check.
+
 ## 2026-10-18 · Running is a status, not a pill
 
 - **Running** shows like every other status: a pulsing `--run` dot, the word, and how long it's been

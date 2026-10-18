@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dev</title>
+<link rel="stylesheet" href="/ui/theme.css">
+<script src="/ui/desk.js"></script>
+<style>
+  .ui-tile[data-href] { cursor: pointer; }
+  .ui-tile .foot .acts { display: flex; gap: 2px; }
+  .srv .title .ui-mono, .cmd .title .ui-mono { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: var(--text-sm); }
+  .ui-row .acts { display: flex; align-items: center; gap: 4px; flex: none; }
+  .ui-row .sub.mono { font-family: var(--font-mono); font-size: var(--text-xs); }
+  .ui-row .result { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
+  .hash { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--faint); flex: none; width: 4.5rem; }
+  .port { font-family: var(--font-mono); font-size: var(--text-sm); flex: none; width: 4.2rem; color: var(--fg); }
+  .changed { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); padding: var(--row-py) var(--row-px); display: grid; gap: 2px; }
+  #logSheet { width: min(860px, 100vw); }
+  #logSheet .body { display: grid; }
+  #logSheet .ui-terminal > .out { max-height: none; min-height: 60vh; }
+  @media (max-width: 560px) { .ui-row .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<main class="ui-page" id="app"><div class="ui-loading"></div></main>
+
+<dialog class="ui-sheet" id="logSheet">
+  <div class="ui-toolbar"><span class="ui-title" id="logTitle">Logs</span><div class="ui-spacer"></div>
+    <button class="ui-icon-btn plain" data-close data-icon="x" title="Close"></button></div>
+  <div class="body"><div class="ui-terminal"><div class="cmd" id="logCmd"></div><div class="out" id="logOut"></div></div></div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = ui.esc;
+const api = async (path, body) => {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const j = r.status === 204 ? null : await r.json();
+  if (!r.ok) throw new Error(j?.error || r.statusText);
+  return j;
+};
+const ago = (t) => (t ? ui.ago(new Date(t * 1000)) : '');
+let projects = null, ports = null, lastRender = '';
+
+/* ---------- pieces ---------- */
+function gitLine(g) {
+  if (!g) return 'not a git repo';
+  const bits = [g.branch];
+  if (g.changed.length) bits.push(`${g.changed.length} changed`);
+  if (g.ahead) bits.push(`${g.ahead} ahead`);
+  if (g.behind) bits.push(`${g.behind} behind`);
+  return bits.join(' · ');
+}
+const running = (p) => (p.servers || []).filter((s) => s.state === 'active');
+const failed = (p) => (p.servers || []).filter((s) => s.state === 'failed');
+
+function chatNote(p) {
+  return `Project ${p.name} at ${p.dir}. ` + (p.recipe
+    ? `Its dev recipe is ${p.recipeFile}; run it with the \`dev\` command (\`dev show ${p.name}\`, \`dev up ${p.name}\`, \`dev logs ${p.name}\`, \`dev run ${p.name} <command>\`).`
+    : `It has no dev recipe yet. Write ${p.recipeFile} (format: \`dev help\`; \`dev detect ${p.name}\` lists its Makefile/package.json commands), and check each server and command actually runs before saving it.`);
+}
+function chat(p, extra) {
+  desk.askAbout({ key: `dev:${p.name}`, label: p.title, note: chatNote(p) + (extra ? ' ' + extra : '') });
+}
+
+function tile(p) {
+  const r = running(p), f = failed(p);
+  const trail = r.length ? ui.running(Math.min(...r.map((s) => s.since || Date.now() / 1000)))
+    : f.length ? `<span class="ui-status"><span class="ui-dot danger"></span>Stopped with an error</span>`
+    : !p.recipe ? `<span class="ui-status">No recipe yet</span>` : '';
+  const servers = (p.servers || []).map((s) => `${esc(s.name)} <span class="ui-mono">:${s.port}</span>`).join(' · ');
+  const foot = p.recipe ? (servers || `${p.commands.length} commands`) : `${p.detected.length} scripts found`;
+  const open = r.find((s) => s.preview);
+  const commit = p.git?.commits?.[0];
+  return `<div class="ui-tile" data-href="#p/${encodeURIComponent(p.name)}" tabindex="0" role="link">
+    <span class="top"><span class="lead"><i data-icon="folder-git-2" data-icon-size="lg"></i></span><span class="title">${esc(p.title)}</span><span class="trail">${trail}</span></span>
+    <span class="desc">${esc(p.about || p.dir)}</span>
+    <span class="line"><i data-icon="git-branch" data-icon-size="sm"></i><span class="ui-truncate">${esc(gitLine(p.git))}</span>${commit ? `<span class="ui-mono" title="Last commit">${ago(commit.time)}</span>` : ''}</span>
+    <span class="foot"><span class="ui-truncate">${foot}</span><span class="acts">
+      ${open ? `<a class="ui-btn quiet" href="${esc(open.preview)}" target="_blank" rel="noopener" data-icon="external-link">Open</a>` : ''}
+      <button class="ui-btn quiet" data-chat="${esc(p.name)}" data-icon="message-square">Chat</button></span></span>
+  </div>`;
+}
+
+function serverRow(p, s) {
+  const on = s.state === 'active', starting = s.state === 'activating', bad = s.state === 'failed';
+  const dot = on ? 'run' : bad ? 'danger' : '';
+  const state = on ? `Running ${ui.elapsed(s.since)}${s.memory ? `<span class="hide-sm"> · ${Math.round(s.memory / 1048576)} MB</span>` : ''}` : starting ? 'Starting' : bad ? 'Stopped with an error' : 'Stopped';
+  return `<div class="ui-row srv">
+    <span class="ui-dot ${dot}"></span>
+    <div class="body"><span class="title">${esc(s.name)}<span class="ui-mono">:${s.port}</span></span>
+      <span class="sub"><span class="${bad ? 'danger' : ''}">${state}</span>${s.about ? ' · ' + esc(s.about) : ''}</span></div>
+    <span class="acts">
+      ${on && s.preview ? `<a class="ui-btn quiet" href="${esc(s.preview)}" target="_blank" rel="noopener" data-icon="external-link">Open</a>` : ''}
+      ${bad ? `<button class="ui-btn quiet" data-chat="${esc(p.name)}" data-extra="Its ${esc(s.name)} server (${esc(s.unit)}) stopped with an error; read \`dev logs ${esc(p.name)} ${esc(s.name)}\`." data-icon="message-square">Chat</button>` : ''}
+      <button class="ui-icon-btn" data-logs="${esc(s.unit)}" data-since="${s.since || ''}" data-cmd="${esc(s.run)}" data-label="${esc(p.title)} · ${esc(s.name)}" data-icon="scroll-text" title="Logs"></button>
+      <button class="ui-round filled ${on || starting ? 'stop' : 'primary'}" data-${on || starting ? 'down' : 'up'}="${esc(s.name)}" title="${on || starting ? 'Stop' : 'Start'}"><i data-icon="${on || starting ? 'square' : 'play'}"></i></button>
+    </span></div>`;
+}
+
+function commandRow(p, c, key = c.name) {
+  const last = c.last;
+  const result = c.running ? `<span class="ui-shimmer">Running</span>`
+    : last && 'exit' in last ? `<span class="result"><span class="ui-dot ${last.exit === 0 ? 'ok' : 'danger'}"></span>${last.exit === 0 ? 'Passed' : 'exit ' + last.exit} <span class="ui-mono hide-sm">${ago(last.ended)} · ${ui.duration((last.ended - last.started) * 1000)}</span></span>` : '';
+  return `<div class="ui-row cmd">
+    <div class="body"><span class="title">${esc(key)}</span><span class="sub mono" title="${esc(c.run)}">${esc(c.run)}</span>${c.about ? `<span class="sub">${esc(c.about)}</span>` : ''}</div>
+    ${result}
+    <span class="acts">
+      ${last && last.exit ? `<button class="ui-btn quiet hide-sm" data-chat="${esc(p.name)}" data-extra="Its \`${esc(key)}\` command failed with exit ${last.exit}; read \`dev logs ${esc(p.name)} ${esc(key)}\`." data-icon="message-square">Chat</button>` : ''}
+      ${last || c.running ? `<button class="ui-icon-btn" data-logs="${esc(c.unit)}" data-since="${c.running ? '' : last?.started || ''}" data-cmd="${esc(c.run)}" data-label="${esc(p.title)} · ${esc(key)}" data-icon="scroll-text" title="Output"></button>` : ''}
+      ${c.running ? `<button class="ui-btn quiet" data-stop="${esc(key)}">Stop</button>` : `<button class="ui-btn quiet" data-run="${esc(key)}" data-icon="play">Run</button>`}
+    </span></div>`;
+}
+
+/* ---------- pages ---------- */
+function listPage() {
+  const tab = location.hash === '#ports' ? 'ports' : 'projects';
+  const head = `<header class="ui-heading"><div><span class="ui-eyebrow">Your projects</span><h1 class="ui-display">Dev.</h1></div>
+      <div class="actions"><button class="ui-btn primary" data-icon="plus" id="newRecipe">New recipe</button></div></header>
+    <p class="ui-lede">How each project in ~/projects runs, what's running now, and where to open it. Ask in any chat to start one: agents use the same recipes through <code>dev</code>.</p>
+    <div class="ui-pagebar"><div class="ui-seg"><button data-tab="" aria-pressed="${tab === 'projects'}">Projects</button><button data-tab="ports" aria-pressed="${tab === 'ports'}">Ports</button></div></div>`;
+  if (tab === 'ports') return head + portsBody();
+  if (!projects) return head + '<div class="ui-loading"></div>';
+  if (!projects.length) return head + `<div class="ui-empty"><div class="orbit"></div><h2>No projects yet.</h2><p>Clone one into ~/projects and it shows up here.</p></div>`;
+  const live = projects.filter((p) => running(p).length);
+  const rest = projects.filter((p) => !running(p).length);
+  return head + (live.length ? `<section class="ui-section"><span class="ui-label">Running</span><div class="ui-tiles wide">${live.map(tile).join('')}</div></section>` : '')
+    + `<section class="ui-section">${live.length ? '<span class="ui-label">Everything else</span>' : ''}<div class="ui-tiles wide">${rest.map(tile).join('')}</div></section>`;
+}
+
+function portsBody() {
+  if (!ports) return '<div class="ui-loading"></div>';
+  const label = { dev: 'Dev server', app: 'App', springroll: 'Springroll', preview: 'Preview', stray: 'Started outside dev', other: 'Other' };
+  const rows = ports.map((x) => `<div class="ui-row">
+      <span class="port">:${x.port}</span>
+      <div class="body"><span class="title">${esc(x.owner || x.process || 'Unknown')}${x.server ? ` <span class="ui-muted">· ${esc(x.server)}</span>` : ''}</span>
+        <span class="sub">${x.kind === 'stray' ? '<span class="ui-dot warn"></span> ' : ''}${esc(label[x.kind])}${x.process && x.kind !== 'app' ? ' · ' + esc(x.process) : ''}${x.hosts.length ? ' · ' + esc(x.hosts.join(', ')) : ''}</span></div>
+      <span class="acts">
+        ${x.preview ? `<a class="ui-btn quiet" href="${esc(x.preview)}" target="_blank" rel="noopener" data-icon="external-link">Open</a>` : ''}
+        ${x.kind === 'stray' ? `<button class="ui-btn quiet" data-port-chat="${x.port}" data-icon="message-square">Chat</button>` : ''}
+        ${x.kind === 'dev' && x.owner ? `<a class="ui-btn quiet" href="#p/${encodeURIComponent(x.owner)}">Project</a>` : ''}
+      </span></div>`).join('');
+  return `<section class="ui-section"><div class="ui-group">${rows}</div>
+    <p class="ui-note">Every open port on this machine. Previews open privately at the URL shown; "started outside dev" is a project's process nobody wrote a recipe for, or one an agent started by hand.</p></section>`;
+}
+
+function projectPage(name) {
+  const p = projects?.find((x) => x.name === name);
+  const back = `<a class="ui-back" href="#"><i data-icon="chevron-left" data-icon-size="sm"></i>Dev</a>`;
+  if (!projects) return back + '<div class="ui-loading"></div>';
+  if (!p) return back + `<div class="ui-empty"><div class="orbit"></div><h2>No project called ${esc(name)}.</h2></div>`;
+  desk.context({ label: `Dev · ${p.title}`, note: chatNote(p) });
+  const hasServers = p.recipe && p.servers.length;
+  const anyOn = hasServers && p.servers.some((s) => ['active', 'activating'].includes(s.state));
+  const primary = hasServers ? `<button class="ui-btn primary" data-icon="${anyOn ? 'square' : 'play'}" data-${anyOn ? 'down' : 'up'}-all>${anyOn ? 'Stop' : 'Start'}</button>`
+    : !p.recipe ? `<button class="ui-btn primary" data-icon="sparkles" data-chat="${esc(p.name)}" data-extra="Write its recipe now.">Write a recipe</button>` : '';
+  let html = `${back}<header class="ui-heading"><div><span class="ui-eyebrow">${esc(p.dir.replace(/^\/home\/[^/]+/, '~'))} · ${esc(gitLine(p.git))}</span><h1 class="ui-display">${esc(p.title)}.</h1></div>
+    <div class="actions"><button class="ui-btn" data-chat="${esc(p.name)}" data-icon="message-square">Chat</button>${primary}</div></header>`;
+  if (p.about) html += `<p class="ui-lede">${esc(p.about)}</p>`;
+  if (p.recipe) {
+    if (p.servers.length) html += `<section class="ui-section"><span class="ui-label">Servers</span><div class="ui-group">${p.servers.map((s) => serverRow(p, s)).join('')}</div></section>`;
+    const cmds = [...(p.setup ? [commandRow(p, { name: 'setup', run: p.setup, about: 'install dependencies', ...p.setupRun })] : []), ...p.commands.map((c) => commandRow(p, c))];
+    if (cmds.length) html += `<section class="ui-section"><span class="ui-label">Commands</span><div class="ui-group">${cmds.join('')}</div>
+      <p class="ui-note">Run here in the background; agents run the same ones with <code>dev run ${esc(p.name)} &lt;command&gt;</code>.</p></section>`;
+  } else {
+    html += `<section class="ui-section"><span class="ui-label">Found in its files</span><div class="ui-group">${p.detected.length ? p.detected.map((d) => `<div class="ui-row">
+        <div class="body"><span class="title">${esc(d.name)}</span><span class="sub mono">${esc(d.about || d.run)}</span></div><span class="ui-tag">${esc(d.source)}</span></div>`).join('')
+      : '<div class="ui-row"><div class="body"><span class="sub">No Makefile or package.json.</span></div></div>'}</div>
+      <p class="ui-note">An agent turns these into a recipe: which one is the dev server, its port, and the commands worth keeping, each checked by running it.</p></section>`;
+  }
+  const g = p.git;
+  if (g) {
+    html += `<section class="ui-section"><span class="ui-label">Recent changes</span><div class="ui-group">
+      ${g.changed.length ? `<div class="changed"><span class="ui-muted" style="font-family: var(--font-sans); font-size: var(--text-sm)">Uncommitted</span>${g.changed.slice(0, 12).map(esc).join('<br>')}${g.changed.length > 12 ? `<br>… ${g.changed.length - 12} more` : ''}</div>` : ''}
+      ${g.commits.slice(0, 6).map((c) => `<div class="ui-row"><span class="hash hide-sm">${esc(c.hash)}</span><div class="body"><span class="title">${esc(c.subject)}</span><span class="sub">${esc(c.author)}</span></div><span class="meta">${ago(c.time)}</span></div>`).join('')}
+    </div></section>`;
+  }
+  if (p.notes) html += `<section class="ui-section"><span class="ui-label">Notes</span><div class="ui-card pad"><div class="ui-prose">${ui.markdown(p.notes)}</div></div></section>`;
+  if (p.recipe) html += `<p class="ui-note"><a href="/#/v/files#p=${encodeURIComponent(p.recipeFile)}" target="_top">Recipe file</a> · <code>dev show ${esc(p.name)}</code></p>`;
+  return html;
+}
+
+/* ---------- render and refresh ---------- */
+function render(force) {
+  const h = location.hash;
+  const html = h.startsWith('#p/') ? projectPage(decodeURIComponent(h.slice(3))) : listPage();
+  if (!force && html === lastRender) return;
+  lastRender = html;
+  $('app').className = h.startsWith('#p/') ? 'ui-page narrow' : 'ui-page';
+  $('app').innerHTML = html;
+}
+
+async function refresh() {
+  try {
+    if (location.hash === '#ports') ports = await api('api/ports');
+    else projects = await api('api/projects');
+    render();
+  } catch (e) {
+    $('app').innerHTML = `<div class="ui-empty"><div class="orbit"></div><h2>Can't reach the Dev app's server.</h2><p>${esc(e.message)}</p></div>`;
+    lastRender = '';
+  }
+}
+
+async function act(fn, label) {
+  try { await fn(); } catch (e) { ui.toast(e.message); }
+  await refresh();
+  if (label) ui.toast(label);
+}
+
+const current = () => projects?.find((x) => x.name === decodeURIComponent(location.hash.slice(3)));
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button, a, [data-href]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.tab !== undefined) { location.hash = d.tab ? '#' + d.tab : ''; return; }
+  if (t.id === 'newRecipe') return desk.go('#/new?text=' + encodeURIComponent('Write a dev recipe for '));
+  if (d.chat) { e.stopPropagation(); return chat(projects.find((x) => x.name === d.chat), d.extra); }
+  if (d.portChat) {
+    const x = ports.find((y) => String(y.port) === d.portChat);
+    return desk.askAbout({ key: `dev:port:${x.port}`, label: `Port ${x.port}`, note: `Port ${x.port} on this machine is held by ${x.process} (pids ${x.pids.join(', ')}), started in ~/projects/${x.owner} outside the dev command. Find out what it is; stop it or give the project a dev recipe (dev help).` });
+  }
+  if (d.logs) return openLogs(d.logs, d.cmd, d.label, d.since);
+  const p = current();
+  if (d.up !== undefined && p) return act(() => api(`api/projects/${p.name}/up`, { servers: [d.up] }));
+  if (d.down !== undefined && p) return act(() => api(`api/projects/${p.name}/down`, { servers: [d.down] }));
+  if (d.upAll !== undefined && p) return act(() => api(`api/projects/${p.name}/up`, {}));
+  if (d.downAll !== undefined && p) return act(() => api(`api/projects/${p.name}/down`, {}));
+  if (d.run && p) return act(() => api(`api/projects/${p.name}/run`, { command: d.run }));
+  if (d.stop && p) return act(() => api(`api/projects/${p.name}/stop`, { command: d.stop }));
+  if (d.href && !e.target.closest('a, button')) location.hash = d.href;
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.dataset?.href) location.hash = e.target.dataset.href; });
+addEventListener('hashchange', () => { if (!location.hash.startsWith('#p/')) desk.context({}); lastRender = ''; render(true); refresh(); scrollTo(0, 0); });
+
+/* ---------- logs ---------- */
+let logTimer = null;
+async function openLogs(unit, cmd, label, since) {
+  $('logTitle').textContent = label;
+  $('logCmd').textContent = cmd || unit;
+  $('logOut').textContent = '';
+  const sheet = $('logSheet');
+  if (!sheet.open) sheet.showModal();
+  const load = async () => {
+    const out = $('logOut');
+    const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+    try { out.textContent = (await api(`api/logs?unit=${encodeURIComponent(unit)}&n=400${since ? '&since=' + since : ''}`)).text || 'No output yet.'; } catch (e) { out.textContent = e.message; }
+    if (atBottom) out.scrollTop = out.scrollHeight;
+  };
+  clearInterval(logTimer);
+  await load();
+  $('logOut').scrollTop = $('logOut').scrollHeight;
+  logTimer = setInterval(() => (sheet.open ? load() : clearInterval(logTimer)), 2000);
+}
+
+render(true);
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 4000);
+</script>
+</body>
+</html>
