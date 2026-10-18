@@ -1,5 +1,7 @@
 # Agent first
 
+> Design note: the principles behind the Timeline and where it's headed, with open questions. The current picture is [How it works](../how-it-works.md).
+
 Springroll is a computer run by agents. Its job is not to show you screens; it's to know what's
 happening on and around the machine, decide what's worth your attention, and act for you. Apps and
 screens still exist, but they're the back room, the way files are hidden behind apps on a phone:

@@ -1,5 +1,7 @@
 # Springroll: the idea
 
+> Design note, 2026-10-08: the conversation Springroll started from. Kept as history; the current picture is [How it works](../how-it-works.md).
+
 Date: 2026-10-08. Written from a conversation that started as Springroll work
 and ended somewhere more interesting. Visual sketch:
 https://claude.ai/artifact/1sBCnN8o76tWmBi7vrAsrW
@@ -149,7 +151,7 @@ second chat engine, per-recipe permission matrices.
 
 ## First version, on the existing box
 
-Server details: [server.md](server.md).
+Server details: [security.md](../security.md).
 
 1. Agents installed on the host (not only in containers), signed in: Claude
    Code via setup token, Codex via device code.
