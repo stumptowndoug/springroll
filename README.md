@@ -39,20 +39,17 @@ sudo git clone https://github.com/stumptowndoug/springroll /opt/springroll && su
 
 Then open Springroll and start a chat. Everything else you ask for.
 
-## What it does in a week
+## What you might ask for
 
-- **Every 15 minutes** a job sorts your new mail, files the noise and puts the two emails that need
-  an answer on the Timeline, each with a draft reply waiting for your yes.
-- **Every morning** a job pulls yesterday's numbers for your site (search, traffic, sign-ups) and
-  writes a one-page report with charts. You read it on your phone with coffee.
-- **On Sunday** a long data refresh runs for hours, checks its own work every ten minutes, and
-  posts one line when it's done.
-- **When you open a project** the Dev app starts its servers with the keys it needs, gives it its
-  own branch of the database, and hands you a preview link.
-- **When a site has no API** an agent drives a real browser while you watch, and hands you the
-  mouse for the sign-in.
+- "Sort my mail every morning and tell me what needs a reply."
+- "Watch this product page and tell me when it drops under $300."
+- "Every Monday, sum up what changed in my GitHub repos."
+- "Run my side project so I can open it from my phone."
+- "Build me a page that tracks my reading list."
+- "Log in to the utility site each month and save the bill."
 
-None of that ships in the box. Each one is a sentence you say once.
+Each one becomes an app, a job, or both, built while you watch. It keeps running after the chat
+ends, and anything that needs you shows up on the Timeline.
 
 ## How it fits together
 
@@ -92,12 +89,10 @@ before it's sent. Read [Security](docs/security.md) before you connect your acco
 
 ## Where it came from
 
-The first Springroll was a Mac app for scheduled AI tasks: recipes, integrations, an engine per
-model. It drowned in edge cases, and the lesson was that the agent is the framework. That version
-is archived at [springroll-classic](https://github.com/stumptowndoug/springroll-classic). This one
-gives the agent a machine and gets out of the way. The chat borrows from bb, the agent harness
-lessons from Shep, and the chats run through the
-[Agent Client Protocol](https://agentclientprotocol.com).
+Springroll is from the maker of [Shep](https://github.com/stumptowndoug/shep), a Mac workspace for
+running coding agents across your projects. It carries over Shep's ideas, chief among them a
+chat that runs every agent through the [Agent Client Protocol](https://agentclientprotocol.com),
+and puts them on a server that never sleeps.
 
 ## License
 
