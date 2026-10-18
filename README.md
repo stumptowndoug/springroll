@@ -8,14 +8,15 @@ Ask for what you want: sort my mail, check this site every morning, keep my proj
 Claude Code or Codex builds it on a Linux server you own, runs it on schedule, and tells you only
 what needs you.
 
-On an ordinary computer you install the apps. Here you ask, and an agent builds them: a small web
-app, a job on a timer, a script that watches something. Everything that happens lands on one
-**Timeline** you open from your phone or laptop.
+On an ordinary computer you install apps someone else wrote and live with them. Here you ask, and
+an agent builds them: a small web app, a job on a timer, a script that watches something. When you
+want them different, you ask again. Everything that happens lands on one **Timeline** you open
+from your phone or laptop.
 
 **Yours.** It runs on your server, with the coding-agent subscription you already pay for.
-Everything the agents build lives in one git repo on that machine, backed up nightly, so the box
-can be wiped and rebuilt from a single file. No hosted service and no account with us; the only
-thing it fetches from us is the weekly update, from this repo.
+Everything the agents build, and Springroll's own code, lives in one git repo on that machine,
+backed up nightly, so the box can be wiped and rebuilt from a single file. No hosted service and no
+account with us; the only thing it fetches from us is the weekly update, from this repo.
 
 [How it works](docs/how-it-works.md) · [Install](docs/install.md) · [Security](docs/security.md) ·
 [FAQ](docs/faq.md) · [Why Springroll](docs/design/idea.md)
@@ -50,6 +51,24 @@ Then open Springroll and start a chat. Everything else you ask for.
 
 Each one becomes an app, a job, or both, built while you watch. It keeps running after the chat
 ends, and anything that needs you shows up on the Timeline.
+
+## Yours to change
+
+Springroll is a starting point, not a product you put up with. Its own code sits in the same repo
+as everything the agents build, so they can change any of it:
+
+- **The apps.** Make Mail work the way you read mail. Delete To-dos. Ask for an app nobody else
+  would want.
+- **Springroll itself.** Add a page to the sidebar, change what counts as "needs you", rebuild the
+  Timeline around how you work.
+- **How it looks.** 18 themes, your own colors and fonts, or "make it look like a newspaper."
+- **How the agents behave.** Their rules are plain text (`AGENTS.md`, the skills). Change a rule
+  and every agent follows it from the next chat.
+- **The machine.** It's a whole Linux box: a database, a Discord bot, a scraper, anything that runs
+  on Linux.
+
+Updates don't undo any of it. Your machine is your fork: each week an agent merges what's new here
+around your changes, and `LOCAL.md` keeps the list of what you've made your own.
 
 ## How it fits together
 
