@@ -98,3 +98,7 @@ is archived at [springroll-classic](https://github.com/stumptowndoug/springroll-
 gives the agent a machine and gets out of the way. The chat borrows from bb, the agent harness
 lessons from Shep, and the chats run through the
 [Agent Client Protocol](https://agentclientprotocol.com).
+
+## License
+
+[MIT](LICENSE).

@@ -13,7 +13,7 @@ other is a workshop. Springroll doesn't bring its own agent; it runs the ones yo
 **What does it cost?**
 The server, plus the coding-agent plan you already have. exe.dev is $15/month for 2 vCPU and 4 GB
 (the easiest start); a 4 GB VPS is about the same. Agents run on your Claude or ChatGPT
-subscription. Springroll is free, and there's no hosted tier.
+subscription. Springroll is free and MIT-licensed, and there's no hosted tier.
 
 **Which agents?**
 Claude Code, Codex, OpenCode, Pi, Cursor and Antigravity, in chats and jobs. Claude Code or Codex
