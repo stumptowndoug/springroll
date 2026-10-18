@@ -13,6 +13,13 @@ changes, last commit, and whether its dev servers run. A project's page has:
 - **Commands**: the saved ones (setup, test, lint, check, …), run in the background, with the last
   result and output.
 - **Recent changes**: uncommitted files and the last 8 commits.
+- **Keys**: every key its recipe names, the variables it fills, what uses it, and whether it's in
+  Keys; **Add** opens Keys with the name filled in. **Paste a .env** imports a whole file: each line
+  sorted into a key (into Keys as `<keyPrefix>_DEV_<NAME>`), a setting (into the recipe's `env`) or
+  skipped (what the Dev app supplies, live keys, analytics), shown for a check before anything is
+  saved. The file itself is never written anywhere.
+- **Database**: its dev database, a Neon branch `dev-<project>` copied from production on first
+  start and reused after, with **Reset** (a fresh copy) and **Delete**.
 - **Notes**: what the next agent should know (keys it lacks, what not to run).
 
 **Ports** lists every open TCP port and who owns it: a project's dev server, an app, Springroll, or
@@ -31,6 +38,14 @@ A project without a recipe shows the Makefile targets and package.json scripts i
 - Keys are named, never copied: `"secrets": {"ENV_VAR": "SECRET_NAME"}` is read from Keys when the
   server or command starts. `"secretFiles"` does the same for tools that want a credentials file
   (written to `~/.config/springroll/dev/<SECRET>`, 0600).
+- No `.env` files: a key lives only in Keys, and the recipe names it (import a `.env` with Paste a
+  .env or `dev env`). Settings that aren't secret go in `"env"`. `"keyNotes": {"SECRET": "what it's
+  for"}` explains a key when it's missing; `"keyPrefix"` names imported keys (default: the project).
+- `"database": {"neon": "<project id>", "from": "production", "env": "DATABASE_URL", "name":
+  "neondb", "role": "neondb_owner"}` gives the servers (and commands with `"database": true`) the
+  branch `dev-<project>`: `dev up` makes it if needed (NEON_API_KEY), and the connection string is
+  fetched from Neon at each start, never stored. Only `dev-*` branches are ever made, reset or
+  deleted; a default or protected branch is refused.
 - Only save a server or command after running it. Say in `notes` what it lacks (keys, a database).
 - Nothing that writes to a production database or deploys goes in `commands`.
 
@@ -56,4 +71,11 @@ A project without a recipe shows the Makefile targets and package.json scripts i
 - `POST api/projects/<name>/run` / `stop` `{command}` (`setup` included).
 - `GET api/logs?unit=<unit>&n=300&since=<unix>`: a dev or preview unit's output.
 - `GET api/ports`: every open port with kind (dev, app, springroll, preview, stray, other) and owner.
+- `GET api/projects/<name>/keys`: the keys its recipe names, `set` or not (names only, never values).
+  `POST` `{var, secret, note?}` has the project read Keys' `secret` as `$var` (what Keys' Add a key →
+  Used by calls; `dev keys <project> --add VAR=KEY` for agents).
+- `POST api/projects/<name>/env/preview` `{text}`: how a pasted .env would be sorted (key values
+  masked; nothing saved). `POST api/projects/<name>/env/import` `{text, choices: {NAME: env|key|skip}}`
+  applies it.
+- `GET api/projects/<name>/database`: its dev database (fresh from Neon); `POST` `{action: create|reset|delete}`.
 - `GET api/status`: the sidebar chip (204 when nothing runs).

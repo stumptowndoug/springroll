@@ -43,7 +43,12 @@ function normalize(value) {
   if (/[\r\n]/.test(v)) throw new Error('A key is one line (a JSON file is fine too)');
   return v;
 }
+// The project a job works in: its job.json cwd under ~/projects/<name>, else none.
+const jobProject = (name) => {
+  try { return JSON.parse(fs.readFileSync(path.join(HOME, 'home', 'jobs', name, 'job.json'), 'utf8')).cwd?.match(/^~\/projects\/([^/]+)/)?.[1] || null; } catch { return null; }
+};
 const title = (kind, name) => {
+  if (kind === 'command') return `${name} command`;
   try {
     if (kind === 'app') return fs.readFileSync(path.join(HOME, 'home', 'views', name, 'README.md'), 'utf8').match(/^#\s+(.+)$/m)?.[1].trim() || name;
     if (kind === 'job') return JSON.parse(fs.readFileSync(path.join(HOME, 'home', 'jobs', name, 'job.json'), 'utf8')).title || name;
@@ -51,41 +56,110 @@ const title = (kind, name) => {
   return name;
 };
 
-// Where a key is used: the owner's apps and jobs that mention it as a whole word.
+// Where a key is used: the owner's apps, jobs and commands (bin/) that mention it as a whole word.
+// The Dev app is left out here: its recipes say exactly which project uses which key (projectKeys).
 function usedBy(names) {
   if (!names.length) return Promise.resolve({});
   return new Promise((resolve) => {
-    execFile('git', ['-C', path.join(HOME, 'home'), 'grep', '-n', '-w', '-I', ...names.flatMap((n) => ['-e', n]), '--', 'views', 'jobs', ':!views/desk', ':!views/settings', ':!views/gallery'],
+    execFile('git', ['-C', path.join(HOME, 'home'), 'grep', '-n', '-w', '-I', ...names.flatMap((n) => ['-e', n]), '--', 'views', 'jobs', 'bin', ':!views/desk', ':!views/settings', ':!views/gallery', ':!views/dev', ':!bin/secret'],
       { maxBuffer: 4 << 20, timeout: 8000 }, (err, out) => {
         const map = {};
         for (const line of (out || '').split('\n')) {
-          const where = line.match(/^(views|jobs)\/([^/:]+)/);
+          const where = line.match(/^(views|jobs|bin)\/([^/:]+)/);
           if (!where) continue;
-          const kind = where[1] === 'views' ? 'app' : 'job', id = `${kind}:${where[2]}`;
+          const kind = { views: 'app', jobs: 'job', bin: 'command' }[where[1]], id = `${kind}:${where[2]}`;
           for (const n of names) if (new RegExp(`\\b${n}\\b`).test(line.slice(line.indexOf(':')))) (map[n] ||= new Map()).set(id, { kind, name: where[2] });
         }
         resolve(Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v.values()].slice(0, 6).map((u) => ({
-          ...u, title: title(u.kind, u.name), href: u.kind === 'app' ? `#/v/${u.name}` : `#/jobs/${u.name}` }))])));
+          ...u, title: title(u.kind, u.name), href: u.kind === 'app' ? `#/v/${u.name}` : u.kind === 'job' ? `#/jobs/${u.name}` : null,
+          ...(u.kind === 'job' && jobProject(u.name) ? { project: jobProject(u.name) } : {}) }))])));
       });
   });
+}
+
+// Which of the owner's projects use which key, from the Dev app's recipes (views/dev/recipes): every
+// "secrets"/"secretFiles" at recipe, server and command level, and the Neon key behind a "database".
+// Projects sharing a "keyPrefix" (a product's web and API repos) form one group.
+function projectKeys() {
+  const dir = path.join(HOME, 'home', 'views', 'dev', 'recipes'), uses = {}, groups = new Map(), list = [];
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort(); } catch {}
+  for (const f of files) {
+    let r;
+    try { r = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+    const name = f.slice(0, -5), ptitle = r.title || name, gid = r.keyPrefix || name;
+    list.push({ name, title: ptitle, prefix: `${(r.keyPrefix || name.toUpperCase().replace(/[^A-Z0-9]+/g, '_'))}_DEV_` });
+    const g = groups.get(gid) || { id: gid, projects: [] };
+    g.projects.push({ name, title: ptitle }); groups.set(gid, g);
+    const names = new Map();  // secret -> the variables it fills in this project
+    for (const spec of [r, ...Object.values(r.servers || {}), ...Object.values(r.commands || {})]) {
+      if (!spec || typeof spec !== 'object') continue;
+      for (const field of ['secrets', 'secretFiles']) for (const [v, sec] of Object.entries(spec[field] || {})) names.set(sec, new Set([...(names.get(sec) || []), v]));
+    }
+    if (r.database) names.set(r.database.key || 'NEON_API_KEY', new Set([...(names.get(r.database.key || 'NEON_API_KEY') || []), 'its dev database']));
+    for (const [sec, vars] of names) (uses[sec] ||= []).push({ kind: 'project', name, title: ptitle, group: gid, vars: [...vars], href: `#/v/dev#p/${encodeURIComponent(name)}` });
+  }
+  // A group's title: the words its projects' titles share ("Acme" for "Acme web" and "Acme API"), or the one project's title.
+  for (const g of groups.values()) {
+    if (g.projects.length === 1) { g.title = g.projects[0].title; continue; }
+    const words = g.projects.map((p) => p.title.split(/\s+/));
+    const common = [];
+    for (let i = 0; words.every((w) => w[i] && w[i] === words[0][i]); i++) common.push(words[0][i]);
+    g.title = common.join(' ') || g.id;
+  }
+  const groupOf = {};
+  for (const g of groups.values()) for (const p of g.projects) groupOf[p.name] = g.id;
+  return { uses, groups: [...groups.values()], groupOf, list };
+}
+
+// Which section of the Keys page a key belongs in: its connection; else a project, if a project's dev
+// recipe names it or a job working in that project (job.json cwd) uses it (the project with the most
+// such uses); else the apps, jobs and commands that use it; else nothing found.
+function section(k, groupOf) {
+  if (k.connection) return ['connections'];
+  const votes = {};
+  for (const u of k.usedBy) {
+    const g = u.kind === 'project' ? u.group : u.project ? (groupOf[u.project] || u.project) : null;
+    if (g) votes[g] = (votes[g] || 0) + 1;
+  }
+  const best = Object.entries(votes).sort((a, b) => b[1] - a[1])[0];
+  if (best) return ['projects', best[0]];
+  return [k.usedBy.length ? 'apps' : 'unused'];
 }
 
 export async function listSecrets() {
   const secrets = readSecrets(), meta = readMeta(), owners = catalogKeys();
   const names = Object.keys(secrets).sort();
-  const used = await usedBy(names);
+  const used = await usedBy(names), projects = projectKeys();
   const keys = names.map((name) => ({
     name, hint: hint(secrets[name]), note: meta[name]?.note || '', label: owners[name]?.label || '', updated: meta[name]?.updated || null,
-    connection: owners[name]?.id || null, connectionName: owners[name]?.name || null, usedBy: used[name] || [],
+    connection: owners[name]?.id || null, connectionName: owners[name]?.name || null,
+    usedBy: [...(used[name] || []), ...(projects.uses[name] || [])],
   }));
+  for (const k of keys) [k.section, k.project] = section(k, projects.groupOf);
   const managed = MANAGED.filter((m) => fs.existsSync(path.join(CONF, m.file))).map((m) => ({ ...m, updated: fs.statSync(path.join(CONF, m.file)).mtimeMs }));
   const reveal = revealAllowed();
   let requests = [];
   try { requests = (await (await fetch(`${AGENTD}/signals`)).json()).filter((s) => s.key?.startsWith('secret:')).map((s) => ({ name: s.key.slice(7), why: s.body, from: s.source, thread: s.thread_id, at: s.updated, have: !!secrets[s.key.slice(7)] })); } catch {}
-  return { keys, managed, requests, reveal };
+  // A job's project with no Dev recipe still gets a group, named after the project's folder.
+  const groups = [...projects.groups];
+  for (const k of keys) if (k.project && !groups.some((g) => g.id === k.project)) groups.push({ id: k.project, title: k.project, projects: [] });
+  const projectGroups = groups.filter((g) => keys.some((k) => k.project === g.id));
+  return { keys, managed, requests, reveal, projectGroups, projects: projects.list };
 }
 
-export async function setSecret({ name, value, note }) {
+// Have one of the owner's projects use a key (its Dev recipe reads it as `variable`), through the Dev
+// app's API so the recipe is written in one place.
+async function useInProject(project, variable, name, note) {
+  const port = fs.readFileSync(path.join(HOME, 'home', 'views', 'dev', 'PORT'), 'utf8').trim();
+  const r = await fetch(`http://127.0.0.1:${port}/api/projects/${encodeURIComponent(project)}/keys`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ var: variable, secret: name, note }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+export async function setSecret({ name, value, note, project, variable }) {
   if (!NAME_RE.test(name || '')) throw new Error('Names are capital letters, digits and _ (like OPENAI_API_KEY)');
   const secrets = readSecrets(), meta = readMeta();
   if (value != null && value.trim() !== '') {
@@ -96,6 +170,11 @@ export async function setSecret({ name, value, note }) {
   if (typeof note === 'string') meta[name] = { ...(meta[name] || {}), note: note.trim().slice(0, 200) };
   writeMeta(meta);
   if (value) await answerRequest(name);
+  if (project) {
+    // The key is saved either way; a project that can't take it is a warning, not a lost key.
+    try { return { ok: true, used: await useInProject(project, variable || name, name, typeof note === 'string' && note.trim() ? note.trim() : undefined) }; }
+    catch (e) { return { ok: true, warning: `Saved ${name}, but couldn't add it to ${project}: ${e.message}` }; }
+  }
   return { ok: true };
 }
 
