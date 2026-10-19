@@ -250,9 +250,18 @@ div.row[data-side]:focus-visible { outline: 2px solid var(--ring); outline-offse
 .a-prompt { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: var(--text-sm); max-height: 8.5em; overflow: auto; }
 
 /* The side pane: beside the chat when there's room, over it when there isn't (a phone, the Ask panel) */
-.thread-side { flex: none; width: min(480px, 44%); display: flex; flex-direction: column; min-height: 0; background: var(--surface-recessed); }
+/* Its width: dragged from its left edge (remembered as --side-w); a file reads wider by default. */
+.thread-side { flex: none; position: relative; width: var(--side-w, min(480px, 44%)); display: flex; flex-direction: column; min-height: 0; background: var(--surface-recessed); }
+.thread-side.file { width: var(--side-w, min(680px, 52%)); }
 .thread-side[hidden] { display: none; }
-@container (max-width: 760px) { .thread-side { position: absolute; inset: 0; width: auto; z-index: 5; background: var(--bg); } }
+.side-grip { position: absolute; z-index: 2; inset: 0 auto 0 -3px; width: 6px; cursor: col-resize; touch-action: none; }
+.side-grip:hover, .side-resizing .side-grip { background: var(--line); }
+.side-resizing, .side-resizing * { cursor: col-resize !important; user-select: none; }
+@container (max-width: 760px) {
+  .thread-side, .thread-side.file { position: absolute; inset: 0; width: auto; z-index: 5; background: var(--bg); }
+  .side-grip { display: none; }
+  .side-meta .side-path, .side-meta .side-path + .sep { display: none; }
+}
 .thread-shell.in-panel .thread-side { background: var(--surface-recessed); }
 .side-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 10px 2px 16px; }
 .side-head .ui-title { flex: 1; min-width: 0; font-size: var(--text-base); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -269,3 +278,20 @@ div.row[data-side]:focus-visible { outline: 2px solid var(--ring); outline-offse
 .side-actions { flex: none; display: flex; justify-content: flex-end; padding: 10px 16px 14px; }
 .side-transcript { display: grid; gap: 4px; min-width: 0; }
 .side-transcript .msg-agent { color: var(--muted); font-size: var(--text-sm); }
+
+/* A file beside the chat: a document to read, or its source */
+.thread-side.file .side-meta { flex-wrap: nowrap; }
+.side-meta .side-path { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-meta .side-acts { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.side-meta .side-acts .ui-btn { margin-left: 0; }
+.side-acts .ui-seg > button { height: calc(var(--ctl-h) - 12px); padding: 0 10px; font-size: var(--text-xs); }
+.side-body.file { display: block; padding: 6px 20px 28px; }
+.side-body.file > .ui-loading { margin-top: 12px; }
+.side-doc { max-width: 72ch; }
+.side-body.file > .ui-code { font-size: var(--text-xs); }
+.side-img { display: block; width: auto; max-width: 100%; height: auto; border-radius: var(--radius-sm); }
+audio.side-img { width: 100%; }
+
+a.file-ref { text-decoration: none; }
+a.file-ref > code { color: var(--accent); }
+a.file-ref:hover > code { text-decoration: underline; }

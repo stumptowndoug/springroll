@@ -21,6 +21,13 @@ export function mountPanel(el, { id, context, ctx, onCreated, onClose, text }) {
 }
 export function unmountPanel() { panel?.destroy(); panel = null; }
 // The View's context changed (another file, other lines): update the chip; the next message carries it.
+// `show <file>` from a chat: the file opens beside that chat when this desk is showing it.
+export function showFile(thread, path, lines) {
+  const v = [page, panel].find((x) => x && x.id === thread && x.showing());
+  if (!v) return false;
+  v.openFile(path, lines);
+  return true;
+}
 export function setPanelContext(context) { if (panel && panel.context) { panel.context = context; panel.renderComposerFoot(); } }
 export function focusPanel() { panel?.$input?.focus(); }
 // Escape stops a working chat when focus is in it (its composer). Not with focus nowhere: Escape pressed
@@ -206,8 +213,27 @@ function turnParts(items) {
 
 // Agent text as Markdown. Images from other sites become links: loading one would tell that site
 // whatever the agent put in its address (text from an email it read, say). Code blocks get a copy button.
+const isMarkdown = (name) => /\.(md|markdown|mdx)$/i.test(name || '');
+// Links inside a document beside the chat: relative ones resolve against it (pages open beside the chat
+// too, images load from disk).
+function docLinks(docPath) {
+  const base = docPath.slice(0, docPath.lastIndexOf('/'));
+  return (url, kind) => {
+    const [p] = url.split(/[?#]/);
+    if (!p || /^[a-z][\w+.-]*:/i.test(p)) return null;
+    const out = [];
+    for (const seg of (p.startsWith('/') ? p : `${base}/${p}`).split('/')) { if (seg === '..') out.pop(); else if (seg && seg !== '.') out.push(seg); }
+    const abs = '/' + out.join('/');
+    return kind === 'image' ? `api/files/raw?path=${encodeURIComponent(abs)}` : `#/v/files#p=${encodeURIComponent(abs)}`;
+  };
+}
+// A path in backticks (`views/desk/server.mjs:480`, `~/home/notes/log.md`) opens beside the chat.
+const FILE_REF = /^(?:~\/|\/|\.\.?\/|[\w@-][\w@.-]*\/)[\w@.\/+-]*\.[A-Za-z0-9]{1,10}(?::\d+(?:-\d+)?)?$/;
+const DOMAIN = /^[\w-]+\.(?:com|org|net|io|dev|app|ai|xyz|co|sh|so|me)\//;
 function chatMarkdown(text) {
-  return ui.markdown(text).replace(/<img alt="([^"]*)" src="(https?:[^"]*)">/g, (_, alt, src) =>
+  return ui.markdown(text).replace(/(?<!<pre>)<code>([^<]+)<\/code>/g, (m, t) => FILE_REF.test(t) && !DOMAIN.test(t)
+    ? `<a class="file-ref" data-file="${t}" href="#/v/files#p=${encodeURIComponent(t.replace(/:\d.*$/, ''))}">${m}</a>` : m)
+    .replace(/<img alt="([^"]*)" src="(https?:[^"]*)">/g, (_, alt, src) =>
     `<a class="img-link" href="${src}" target="_blank" rel="noopener">${ui.icon('image', 'sm')}${alt || 'Image'}</a>`)
     .replace(/<pre[ >][\s\S]*?<\/pre>/g, (pre) => `<div class="code-wrap">${pre}<button class="code-copy" data-code-copy title="Copy code">${ui.icon('copy', 'sm')}</button></div>`);
 }
@@ -234,8 +260,11 @@ class ThreadView {
     this.$shell = el.querySelector('.thread-shell');
     // The side pane: one background task (its command and output) or delegated agent (its transcript).
     this.$side = el.querySelector('.thread-side');
-    this.side = null; // { kind: 'task' | 'agent', id, out, outAt, final, stick }
+    this.side = null; // { kind: 'task' | 'agent' | 'file', id, out, outAt, final, stick } (a file: its path, doc, html, mode, lines)
     this.$side.addEventListener('click', (e) => this.onSideClick(e));
+    this.$side.addEventListener('pointerdown', (e) => this.onSideGrip(e));
+    this.$side.addEventListener('dblclick', (e) => { if (e.target.closest('.side-grip')) { this.$side.style.removeProperty('--side-w'); try { localStorage.removeItem('desk.sideWidth'); } catch {} } });
+    try { const w = +localStorage.getItem('desk.sideWidth'); if (w) this.$side.style.setProperty('--side-w', `${w}px`); } catch {}
     this.$side.addEventListener('toggle', (e) => { const k = e.target.dataset?.key; if (k) e.target.open ? this.open_.add(k) : this.open_.delete(k); }, true);
     this.$head = el.querySelector('.thread-head');
     this.$scroll = el.querySelector('.thread-scroll');
@@ -497,6 +526,7 @@ class ThreadView {
     for (const s of this.$bg.querySelectorAll('[data-since]')) s.textContent = ui.duration(Date.now() - +s.dataset.since);
     for (const s of this.$side.querySelectorAll('[data-since]')) s.textContent = ui.duration(Date.now() - +s.dataset.since);
     if (this.side?.kind === 'task' && !this.side.final && Date.now() - (this.side.outAt || 0) > 2000) this.loadTaskOutput();
+    if (this.side?.kind === 'file' && !document.hidden && this.showing() && Date.now() - (this.side.checked || 0) > 3000) this.loadFile();
     if (this.id && this.showing() && Date.now() - (this.bgAt || 0) > 5000) this.loadBackground();
     const el = this.$tail.querySelector('[data-elapsed]');
     if (!el) return;
@@ -617,6 +647,7 @@ class ThreadView {
   sideItem() {
     const s = this.side;
     if (!s) return null;
+    if (s.kind === 'file') return s;
     return s.kind === 'task' ? this.items.find((i) => i.kind === 'task' && i.taskId === s.id) : this.items.find((i) => i.kind === 'agent' && i.sessionId === s.id);
   }
 
@@ -625,17 +656,22 @@ class ThreadView {
     if (!item) this.side = null;
     this.$shell.classList.toggle('side-open', !!item);
     this.$side.hidden = !item;
+    this.$side.classList.toggle('file', item?.kind === 'file');
     if (!item) { this.$side.innerHTML = ''; return; }
-    const body = this.$side.querySelector('.side-body');
-    if (body) this.side.stick = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
-    ui.morph(this.$side, this.side.kind === 'task' ? this.taskSide(item) : this.agentSide(item));
+    const s = this.side, body = this.$side.querySelector('.side-body');
+    if (body && s.kind !== 'file') s.stick = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+    ui.morph(this.$side, s.kind === 'task' ? this.taskSide(item) : s.kind === 'agent' ? this.agentSide(item) : this.fileSide(s));
     const nb = this.$side.querySelector('.side-body');
-    if (nb && !nb.dataset.watched) { nb.dataset.watched = '1'; nb.addEventListener('scroll', () => { if (this.side) this.side.stick = nb.scrollHeight - nb.scrollTop - nb.clientHeight < 40; }); }
-    if (nb && this.side.stick) nb.scrollTop = nb.scrollHeight;
+    if (nb && !nb.dataset.watched) { nb.dataset.watched = '1'; nb.addEventListener('scroll', () => { if (this.side && this.side.kind !== 'file') this.side.stick = nb.scrollHeight - nb.scrollTop - nb.clientHeight < 40; }); }
+    if (nb && s.kind === 'file' && s.html && s.place) { // a newly opened file starts at the top, or at its lines
+      s.place = false;
+      const line = s.lines && nb.querySelector('.pce-line.sel');
+      if (line) line.scrollIntoView({ block: 'center' }); else nb.scrollTop = 0;
+    } else if (nb && s.stick) nb.scrollTop = nb.scrollHeight;
   }
 
   sideHead(icon, title, meta, state = '', action = '') {
-    return `<header class="side-head ${ui.esc(state)}"><span class="a-icon">${icon}</span><span class="ui-title">${ui.esc(title)}</span>
+    return `<div class="side-grip" title="Drag to resize, double-click to reset"></div><header class="side-head ${ui.esc(state)}"><span class="a-icon">${icon}</span><span class="ui-title">${ui.esc(title)}</span>
       <button type="button" class="ui-icon-btn plain" data-side-a="close" title="Close (Esc)">${ui.icon('x')}</button></header>
       <div class="side-meta">${meta.filter(Boolean).join('<span class="sep">·</span>')}${action}</div>`;
   }
@@ -710,9 +746,116 @@ class ThreadView {
     this.renderSide();
   }
 
+  /* ----- A file beside the chat: `show <file>` from this chat, or a file link in it ----- */
+  openFile(path, lines) {
+    lines = Array.isArray(lines) ? lines : typeof lines === 'string' && lines ? lines.split('-').map(Number) : null;
+    if (lines && !lines[1]) lines[1] = lines[0];
+    const s = this.side;
+    if (s?.kind === 'file' && (s.id === path || s.doc?.path === path)) {
+      s.lines = lines; s.place = true;
+      if (lines) s.mode = 'source';
+      return this.loadFile(true);
+    }
+    this.side = { kind: 'file', id: path, lines, doc: null, html: '', mode: lines ? 'source' : 'preview', stick: false, place: true };
+    this.renderSide();
+    this.loadFile();
+  }
+
+  // Read it again when it changed (the agent is still writing it); keep the reader's place.
+  async loadFile(force) {
+    const s = this.side;
+    if (s?.kind !== 'file' || s.loading) return;
+    s.loading = true; s.checked = Date.now();
+    let doc;
+    try { doc = await api.get(`api/files/read?path=${encodeURIComponent(s.id)}`); } catch (err) { doc = { error: err.message }; }
+    s.loading = false;
+    if (this.side !== s) return;
+    if (!force && s.doc && !doc.error && !s.doc.error && doc.mtime === s.doc.mtime) return;
+    if (doc.kind === 'dir') { this.closeSide(); return this.ctx.go(`#/v/files#p=${encodeURIComponent(doc.path)}`); }
+    s.doc = doc;
+    await this.renderFile();
+  }
+
+  async renderFile() {
+    const s = this.side, d = s?.doc;
+    if (s?.kind !== 'file' || !d) return;
+    let html;
+    if (d.error) html = `<p class="side-note">${ui.esc(d.error === 'Not found' ? 'That file isn’t there (anymore).' : d.error)}</p>`;
+    else if (['image', 'audio', 'video', 'pdf'].includes(d.kind)) {
+      const src = `api/files/raw?path=${encodeURIComponent(d.path)}&v=${d.mtime}`;
+      html = d.kind === 'image' ? `<img class="side-img" src="${src}" alt="${ui.esc(d.name)}">`
+        // Raw files are sandboxed (they never run scripts), which also keeps the browser's PDF viewer out: a new tab.
+        : d.kind === 'pdf' ? `<div class="ui-empty"><span data-icon="file-type"></span><p>${ui.esc(d.name)}</p><a class="ui-btn" href="${src}" target="_blank" rel="noopener">${ui.icon('external-link', 'sm')}Open</a></div>`
+        : `<${d.kind} class="side-img" controls src="${src}"></${d.kind}>`;
+    } else if (d.kind !== 'text') html = '<p class="side-note">This kind of file opens in Files.</p>';
+    else if (isMarkdown(d.name) && s.mode === 'preview') html = `<article class="side-doc ui-prose">${await ui.document(d.text, { resolve: docLinks(d.path) })}</article>`;
+    else {
+      const [a, b] = s.lines || [];
+      html = await ui.codeBlock(d.text, { file: d.name, lineNumbers: true, wordWrap: true, addLineClass: (n) => (a && n >= a && n <= b ? 'sel' : null) });
+    }
+    if (d.truncated) html += '<p class="side-note">Only the start of a large file. Open it in Files for the rest.</p>';
+    if (this.side !== s) return;
+    s.html = html;
+    this.renderSide();
+  }
+
+  fileSide(s) {
+    const d = s.doc, shown = d?.display || s.id, name = shown.split('/').pop();
+    const md = d?.kind === 'text' && isMarkdown(d.name);
+    const meta = [
+      `<span class="side-path" title="${ui.esc(shown)}">${ui.esc(shown.slice(0, shown.length - name.length).replace(/\/$/, '') || '/')}</span>`,
+      d?.mtime ? `<span class="ui-mono" title="Changed">${ui.ago(d.mtime)}</span>` : '',
+    ];
+    const l = s.lines ? `&l=${s.lines[0]}${s.lines[1] !== s.lines[0] ? '-' + s.lines[1] : ''}` : '';
+    const actions = `<span class="side-acts">${md ? `<span class="ui-seg"><button type="button" data-side-a="preview" aria-pressed="${s.mode === 'preview'}">Preview</button><button type="button" data-side-a="source" aria-pressed="${s.mode === 'source'}">Source</button></span>` : ''}
+      <a class="ui-btn quiet sm" data-nav href="#/v/files#p=${encodeURIComponent(d?.path || s.id)}${l}">Open in Files</a></span>`;
+    const icon = md ? 'file-text' : { image: 'image', audio: 'file-audio', video: 'file-video', pdf: 'file-type' }[d?.kind] || 'file';
+    return `${this.sideHead(ui.icon(icon, 'sm'), name, meta, '', actions)}
+      <div class="side-body file">${s.html || '<div class="ui-loading"></div>'}</div>`;
+  }
+
+  // A file link in the chat or the pane (a path in backticks, a changed file, a link in a document).
+  onFileLink(e) {
+    const a = e.target.closest('a[data-file], a[href^="#/v/files#p="]:not([data-nav])');
+    if (!a || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
+    let path, lines;
+    if (a.dataset.file) {
+      [, path, lines] = a.dataset.file.match(/^(.*?)(?::(\d+(?:-\d+)?))?$/);
+      if (!/^[~/]/.test(path)) path = `${(this.thread?.cwd || '~/home').replace(/\/$/, '')}/${path.replace(/^\.\//, '')}`;
+    } else {
+      const q = new URLSearchParams(a.getAttribute('href').slice('#/v/files#'.length));
+      path = q.get('p'); lines = q.get('l');
+    }
+    if (!path) return false;
+    e.preventDefault();
+    this.openFile(path, lines);
+    return true;
+  }
+
+  onSideGrip(e) {
+    const grip = e.target.closest('.side-grip');
+    if (!grip || e.button) return;
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    const right = this.$shell.getBoundingClientRect().right, max = Math.max(320, this.$shell.clientWidth - 360);
+    let w = 0;
+    const move = (ev) => { w = Math.round(Math.max(320, Math.min(max, right - ev.clientX))); this.$side.style.setProperty('--side-w', `${w}px`); };
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      document.documentElement.classList.remove('side-resizing');
+      if (w) try { localStorage.setItem('desk.sideWidth', String(w)); } catch {}
+    };
+    document.documentElement.classList.add('side-resizing');
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up, { once: true });
+    grip.addEventListener('pointercancel', up, { once: true });
+  }
+
   async onSideClick(e) {
+    if (this.onFileLink(e)) return;
     const a = e.target.closest('[data-side-a]')?.dataset.sideA;
     if (a === 'close') return this.closeSide();
+    if ((a === 'preview' || a === 'source') && this.side?.kind === 'file') { this.side.mode = a; this.side.place = true; return this.renderFile(); }
     if (a === 'stop') return this.stopTask(this.side?.id, e.target.closest('button'));
     if (a === 'copy') {
       const r = [...this.items].reverse().find((i) => i.kind === 'text' && i.worker === this.side?.id);
@@ -841,6 +984,7 @@ class ThreadView {
   }
 
   onTimelineClick(e) {
+    if (this.onFileLink(e)) return;
     // Native `toggle` is delivered later. Record disclosure intent now so a
     // streaming frame between the click and that event can't close it again.
     const summary = e.target.closest('details[data-key] > summary');

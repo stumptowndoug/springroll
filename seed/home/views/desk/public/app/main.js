@@ -623,6 +623,7 @@ on('desk:views', (views) => {
   if (current?.page === 'timeline') Timeline.refresh?.();
 });
 on('desk:show', (v) => {
+  if (v.thread && v.file && Thread.showFile(v.thread, v.file, v.lines)) return;
   if (v.hash) return go(v.hash);
   if (v.url && !v.url.startsWith('/v/')) { window.open(v.url, '_blank'); return; }
   // A page inside an app (/v/gallery/other.html): open the app's frame at that page.
@@ -636,6 +637,23 @@ on('desk:show', (v) => {
   if (f) f.src = f.src;
   go(`#/v/${v.name}`);
 });
+// Springroll's own code changed (an update, an agent's change to it): this tab reloads the next time it's
+// out of sight, so it doesn't keep running the old code. Never over unsaved work in an app: one whose
+// beforeunload objects (Files with an unsaved edit) holds it until that's saved.
+let build = null, stale = false;
+const unsaved = () => [...viewFrames.values()].some((f) => {
+  try { const e = new Event('beforeunload', { cancelable: true }); f.contentWindow.dispatchEvent(e); return e.defaultPrevented; } catch { return false; }
+});
+const reloadIfAway = () => { if (stale && document.hidden && !unsaved()) location.reload(); };
+on('desk:build', ({ build: b }) => {
+  if (build === null) { build = b; return; }
+  if (b === build || stale) return;
+  stale = true;
+  if (!document.hidden) ui.toast('Springroll was updated. This tab reloads when you switch away from it.', { icon: 'refresh-cw' });
+  reloadIfAway();
+});
+document.addEventListener('visibilitychange', reloadIfAway);
+setInterval(reloadIfAway, 60000); // unsaved work saved since, while still away
 on('desk:notify', (n) => ui.toast(n.text, { icon: 'bell' }));
 on('desk:agent', (a) => { if (a.session) go(`#/terminal/${a.session}`); });
 on('desk:go', (g) => { if (g.hash?.startsWith('#/') && !document.hidden) go(g.hash); });

@@ -66,8 +66,10 @@ inside the app (an email, a file and lines): the panel shows `label`, and `note`
 as part of `[Context from Springroll]`. `desk.discuss()` opens the panel. `desk.signal(…)` and
 `desk.syncSignals(…)` put items on the Timeline (`skills/timeline/SKILL.md`).
 
-To show the owner a file: `show ~/home/AGENTS.md:12-20` (opens it in Files at those lines); in an
-app, link `/#/v/files#p=<url-encoded path>&l=12-20`.
+To show the owner a file: `show ~/home/AGENTS.md:12-20`. Run from a chat, it opens beside that chat
+(Markdown as a document, text as code with those lines marked, images, audio and video shown,
+a PDF one click from a new tab; it follows edits); otherwise in
+Files at those lines. In an app, link `/#/v/files#p=<url-encoded path>&l=12-20`.
 
 Themes: `views/desk/public/ui/themes.json` (seven colors each; run `check-themes` after adding
 one). Fonts: `ui/fonts.json`. Shortcuts: `ui/hotkeys.json`. The owner's choices: `~/home/desk.json`.

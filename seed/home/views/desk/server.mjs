@@ -420,7 +420,16 @@ let viewsSnapshot = JSON.stringify(listViews());
 const connSig = () => [path.join(HOME, 'home', 'connections'), path.join(HOME, '.config', 'springroll')]
   .flatMap((d) => { try { return fs.readdirSync(d, { recursive: true }).map((f) => { try { return `${f}:${fs.statSync(path.join(d, f)).mtimeMs}`; } catch { return f; } }); } catch { return []; } }).join('|');
 let connSnapshot = connSig();
+// Springroll's own page code (index.html, app/, ui/): open tabs compare it and reload when it changed,
+// rather than keep running the old code (an update, or an agent's change to Springroll).
+const clientBuild = () => [path.join(HERE, 'public', 'index.html'), ...['app', 'ui'].flatMap((d) => {
+  try { return fs.readdirSync(path.join(HERE, 'public', d)).map((f) => path.join(HERE, 'public', d, f)); } catch { return []; }
+})].map((f) => { try { const st = fs.statSync(f); return st.isFile() ? `${st.mtimeMs}:${st.size}` : ''; } catch { return ''; } }).join('|');
+const hash = (t) => { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+let buildSnapshot = hash(clientBuild());
 setInterval(() => {
+  const b = hash(clientBuild());
+  if (b !== buildSnapshot) { buildSnapshot = b; broadcast('build', { build: b }); }
   const now = JSON.stringify(listViews());
   if (now !== viewsSnapshot) { viewsSnapshot = now; broadcast('views', JSON.parse(now)); }
   const c = connSig();
@@ -472,13 +481,14 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
     res.write(`event: views\ndata: ${JSON.stringify(listViews())}\n\n`);
+    res.write(`event: build\ndata: ${JSON.stringify({ build: buildSnapshot })}\n\n`);
     clients.add(res);
     req.on('close', () => clients.delete(res));
     return;
   }
 
   if (url === '/api/show' && req.method === 'POST') {
-    const { target } = await readBody(req);
+    const { target, thread } = await readBody(req);
     if (!target) return json(res, 400, { error: 'target required' });
     const view = listViews().find((v) => v.name === target);
     // A file or folder opens in Files (at a line with path:12); a Springroll route (#/jobs) is followed.
@@ -487,7 +497,12 @@ const server = http.createServer(async (req, res) => {
     let payload;
     if (view) payload = { name: view.name, title: view.title, url: view.url };
     else if (target.startsWith('#/')) payload = { hash: target };
-    else if (abs && fs.existsSync(abs)) payload = { hash: `#/v/files#p=${encodeURIComponent(abs)}${fileMatch[2] ? `&l=${fileMatch[2]}${fileMatch[3] ? '-' + fileMatch[3] : ''}` : ''}` };
+    else if (abs && fs.existsSync(abs)) {
+      // From a chat (`show` gets $SPRINGROLL_THREAD), a file opens beside that chat if a desk is showing it.
+      const lines = fileMatch[2] ? [+fileMatch[2], +(fileMatch[3] || fileMatch[2])] : null;
+      payload = { hash: `#/v/files#p=${encodeURIComponent(abs)}${lines ? `&l=${lines[0]}${lines[1] !== lines[0] ? '-' + lines[1] : ''}` : ''}` };
+      if (thread && /^[\w-]{4,64}$/.test(thread) && !fs.statSync(abs).isDirectory()) Object.assign(payload, { file: abs, lines, thread });
+    }
     else payload = { name: target, title: target, url: target };
     broadcast('show', payload);
     return json(res, 200, { shown: payload, desks: clients.size });
