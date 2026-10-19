@@ -127,26 +127,21 @@
 .dock { flex: none; padding: 0 var(--gutter) max(16px, env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 70%, transparent); position: relative; }
 .stack { width: min(760px, 100%); margin: 0 auto; display: grid; gap: 8px; }
 .stack:not(:empty) { margin-bottom: 10px; }
-/* Background work: one quiet line above the composer, opening into the list */
+/* Background work: a shortcut to rows out of view; only timers have a list here. */
 .bg-work { width: min(760px, 100%); margin: 0 auto; }
 .bg-work:not(:empty) { margin-bottom: 8px; }
+.bg-jump { max-width: 100%; }
+.bg-jump > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bg summary { display: flex; align-items: center; gap: 8px; padding: 4px 6px; list-style: none; cursor: pointer; font-size: var(--text-sm); color: var(--muted); border-radius: var(--radius-sm); }
 .bg summary::-webkit-details-marker { display: none; }
 .bg summary:hover { color: var(--fg); }
-.bg summary > .ui-shimmer { white-space: nowrap; flex: none; }
-.bg summary .bg-counts { color: var(--faint); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bg summary > svg:last-child { margin-left: auto; transition: transform var(--fast); }
 .bg[open] summary > svg:last-child { transform: rotate(180deg); }
 .bg-list { background: var(--surface); border-radius: var(--radius); padding: 4px 0; margin-top: 4px; max-height: 40vh; overflow: auto; }
-.bg-row { display: grid; grid-template-columns: auto 5.5rem minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: var(--row-py) var(--row-px); font-size: var(--text-sm); }
+.bg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: var(--row-py) var(--row-px); font-size: var(--text-sm); }
 .bg-row + .bg-row { box-shadow: 0 -1px 0 var(--line); }
-.bg-row > svg { color: var(--muted); }
-.bg-row .bg-what { color: var(--muted); }
 .bg-row .bg-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bg-row .ui-mono { color: var(--faint); font-size: var(--text-xs); }
-.bg-row.opens { cursor: pointer; }
-.bg-row.opens:hover { background: var(--state-hover); }
-@media (max-width: 600px) { .bg-row { grid-template-columns: auto minmax(0, 1fr) auto auto; } .bg-row .bg-what { display: none; } }
 .approval { background: var(--surface-overlay); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: var(--radius); padding: 14px 16px;
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 10px 26px -14px rgb(0 0 0 / 30%); display: grid; gap: 10px; animation: ui-pop var(--med); }
 .ap-head { display: flex; align-items: center; gap: 8px; color: var(--warn); }
@@ -178,7 +173,8 @@
 .c-foot .ui-round { width: 30px; height: 30px; }
 .c-foot .ui-round .ui-icon { --icon: 16px; }
 .c-stop { margin-right: 4px; }
-.c-stop:last-child { margin-right: 0; }
+.c-stop:last-child, .c-stop:has(+ .c-send[hidden]) { margin-right: 0; }
+.c-foot .c-send[hidden] { display: none; }
 
 /* Panel variant */
 .thread.panel .thread-head { width: auto; margin: 0; padding: 10px 8px 6px 16px; align-items: center; gap: 2px; }
@@ -189,9 +185,22 @@
 .thread.panel .dock { padding: 0 12px 12px; background: linear-gradient(to top, var(--surface-recessed) 70%, transparent); }
 .thread.panel .msg-user { max-width: 88%; }
 
+/* Phones: the screen is the conversation. The title and ⋯ are in the top bar (tap the title), the agent
+   is in the composer; the header keeps one line only for a job, a status or a folder other than ~/home. */
 @media (max-width: 860px) {
-  .thread-head { padding-top: 6px; }
+  .thread.page .thread-head:not(.th-extra) { display: none; }
+  .thread.page .thread-head { padding: 0 0 2px; align-items: center; }
+  .thread.page .th-title, .thread.page .thread-head > [data-a="menu"], .thread.page .th-who { display: none; }
+  .thread.page .thread-head:not(.th-cwd) .th-cwd { display: none; }
+  .thread.page .th-meta { margin-top: 0; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+  .thread.page .timeline { padding-top: 6px; }
+  .turn { margin-bottom: 22px; }
   .msg-user { max-width: 88%; }
+  .dock { padding: 0 10px max(8px, env(safe-area-inset-bottom)); }
+  .composer { border-radius: var(--radius); }
+  .composer textarea { min-height: 0; max-height: 30vh; padding: 11px 14px 2px; }
+  .c-foot { padding: 2px 6px 6px 8px; }
+  .stack:not(:empty) { margin-bottom: 8px; }
 }
 .ui-diff .diff-file { color: inherit; }
 .ui-diff .diff-file:hover { color: var(--accent); }

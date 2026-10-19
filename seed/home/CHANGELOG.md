@@ -5,6 +5,34 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-19 · Phones: the chat gets the screen; background work is one row
+
+- **A chat on a phone** (`views/desk/public/app/thread.js`, `thread.css`, `main.js`, `app.css`,
+  `index.html`): the title shows once, in the top bar, and a tap there opens the chat's menu (Rename,
+  Pin, Archive, Terminal, Delete), following renames live. The big headline, the agent byline and ⋯
+  go (the agent is in the composer); the header keeps one line only for a job, a status, or a folder
+  other than ~/home. The composer is slimmer (a one-line "Ask anything", grows to 30vh at most) and
+  turns sit closer. On a 375×812 phone the conversation went from about 58% of the screen to about
+  84%. The top bar's buttons are 46px with 22px icons, easier to hit. Desktop unchanged.
+- **Return on a touch screen is a new line** (`thread.js`, `(pointer: coarse)`); the send button
+  sends, as in other chat apps. Phone keyboards have no Shift+Enter. While the agent works, Send (it
+  queues) shows beside Stop once there's text, so a phone can always send.
+- **The phone drawer** (`main.js`, `app.css`): Chat reads Chats and opens every chat (New chat is in
+  the top bar), lit on a chat or the list; Utilization is one wrapping line, each agent once with its
+  worst window (tap for the detail); the + beside Chats always shows (no hover on a phone).
+- **Utilization per agent** (`main.js`): a click opens a box with just that agent's windows.
+- **Background work is one row** (`thread.js`, `thread.css`): a backgrounded command or agent is one
+  named row in the conversation; the panel above the composer that repeated it is now a Jump to
+  shortcut, shown only while that row is out of view (it unfolds groups and older turns to reach it).
+  Timers, which have no row, keep their list. Repeated labels read as duplicate jobs.
+- **Tests** (`tests/browser/`): `background.spec.js` and `phone.spec.js`; `chat.spec.js` sends with
+  the button on the phone project.
+
+**If you changed this**: the phone rules are one `@media (max-width: 860px)` block at the end of
+`thread.css` (classes `th-extra`, `th-cwd`, `th-who` from `renderHead`) and the mobile-bar rules in
+`app.css`; `setMobileTitle` in `main.js` owns the top bar's title. Keep your own header or composer
+and take the idea: on a phone, nothing above the conversation that the top bar or composer already says.
+
 ## 2026-10-19 · Change Springroll in a copy: the owner's screen moves once, when the work is done
 
 - **The live desk serves its page code as committed** (`views/desk/server.mjs`): `public/` (`index.html`,
