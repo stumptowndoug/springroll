@@ -9,7 +9,8 @@ import { nextRun, describeCron, parseCron } from './cron.mjs';
 import { agentEnv } from './threads.mjs';
 
 const HOME = os.homedir();
-const JOBS = path.join(HOME, 'home', 'jobs');
+const REPO = process.env.SPRINGROLL_REPO || path.join(HOME, 'home');
+const JOBS = path.join(REPO, 'jobs');
 const GRACE_MS = 60000;
 // Agent runs at once (each is a model session and a few hundred MB); more wait as "queued". Command
 // jobs aren't counted. SPRINGROLL_MAX_AGENT_JOBS in ~/.config/springroll/env changes it.
@@ -31,7 +32,7 @@ export function duration(v) {
 const spoken = (ms) => (ms >= 3600000 && ms % 3600000 === 0 ? `${ms / 3600000}h` : ms >= 60000 ? `${Math.round(ms / 60000)}m` : `${Math.round(ms / 1000)}s`);
 
 function git(args) {
-  return new Promise((resolve) => execFile('git', ['-C', path.join(HOME, 'home'), ...args], () => resolve()));
+  return new Promise((resolve) => execFile('git', ['-C', REPO, ...args], () => resolve()));
 }
 
 export class Jobs {
@@ -128,6 +129,7 @@ export class Jobs {
   // Next slot per job. Skip policy: missed slots while agentd was down are dropped.
   // Catch-up policy: run once for the most recent missed slot, never the backlog.
   plan(startup = false) {
+    if (process.env.SPRINGROLL_COPY) return this.due.clear(); // a copy of agentd: the live one runs the schedule
     const last = this.store.lastRuns();
     for (const j of this.list()) {
       if (!j.enabled || !j.schedule) { this.due.delete(j.name); continue; }
@@ -257,7 +259,7 @@ export class Jobs {
     const waiting = recent.find((r) => r.status === 'queued');
     const last = recent.filter((r) => r.status !== 'queued').slice(0, 7);
     let next = null;
-    try { next = job.enabled && job.schedule ? nextRun(job.schedule)?.getTime() : null; } catch {}
+    try { next = job.enabled && job.schedule && !process.env.SPRINGROLL_COPY ? nextRun(job.schedule)?.getTime() : null; } catch {} // a copy runs none
     return {
       ...job,
       // A job started by something else (job.json "trigger": "new mail arrives") says so instead of "Manual only".

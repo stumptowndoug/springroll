@@ -21,7 +21,7 @@ watchdog notifies the owner and may run an agent headless with the details. If t
 
 The nightly **housekeeping** job (`jobs/housekeeping`) does the routine part every night: stops
 chats idle for 12+ hours and stray processes agents left behind, clears rebuildable caches and old
-temp files, checks the skills and what every chat loads (`jobs/housekeeping/skills-check.sh`; a fuller read on Sundays), and reports trends. Machine-specific exceptions (long-running work to leave alone) go
+temp files, tidies abandoned changes to Springroll (`change tidy`), checks the skills and what every chat loads (`jobs/housekeeping/skills-check.sh`; a fuller read on Sundays), and reports trends. Machine-specific exceptions (long-running work to leave alone) go
 in the "This machine" section of its `NOTES.md`.
 
 ## Heavy work

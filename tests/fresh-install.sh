@@ -66,6 +66,10 @@ check "email asks first by default" "curl -fsS localhost:8000/api/google | jq -e
 check "housekeeping job" "curl -fsS localhost:8000/api/agent/jobs | grep -q housekeeping"
 check "memory seeded, Claude's own off" "test -s /home/agent/home/notes/memory.md && jq -e '.autoMemoryEnabled==false' /home/agent/.claude/settings.json"
 check "skills linked for every agent" "test -e /home/agent/.claude/skills/timeline/SKILL.md && test -e /home/agent/.codex/skills/jobs/SKILL.md && test -e /home/agent/.pi/agent/skills/machine/SKILL.md && test -e /home/agent/.claude/skills/dev/SKILL.md"
+# The change flow (bin/change, page code served as committed, shots); its own lines, one check here.
+docker cp "$(dirname "$0")/change-check.sh" "$NAME:/opt/change-check.sh"
+out=$(docker exec "$NAME" bash -c "$U HOME=/home/agent bash /opt/change-check.sh --throwaway" 2>&1); echo "$out" | sed 's/^  /    /'
+if grep -q 'change-check: [0-9]* passed, 0 failed' <<<"$out"; then echo "  ✓ change flow"; pass=$((pass+1)); else echo "  ✗ change flow"; fail=$((fail+1)); fi
 if [ -n "${BACKUP:-}" ]; then
   check "restored: chats" "[ \$(curl -fsS localhost:8000/api/agent/threads | jq length) -gt 0 ]"
   check "restored: jobs" "curl -fsS localhost:8000/api/agent/jobs | grep -q disk-check"

@@ -14,21 +14,26 @@ import { Jobs } from './jobs.mjs';
 import { describeCron, nextRun } from './cron.mjs';
 
 const HOME = os.homedir();
-const PORT = 8090;
-const AGENTS = path.join(HOME, 'home', 'agents', 'agents.json');
-const CONNECTIONS = path.join(HOME, 'home', 'connections');
+// The live agentd runs from ~/home on 8090. A copy for work on agentd itself (`change up --agentd`) sets
+// these: its own repo, port, data folder and settings, and SPRINGROLL_COPY=1 (no scheduled jobs, no phone).
+const REPO = process.env.SPRINGROLL_REPO || path.join(HOME, 'home');
+const COPY = !!process.env.SPRINGROLL_COPY;
+const PORT = Number(process.env.SPRINGROLL_AGENTD_PORT) || 8090;
+const SETTINGS = process.env.SPRINGROLL_SETTINGS || path.join(REPO, 'desk.json');
+const AGENTS = path.join(REPO, 'agents', 'agents.json');
+const CONNECTIONS = path.join(REPO, 'connections');
 const ENV = `. ${HOME}/.config/springroll/env`;
 
 // The owner's time zone (Settings → Time zone, desk.json "timezone"): schedules are worked out on it,
 // and agents and commands run with it, whatever the machine's clock was set to.
 const validTz = (tz) => { try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; } };
 function applyTimezone() {
-  try { const tz = JSON.parse(fs.readFileSync(path.join(HOME, 'home', 'desk.json'), 'utf8')).timezone; if (tz && validTz(tz)) process.env.TZ = tz; } catch {}
+  try { const tz = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')).timezone; if (tz && validTz(tz)) process.env.TZ = tz; } catch {}
   return process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 applyTimezone();
 
-const store = openStore(path.join(HOME, 'data', 'agentd'));
+const store = openStore(process.env.SPRINGROLL_AGENTD_DATA || path.join(HOME, 'data', 'agentd'));
 // Agents with no remembered model list yet: take it from their latest chat that has one.
 for (const r of store.db.prepare("select agent, options from threads where options is not null order by updated desc").all()) {
   if (store.agentOptions(r.agent)) continue;
@@ -77,12 +82,13 @@ function emit(event) {
 setInterval(() => { for (const res of clients) res.write(': ping\n\n'); }, 25000).unref();
 
 function notify(text) {
+  if (COPY) return console.log('notify (copy, not sent):', text.slice(0, 200));
   execFile('bash', ['-c', `${ENV}; notify "$0"`, text.slice(0, 400)], () => {});
 }
 
 const readAgents = () => { try { return JSON.parse(fs.readFileSync(AGENTS, 'utf8')); } catch { return []; } };
 
-const deskSettings = () => { try { return JSON.parse(fs.readFileSync(path.join(HOME, 'home', 'desk.json'), 'utf8')) || {}; } catch { return {}; } };
+const deskSettings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) || {}; } catch { return {}; } };
 const defaultAgent = () => deskSettings().defaultAgent || 'claude';
 // Settings → Coding agents: the model and effort a new chat with this agent starts on, unless it picks its own.
 // Jobs keep theirs (job.json, else the agent's default).

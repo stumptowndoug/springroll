@@ -8,6 +8,15 @@ terminal beside them. Served at the machine's Tailscale address via
   to each View's `PORT` (or serves it statically), proxies `/term/` to ttyd,
   and handles `/api/show`, `/api/notify`, `/api/focus` (writes `~/.desk/focus`),
   `/api/events` (server-sent events to open Desks).
+- Page code (`public/`: `index.html`, `app/`, `ui/`) is served as committed on
+  this repo's HEAD, exported to `~/.desk/live/<tree>` and checked every 2s; open
+  tabs get a `build` event when it changes and reload when the owner looks away.
+  A half-done edit never reaches the screen; a commit (a `change merge`) does.
+  `ui/custom.css` (the owner's overrides) is always served from the folder.
+- A copy for work on Springroll itself (`bin/change up`) runs this server from a
+  worktree with `SPRINGROLL_COPY=1` (serve the files as they are),
+  `SPRINGROLL_REPO` (its views, agents.json), `SPRINGROLL_PORT`,
+  `SPRINGROLL_SETTINGS` (its own copy of desk.json) and `SPRINGROLL_AGENTD_PORT`.
 - `usage.mjs`: `GET /api/usage` → visible, installed, signed-in providers with
   `{id, name, plan, windows[{key, label, used, resetsAt, windowMs}], error,
   fix, updated, nextCheck}`. Percentages are used quota; times are Unix ms.

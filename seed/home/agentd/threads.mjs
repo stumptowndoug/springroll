@@ -10,7 +10,8 @@ import { background, watching } from './background.mjs';
 import { PERSONAS_DIR, getPersona, listPersonas, personaText } from './personas.mjs';
 
 const HOME = os.homedir();
-const MEMORY_FILE = path.join(HOME, 'home', 'notes', 'memory.md');
+const REPO = process.env.SPRINGROLL_REPO || path.join(HOME, 'home');
+const MEMORY_FILE = path.join(REPO, 'notes', 'memory.md');
 const MAX_TEXT = 24000;
 // Idle chats keep their agent running, so one can keep supervising long work between messages
 // (a refresh cycle, a deploy). The nightly housekeeping job stops what's truly abandoned, and the
@@ -332,7 +333,7 @@ export class ThreadManager {
     if (p && Date.now() - p.failed < PROBE_RETRY_MS) return Promise.resolve(null);
     const def = this.agentDef(agentId);
     const [command, ...args] = def.acp;
-    const cwd = fs.existsSync(path.join(HOME, 'home')) ? path.join(HOME, 'home') : HOME;
+    const cwd = fs.existsSync(REPO) ? REPO : HOME;
     const env = agentEnv();
     const conn = new AcpConnection({ command, args, cwd, env });
     const timer = setTimeout(() => conn.kill(), PROBE_MS);

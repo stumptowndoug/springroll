@@ -5,6 +5,12 @@ agent that speaks ACP, the Agent Client Protocol) and scheduled jobs.
 Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
 127.0.0.1:8090; Springroll proxies it at `/api/agent/`.
 
+A copy (`bin/change up <name> --agentd`, for work on agentd itself) sets
+`SPRINGROLL_REPO` (jobs, memory, new chats' folder), `SPRINGROLL_AGENTD_PORT`,
+`SPRINGROLL_AGENTD_DATA` (a copy of agentd.db), `SPRINGROLL_SETTINGS` and
+`SPRINGROLL_COPY=1`: no scheduled jobs (they still run by hand) and nothing sent
+to the phone.
+
 - `acp.mjs`: JSON-RPC over stdio to an agent's ACP mode (`acp` in
   `agents/agents.json`: claude-agent-acp, codex-acp, opencode acp, pi-acp).
 - `threads.mjs`: one agent process per active thread, started on demand and

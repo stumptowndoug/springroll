@@ -61,7 +61,7 @@ own puts a row in the chat with live output and Stop. Work that must outlive the
 request|get|list|set` · `gmail accounts|search|show|reply|send|archive|move` · `report` (a job's
 report) · `focus` (what the owner's looking at) · `add-view` · `preview <port>` · `dev` (run ~/projects: servers, commands, ports) · `browser
 start|list|stop` · `backup` / `restore` · `springroll-upstream` · `sprite`, `sprite-job` ·
-`desk theme`
+`change` (work on Springroll itself in a copy) · `shots` (screenshots) · `desk theme` (when the owner asks)
 
 ## Skills
 
@@ -69,7 +69,7 @@ Read the one that fits before you start:
 
 | Doing | Read |
 |---|---|
-| Building or changing an app (`views/`), anything visual | `skills/apps/SKILL.md`, `DESIGN.md` |
+| Building or changing an app (`views/`), anything visual, Springroll itself | `skills/apps/SKILL.md`, `DESIGN.md` |
 | Creating or changing a job, or running as one | `skills/jobs/SKILL.md`, `skills/report/SKILL.md` |
 | Putting things on the Timeline, connecting a source of to-dos | `skills/timeline/SKILL.md` |
 | Connecting a service, keys, coding-agent sign-ins | `skills/connections/SKILL.md` |
@@ -82,5 +82,7 @@ Read the one that fits before you start:
 ## Before you say it's done
 
 Check it: `curl` the app through Springroll, read its logs, and for anything visual look at
-screenshots (dark and light theme, phone width). When you change Springroll itself (not one of the
-owner's apps or jobs), add a line to `LOCAL.md`: what and why.
+`shots` (dark and light theme, phone width; never flip the owner's theme to check). Springroll itself
+(`views/desk`, the kit, Settings, agentd) changes in a copy, not on main: `change start <name>`, work
+and check there, `change merge <name>` (skills/apps/SKILL.md). The owner's screen shows what's
+committed on main, so it moves once, when the work is done. Then add a line to `LOCAL.md`: what and why.

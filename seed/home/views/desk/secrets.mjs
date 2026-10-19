@@ -14,7 +14,7 @@ const HOME = os.homedir();
 const CONF = path.join(HOME, '.config', 'springroll');
 const META = path.join(CONF, 'secrets.json');
 const SETTINGS = path.join(HOME, 'home', 'desk.json');
-const AGENTD = 'http://127.0.0.1:8090';
+const AGENTD = `http://127.0.0.1:${Number(process.env.SPRINGROLL_AGENTD_PORT) || 8090}`;
 export const NAME_RE = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
 // Sign-ins Springroll keeps in their own files: listed so the page covers everything, changed where

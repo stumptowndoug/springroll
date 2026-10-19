@@ -6,6 +6,6 @@
 # From a chat, a file opens beside that chat (when a desk is showing it) instead of in Files.
 set -euo pipefail
 [ $# -eq 1 ] || { echo "usage: show <view|file[:line]|#/route|url>" >&2; exit 1; }
-curl -fsS -X POST localhost:8000/api/show -H 'content-type: application/json' \
+curl -fsS -X POST localhost:${SPRINGROLL_PORT:-8000}/api/show -H 'content-type: application/json' \
   -d "$(jq -n --arg t "$1" --arg th "${SPRINGROLL_THREAD:-}" '{target: $t} + (if $th != "" then {thread: $th} else {} end)')"
 echo

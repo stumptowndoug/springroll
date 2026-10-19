@@ -6,7 +6,7 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { listConnections, connect as connectService, testConnection, disconnect, setMcp, startSignin, signinStatus, cancelSignin } from './connections.mjs';
 import * as files from './files.mjs';
 import { listPersonas } from '../../agentd/personas.mjs';
@@ -18,15 +18,18 @@ import * as needs from './needs.mjs';
 import { nextRun } from '../../agentd/cron.mjs';
 
 const HOME = os.homedir();
-const VIEWS = path.join(HOME, 'home', 'views');
+// The live Springroll runs from ~/home on 8000. A copy for work on Springroll itself (`change up`, a git
+// worktree) sets these: its own repo, port, settings file, and SPRINGROLL_COPY=1 (serve its files as they are).
+const REPO = process.env.SPRINGROLL_REPO || path.join(HOME, 'home');
+const VIEWS = path.join(REPO, 'views');
 const DESK_STATE = path.join(HOME, '.desk');
 const HERE = path.dirname(new URL(import.meta.url).pathname);
-const PORT = 8000;
+const PORT = Number(process.env.SPRINGROLL_PORT) || 8000;
 const TERM_PORT = 7681;
-const AGENTD_PORT = 8090;
+const AGENTD_PORT = Number(process.env.SPRINGROLL_AGENTD_PORT) || 8090;
 
-const SETTINGS = path.join(HOME, 'home', 'desk.json');
-const AGENTS = path.join(HOME, 'home', 'agents', 'agents.json');
+const SETTINGS = process.env.SPRINGROLL_SETTINGS || path.join(REPO, 'desk.json');
+const AGENTS = path.join(REPO, 'agents', 'agents.json');
 const ENV = `. ${HOME}/.config/springroll/env`;
 process.env.PATH = `${HOME}/.local/bin:${HOME}/.npm-global/bin:${HOME}/home/bin:${process.env.PATH}`;
 const THEMES = path.join(HERE, 'public', 'ui', 'themes.json');
@@ -415,6 +418,37 @@ function broadcast(event, data) {
 setInterval(() => broadcast('ping', {}), 25000);
 needs.init({ broadcast });
 
+// Springroll's page code (public/): index.html, app/, ui/. The owner's ui/custom.css always comes from the
+// folder: Settings and "make lists denser" change it, and those should show at once.
+const PUBLIC = path.join(HERE, 'public');
+const CUSTOM_CSS = path.join(PUBLIC, 'ui', 'custom.css');
+const LIVE = path.join(DESK_STATE, 'live');
+const live = { tree: null, dir: PUBLIC };
+function mtime(f) { try { const st = fs.statSync(f); return st.isFile() ? `${st.mtimeMs}:${st.size}` : ''; } catch { return ''; } }
+function git(args, opts = {}) { return execFileSync('git', ['-C', PUBLIC, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000, ...opts }); }
+function refreshLive() {
+  if (process.env.SPRINGROLL_COPY) return;
+  let tree;
+  try { tree = git(['rev-parse', 'HEAD:./']).trim(); } catch { live.tree = null; live.dir = PUBLIC; return; } // not committed yet: the folder
+  if (tree === live.tree) return;
+  const dir = path.join(LIVE, tree);
+  try {
+    if (!fs.existsSync(path.join(dir, 'index.html'))) {
+      const tmp = `${dir}.tmp`;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      fs.mkdirSync(tmp, { recursive: true });
+      // From the top of the repo: in a subfolder, git archive keeps only that subfolder's paths of the tree.
+      const top = git(['rev-parse', '--show-toplevel']).trim();
+      execFileSync('tar', ['-x', '-C', tmp], { input: git(['-C', top, 'archive', '--format=tar', tree], { encoding: 'buffer', maxBuffer: 256 << 20 }), timeout: 20000 });
+      fs.renameSync(tmp, dir);
+    }
+    const old = live.tree;
+    Object.assign(live, { tree, dir });
+    for (const d of fs.readdirSync(LIVE)) if (d !== tree && d !== old) fs.rmSync(path.join(LIVE, d), { recursive: true, force: true });
+  } catch (e) { console.error('live page code:', e.message); }
+}
+refreshLive();
+
 let viewsSnapshot = JSON.stringify(listViews());
 // Connections and keys change when an agent edits their files too: tell open pages.
 const connSig = () => [path.join(HOME, 'home', 'connections'), path.join(HOME, '.config', 'springroll')]
@@ -422,12 +456,15 @@ const connSig = () => [path.join(HOME, 'home', 'connections'), path.join(HOME, '
 let connSnapshot = connSig();
 // Springroll's own page code (index.html, app/, ui/): open tabs compare it and reload when it changed,
 // rather than keep running the old code (an update, or an agent's change to Springroll).
-const clientBuild = () => [path.join(HERE, 'public', 'index.html'), ...['app', 'ui'].flatMap((d) => {
-  try { return fs.readdirSync(path.join(HERE, 'public', d)).map((f) => path.join(HERE, 'public', d, f)); } catch { return []; }
-})].map((f) => { try { const st = fs.statSync(f); return st.isFile() ? `${st.mtimeMs}:${st.size}` : ''; } catch { return ''; } }).join('|');
+// The live one serves them as last committed (live.dir), so an edit reaches the owner's screen when it's
+// committed (a change merged), never half-way; a copy serves its files as they are.
+const clientBuild = () => (live.tree ? `${live.tree}|${mtime(CUSTOM_CSS)}` : [path.join(PUBLIC, 'index.html'), ...['app', 'ui'].flatMap((d) => {
+  try { return fs.readdirSync(path.join(PUBLIC, d)).map((f) => path.join(PUBLIC, d, f)); } catch { return []; }
+})].map(mtime).join('|'));
 const hash = (t) => { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
 let buildSnapshot = hash(clientBuild());
 setInterval(() => {
+  refreshLive();
   const b = hash(clientBuild());
   if (b !== buildSnapshot) { buildSnapshot = b; broadcast('build', { build: b }); }
   const now = JSON.stringify(listViews());
@@ -837,8 +874,9 @@ const server = http.createServer(async (req, res) => {
   }
 
   const rel = url.split('?')[0] === '/' ? 'index.html' : url.split('?')[0].slice(1);
-  const file = path.normalize(path.join(HERE, 'public', rel));
-  if (!file.startsWith(path.join(HERE, 'public'))) { res.writeHead(403); return res.end(); }
+  const base = rel === 'ui/custom.css' ? PUBLIC : live.dir;
+  const file = path.normalize(path.join(base, rel));
+  if (!file.startsWith(base + path.sep)) { res.writeHead(403); return res.end(); }
   serveFile(res, file);
 });
 
