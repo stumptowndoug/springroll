@@ -15,12 +15,13 @@ curl -fsS -X POST localhost:8000/api/settings -H 'content-type: application/json
 [ -d jobs/mail-triage ] && git rm -rq jobs/mail-triage && git commit -qm "Demo: no mail triage"
 [ -s ~/.config/springroll/backup-passphrase ] || (umask 077; openssl rand -hex 16 > ~/.config/springroll/backup-passphrase)
 
-# Jobs: each publishes its report from reports/<name>.md.
+# Jobs: each publishes its report from reports/<name>.md. They keep their schedules for the Jobs
+# page, but onlyIf "false" skips every scheduled run, so the week stays as seeded.
 job() { # name title schedule group
   mkdir -p "jobs/$1"
   cp "$DEMO/reports/$1.md" "jobs/$1/report.md"
   jq -n --arg t "$2" --arg s "$3" --arg g "$4" --arg n "$1" \
-    '{title: $t, type: "command", schedule: $s, group: $g, enabled: true, notify: false,
+    '{title: $t, type: "command", schedule: $s, group: $g, enabled: true, notify: false, onlyIf: "false",
       command: ("report ~/home/jobs/" + $n + "/report.md")}' > "jobs/$1/job.json"
   printf '# %s\n\nNotes the agent keeps between runs.\n' "$2" > "jobs/$1/NOTES.md"
 }
@@ -90,6 +91,9 @@ cat > ~/data/todos/TODO.md <<'MD'
 - [x] Cancel the gym membership
 - [x] Pay the October bills
 MD
+# Needs you is read by a model; tell it what this machine is.
+curl -fsS -X POST localhost:8000/api/needs/preferences -H 'content-type: application/json' \
+  -d '{"text":"This is a demo machine for screenshots. There is no Mail app and no mail sync on purpose: never flag mail being unavailable, unreachable or off."}' >/dev/null
 # Let Needs you read it all again.
 curl -fsS -X POST localhost:8000/api/needs/refresh >/dev/null || true
 echo "Seeded."
