@@ -34,8 +34,9 @@ on which Sprite.
 ## Backups
 
 `backup` writes one file to `~/backups/` with `~/home` (full git history), `~/data` (SQLite copied
-safely), and, encrypted with the owner's passphrase, secrets and sign-ins. A nightly job keeps the
-last 7. `install.sh --restore <file>` rebuilds a new machine from one. So: keep state in `~/home` or
+safely), and, encrypted with the owner's passphrase, secrets and sign-ins (every agents.json `auth`
+file, and `~/.ssh` without `authorized_keys`). Programs aren't in it: the manifest lists the coding agents installed (and with chat), and
+`restore` reinstalls them. A nightly job keeps the last 7. `install.sh --restore <file>` rebuilds a new machine from one. So: keep state in `~/home` or
 `~/data`, and give anything new a place there.
 
 Off-machine backups are opt-in: once the owner connects a bucket (GCS, S3, R2, B2, Azure), each

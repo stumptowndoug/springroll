@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { usageSettings, patchUsageSettings, visibleUsage } from '../public/app/usage-settings.mjs';
 
-const defaults = { claude: true, codex: true, antigravityGemini: true, antigravityThirdParty: false };
+const defaults = { claude: true, codex: true, antigravityGemini: true, antigravityThirdParty: false, cursor: true, cursorPools: false };
 const data = [
   { id: 'claude', windows: [{ key: 'five_hour' }] },
   { id: 'codex', windows: [{ key: '7d' }] },

@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { fetchAntigravityUsage, AntigravityUsageError } from './antigravity-usage.mjs';
+import { cursorToken, cursorRequest, parseCursorUsage, CursorUsageError } from './cursor-usage.mjs';
 
 const HOME = os.homedir();
 const TTL = 5 * 60000;
@@ -90,6 +91,12 @@ const PROVIDERS = {
     name: 'Antigravity',
     load: fetchAntigravityUsage,
   },
+  cursor: {
+    name: 'Cursor',
+    token: async () => cursorToken() || await envVar('CURSOR_API_KEY') || null,
+    request: cursorRequest,
+    parse: parseCursorUsage,
+  },
 };
 
 async function refresh(id) {
@@ -118,7 +125,7 @@ async function refresh(id) {
     save();
   } catch (e) {
     const fails = (c.fails || 0) + 1;
-    cache.set(id, { ...c, at: Date.now(), error: e instanceof AntigravityUsageError ? e.message : `Couldn't reach the usage service`, retryAt: Date.now() + Math.min(30000 * 2 ** (fails - 1), TTL), fails });
+    cache.set(id, { ...c, at: Date.now(), error: e instanceof AntigravityUsageError || e instanceof CursorUsageError ? e.message : `Couldn't reach the usage service`, retryAt: Date.now() + Math.min(30000 * 2 ** (fails - 1), TTL), fails });
     save();
   }
 }

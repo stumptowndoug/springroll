@@ -125,5 +125,13 @@
     "fields": [{ "key": "CLOUDFLARE_API_TOKEN", "label": "API token", "secret": true }],
     "help": "Create a token at https://dash.cloudflare.com/profile/api-tokens with only the permissions you want agents to have.",
     "test": "curl -fsS -H \"Authorization: Bearer $CLOUDFLARE_API_TOKEN\" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -r .result.status"
+  },
+  {
+    "id": "neon", "name": "Neon", "icon": "database", "category": "Infrastructure",
+    "description": "Serverless Postgres: projects, branches, and read-only SQL through Neon's MCP server.",
+    "fields": [{ "key": "NEON_API_KEY", "label": "API key", "secret": true, "placeholder": "napi_…" }],
+    "help": "Neon console → Organization settings → API keys (covers every project in the organization), or a project's Settings → API keys for just one project. The MCP server is read-only: SELECTs and schema inspection, no writes.",
+    "test": "curl -fsS -H \"Authorization: Bearer $NEON_API_KEY\" https://console.neon.tech/api/v2/users/me/organizations | jq -r '\"Connected · \" + ([.organizations[].name] | join(\", \"))'",
+    "mcp": { "type": "http", "url": "https://mcp.neon.tech/mcp?readonly=true", "headers": { "Authorization": "Bearer ${NEON_API_KEY}" }, "note": "Neon's hosted MCP server in read-only mode: run_sql for SELECTs, table schemas, branches and query stats. Write tools are removed." }
   }
 ]

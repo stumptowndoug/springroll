@@ -13,7 +13,8 @@ set -euo pipefail
 export LC_ALL=C   # comm needs sort and comm to agree on order
 SEED=$(cat ~/.config/springroll/seed 2>/dev/null || echo /opt/springroll-seed)
 cd ~/home
-git rev-parse -q --verify upstream >/dev/null || git branch upstream "$(git rev-list --max-parents=0 HEAD | tail -1)"
+# Missing (a restore carries only main): start from the last snapshot merged here, else the first commit.
+git rev-parse -q --verify upstream >/dev/null || git branch upstream "$(git log -1 --format=%H --grep='^Springroll upstream ' HEAD | grep . || git rev-list --max-parents=0 HEAD | tail -1)"
 
 if [ "${1:-}" != --status ]; then
   # 1. Fresh seed: pull it if it's a checkout.

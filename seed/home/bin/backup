@@ -23,7 +23,11 @@ SETTINGS="$HOME/home/desk.json"
 OUT_DIR="$HOME/backups"
 CACHE="$HOME/.cache/springroll-backup"
 STATUS="$HOME/data/backup/offsite.json"
-HOST=$(hostname -s)
+RESTIC_ARGS=()
+restic_run() { restic "${RESTIC_ARGS[@]}" "$@"; }
+# The name this machine's snapshots go under in the bucket (desk.json backup.host, else the hostname):
+# two machines sending to one bucket under one name would thin each other's snapshots.
+HOST=$(jq -r '.backup.host // empty' "$SETTINGS" 2>/dev/null); HOST=${HOST:-$(hostname -s)}
 mkdir -p "$CACHE" "$(dirname "$STATUS")"
 
 # Off-machine: the repository from desk.json, credentials from Keys (BACKUP_<restic variable>), the
@@ -34,6 +38,17 @@ offsite_env() {
   [ -n "$RESTIC_REPOSITORY" ] || { echo "Off-machine backups aren't set up (skills/backup/SKILL.md)" >&2; return 1; }
   [ -s "$PASS" ] || { echo "Off-machine backups need the backup passphrase (Settings → Backups)" >&2; return 1; }
   command -v restic >/dev/null || sudo apt-get install -y -qq restic >/dev/null 2>&1 || { echo "restic isn't installed" >&2; return 1; }
+  # Optional GCS tuning for machines whose shared HTTP/2 connection downloads slowly.
+  RESTIC_ARGS=()
+  if [[ "$RESTIC_REPOSITORY" == gs:* ]]; then
+    local connections
+    connections=$(jq -r '.backup.offsite.connections // 5' "$SETTINGS")
+    [[ "$connections" =~ ^[1-9][0-9]*$ ]] || { echo "backup.offsite.connections must be a positive integer" >&2; return 1; }
+    RESTIC_ARGS=(-o "gs.connections=$connections")
+    if jq -e '.backup.offsite.http2 == false' "$SETTINGS" >/dev/null; then
+      export GODEBUG="${GODEBUG:+$GODEBUG,}http2client=0"
+    fi
+  fi
   # A running session or the desk server may not have the keys in its environment: read them here.
   if [ -f "$CONF/secrets.env" ]; then set -a; . "$CONF/secrets.env"; set +a; fi
   local v
@@ -82,8 +97,8 @@ case "${1:-}" in
       init)
         repo=${3:?usage: backup offsite init <repository>}
         offsite_env "$repo"
-        if restic cat config >/dev/null 2>&1; then echo "Using the existing repository at $repo"
-        else restic init >/dev/null && echo "Created a repository at $repo"; fi
+        if restic_run cat config >/dev/null 2>&1; then echo "Using the existing repository at $repo"
+        else restic_run init >/dev/null && echo "Created a repository at $repo"; fi
         tmp=$(mktemp); jq --arg r "$repo" --arg at "$(date -Is)" '.backup.offsite = {repository: $r, since: $at}' "$SETTINGS" > "$tmp" && cat "$tmp" > "$SETTINGS" && rm -f "$tmp"
         signal --clear backup:offsite >/dev/null 2>&1 || true
         echo "Off-machine backups are on. Run \`backup\` for the first one; the nightly job does it from now on." ;;
@@ -98,16 +113,19 @@ case "${1:-}" in
       *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
     esac
     exit 0 ;;
-  snapshots) offsite_env; restic snapshots --host "$HOST" --compact; exit 0 ;;
+  snapshots) offsite_env; restic_run snapshots --host "$HOST" --compact; exit 0 ;;
   verify)
     TMP=$(mktemp -d)
     if [ "${2:-}" = --offsite ]; then
       offsite_env
-      echo "Checking the bucket (5% of its data)…"; restic check --read-data-subset=5% -q >/dev/null 2>"$TMP/check.err" || { cat "$TMP/check.err"; echo "✗ restic check failed"; exit 1; }
+      echo "Checking the bucket (5% of its data)…"
+      restic_run unlock -q 2>/dev/null || true  # a run killed mid-check leaves a stale lock
+      restic_run check --read-data-subset=5% || { echo "✗ restic check failed"; exit 1; }
       echo "✓ repository checks"
-      restic restore latest --host "$HOST" --target "$TMP/r" -q >/dev/null
+      echo "Restoring the latest snapshot for $HOST…"
+      restic_run restore latest --host "$HOST" --target "$TMP/r" --verify
       d=$(dirname "$(find "$TMP/r" -name home.bundle -print -quit)")
-      echo "Latest snapshot: $(restic snapshots latest --host "$HOST" --json | jq -r '.[0] | "\(.short_id) from \(.time[:16])"')"
+      echo "Latest snapshot: $(restic_run snapshots latest --host "$HOST" --json | jq -r '.[0] | "\(.short_id) from \(.time[:16])"')"
     else
       f=${2:-$(ls -1t "$OUT_DIR"/springroll-*.tar.gz 2>/dev/null | head -1)}
       [ -f "$f" ] || { echo "No backup to verify" >&2; exit 1; }
@@ -159,15 +177,26 @@ if [ -s "$PASS" ]; then
     --exclude='Cache' --exclude='Code Cache' --exclude='GPUCache' --exclude='GPUPersistentCache' --exclude='GrShaderCache' --exclude='ShaderCache' \
     --exclude='DawnGraphiteCache' --exclude='DawnWebGPUCache' --exclude='*_crx_cache' --exclude='Safe Browsing' --exclude='CertificateRevocation' \
     --exclude='Subresource Filter' --exclude='BrowserMetrics*' --exclude='optimization_guide*' --exclude='segmentation_platform' --exclude='CacheStorage' \
-    .config/springroll .claude.json .claude/.credentials.json .codex/auth.json .local/share/opencode/auth.json .pi/agent/auth.json .config/gh/hosts.yml .gitconfig 2>/dev/null |
+    --exclude='.ssh/authorized_keys*' \
+    .config/springroll .ssh .claude.json .claude/.credentials.json .codex/auth.json .local/share/opencode/auth.json .pi/agent/auth.json .config/gh/hosts.yml .gitconfig \
+    .gemini/antigravity-acp/settings.json $(jq -r '.[] | (.auth // [])[], (.chatSignin.auth // [])[] | sub("^~/"; "")' "$HOME/home/agents/agents.json" 2>/dev/null | sort -u) 2>/dev/null |
     tar -C "$S/secrets" -xf -
   tar -C "$S/secrets" -czf - . | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$PASS" -out "$S/secrets.tar.gz.enc"
   SECRETS="included, encrypted"
 fi
 
+# 4. Which coding agents are installed, and which with chat: the programs live outside ~/home and ~/data,
+#    so restore reinstalls these (their sign-ins are in the secrets above).
+[ -f "$CONF/env" ] && . "$CONF/env"
+AGENTS=$(jq -r '.[] | [.id, .bin, (if .acpInstall then .acp[0] else "" end)] | @tsv' "$HOME/home/agents/agents.json" 2>/dev/null |
+  while IFS=$'\t' read -r id bin acp; do
+    command -v "$bin" >/dev/null || continue
+    jq -n --arg id "$id" --argjson chat "$([ -z "$acp" ] || command -v "$acp" >/dev/null && echo true || echo false)" '{id: $id, chat: $chat}'
+  done | jq -sc .)
+
 cat > "$S/manifest.json" <<JSON
 { "host": "$HOST", "created": "$(date -Is)", "views": $(ls "$HOME/home/views" | jq -R . | jq -s .),
-  "secrets": "$SECRETS", "format": 2 }
+  "agents": ${AGENTS:-[]}, "secrets": "$SECRETS", "format": 2 }
 JSON
 tar -C "$STAGE" --exclude='springroll/secrets' --transform "s,^springroll,$NAME," -czf "$OUT_DIR/$NAME.tar.gz" springroll
 chmod 600 "$OUT_DIR/$NAME.tar.gz"
@@ -180,7 +209,7 @@ shopt -u nullglob
 if [ "$KEEP" -gt 0 ] && [ ${#kept[@]} -gt "$KEEP" ]; then ls -1t "${kept[@]}" | tail -n +$((KEEP + 1)) | xargs -r rm -f; fi
 echo "Backed up to ~/backups/$NAME.tar.gz ($(du -h "$OUT_DIR/$NAME.tar.gz" | cut -f1)); secrets $SECRETS"
 
-# 4. Off-machine: the staged backup (secrets as files, not the locally encrypted copy) to the bucket,
+# 5. Off-machine: the staged backup (secrets as files, not the locally encrypted copy) to the bucket,
 #    then the retention policy. Old data is pruned once a week.
 if [ -z "$(offsite_repo)" ]; then
   # Recommend it once on the Timeline; marked Done, it stays done.
@@ -191,13 +220,13 @@ if [ -z "$(offsite_repo)" ]; then
 fi
 offsite_env 2>"$CACHE/env.err" || { save_status error "$(cat "$CACHE/env.err")"; cat "$CACHE/env.err" >&2; exit 1; }
 [ -d "$S/secrets" ] || { save_status error "No backup passphrase"; echo "Off-machine backup skipped: no passphrase" >&2; exit 1; }
-restic unlock -q 2>/dev/null || true
-if out=$(restic backup --host "$HOST" --tag springroll --exclude "$S/secrets.tar.gz.enc" --json -q "$S" 2>&1); then
+restic_run unlock -q 2>/dev/null || true
+if out=$(restic_run backup --host "$HOST" --tag springroll --exclude "$S/secrets.tar.gz.enc" --json -q "$S" 2>&1); then
   sum=$(printf '%s\n' "$out" | grep '"message_type":"summary"' | tail -1)
-  snap=$(printf %s "$sum" | jq -c '{snapshot: .snapshot_id[:8], added: .data_added_packed, total: .total_bytes_processed}')
+  snap=$(printf %s "$sum" | jq -c '{snapshot: .snapshot_id[:8], added: (.data_added_packed // .data_added), total: .total_bytes_processed}')
   forget=(--host "$HOST" --keep-last 3 --keep-daily 7 --keep-weekly 5 --keep-monthly 12 -q)
   [ "$(date +%u)" = 7 ] && forget+=(--prune)
-  if ferr=$(restic forget "${forget[@]}" 2>&1); then
+  if ferr=$(restic_run forget "${forget[@]}" 2>&1); then
     save_status ok "Snapshot $(jq -r .snapshot <<<"$snap"), $(numfmt --to=iec "$(jq -r .added <<<"$snap")") new" "$snap"
     echo "Off-machine: snapshot $(jq -r .snapshot <<<"$snap") in $(offsite_repo) ($(numfmt --to=iec "$(jq -r .added <<<"$snap")") uploaded)"
   else
