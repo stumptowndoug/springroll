@@ -74,7 +74,7 @@ function route() {
     else if (r.anchor) { if (f.dataset.loaded) { try { f.contentWindow.location.hash = r.anchor; } catch {} } else f.src = `${v.url}#${r.anchor}`; }
     current = { page: 'view', view: v.name, params: r };
     document.title = `${v.title} · Springroll`;
-    $('mobileTitle').textContent = v.title;
+    setMobileTitle(v.title);
   } else {
     const el = pageEl(r.page, r.page === 'thread' || r.page === 'terminal');
     el.classList.add('shown');
@@ -82,7 +82,7 @@ function route() {
     PAGES[r.page].show?.(el, r, ctx);
     const title = PAGES[r.page].title?.(r) || 'Springroll';
     document.title = title === 'Springroll' ? 'Springroll' : `${title} · Springroll`;
-    $('mobileTitle').textContent = title;
+    setMobileTitle(title);
   }
   shell.classList.remove('side-open');
   // The Ask panel follows the View: another View gets its own chat; a non-View page closes it.
@@ -176,7 +176,9 @@ const BUILTIN_VIEWS = [
 function renderNav() {
   const running = state.jobs.filter((j) => j.running).length;
   ui.morph($('nav'), NAV.map((n) => {
-    const on = n.view ? current?.page === 'view' && current.view === n.view : current?.page === n.id || (n.id === 'apps' && inApp());
+    // Phones: Chat opens every chat (the top bar has New chat), so a long list is one tap away.
+    if (n.id === 'thread' && mobile()) n = { ...n, label: 'Chats', icon: 'messages-square', hash: '#/chats', on: ['chats', 'thread'].includes(current?.page) };
+    const on = n.on ?? (n.view ? current?.page === 'view' && current.view === n.view : current?.page === n.id || (n.id === 'apps' && inApp()));
     const extra = n.id === 'jobs' && running ? `<span class="glyph"><span class="spin"></span></span>`
       : n.id === 'timeline' && Timeline.needsCount() ? `<span class="glyph"><span class="ui-dot warn" title="Needs you"></span></span>`
       : n.id === 'apps' && allApps().some((v) => v.setupPending) ? `<span class="glyph"><span class="ui-dot warn" title="An app needs setup"></span></span>`
@@ -215,6 +217,19 @@ function renderChats() {
   ui.morph($('chatList'), (rows || '<div class="side-empty">No chats yet.</div>')
     + `<a class="nav-item app-all${current?.page === 'chats' ? ' on' : ''}" href="#/chats">${ui.icon('messages-square')}<span class="t">All chats</span>${more ? `<span class="count">${more}</span>` : ''}</a>`);
 }
+
+// The phone's top bar: the page's title. In a chat it's the chat's title and opens its menu (Rename, Pin…),
+// which on a computer sit in the chat's own header.
+function setMobileTitle(title) {
+  const b = $('mobileTitle'), chat = current?.page === 'thread' && current.params.id;
+  b.disabled = !chat;
+  b.title = chat ? 'Rename, pin, archive' : '';
+  b.innerHTML = `<span class="t">${ui.esc(title)}</span>${chat ? ui.icon('chevron-down', 'sm') : ''}`;
+}
+$('mobileTitle').onclick = () => {
+  const t = current?.page === 'thread' && state.threads.find((x) => x.id === current.params.id);
+  if (t) threadMenu($('mobileTitle'), t);
+};
 
 export function threadMenu(anchor, t, { onDeleted } = {}) {
   const m = document.createElement('div');
@@ -257,6 +272,7 @@ $('chatList').addEventListener('click', (e) => {
 $('newChatSide').onclick = () => go('#/new');
 $('mobileNew').onclick = () => go('#/new');
 $('brand').onclick = () => go('#/');
+matchMedia('(max-width: 860px)').addEventListener('change', () => renderNav());
 $('collapse').onclick = $('expandSide').onclick = () => toggleSide();
 $('menuBtn').onclick = () => shell.classList.add('side-open');
 $('scrimSide').onclick = () => shell.classList.remove('side-open');
@@ -311,11 +327,12 @@ async function refreshUsage() {
 function renderUsage() {
   const rows = usageRows(), el = $('usage');
   el.hidden = !rows.length;
+  // Rows run worst first, so an agent's first row is its worst window: phones show only that one.
   ui.morph(el, `<header><span>Utilization</span></header>` + rows.map((r, i) => `
-    <button class="usage-row" data-usage="${i}" aria-label="${ui.esc(r.a.name)}${r.w ? ` ${r.w.label}: ${r.w.used}% used` : ''}">
+    <button class="usage-row${rows.findIndex((x) => x.a.id === r.a.id) < i ? ' again' : ''}" data-usage="${i}" aria-label="${ui.esc(r.a.name)}${r.w ? ` ${r.w.label}: ${r.w.used}% used` : ''}">
       ${ui.agentMark(r.a.id, r.a.name)}
       <span class="usage-bar ${r.tone || 'none'}"><span class="fill" style="width:${r.w ? Math.min(100, r.w.used) : 0}%"></span>${r.p ? `<span class="tick" style="left:${r.p.elapsed}%"></span>` : ''}</span>
-      <span class="usage-pct">${r.w ? `${r.w.used}%` : '–'}</span></button>`).join(''));
+      <span class="usage-pct ${r.tone || ''}">${r.w ? `${r.w.used}%` : '–'}</span></button>`).join(''));
   el._rows = rows;
 }
 
@@ -338,7 +355,7 @@ function usageDetail(r) {
     + (r.a.error ? `<p class="usage-tip-err">${ui.esc(r.a.error + '.' + next)} Showing the last numbers.</p>` : '');
 }
 
-// Hover: a small card to the right of the row (Shep's tooltip). Click: every window, as a popover.
+// Hover: a small card to the right of the row (Shep's tooltip). Click: that agent's windows, as a popover.
 const usageTip = document.createElement('div');
 usageTip.className = 'usage-tip';
 usageTip.hidden = true;
@@ -359,9 +376,10 @@ $('usage').addEventListener('click', (e) => {
   const b = e.target.closest('[data-usage]');
   if (!b) return;
   usageTip.hidden = true;
+  const rows = $('usage')._rows || [], agent = rows[b.dataset.usage]?.a.id;
   const m = document.createElement('div');
   m.className = 'ui-popover usage-pop';
-  m.innerHTML = `<div class="ui-label">Utilization</div>` + ($('usage')._rows || []).map((r) => `<div class="usage-pop-item">${usageDetail(r)}</div>`).join('');
+  m.innerHTML = rows.filter((r) => r.a.id === agent).map((r) => `<div class="usage-pop-item">${usageDetail(r)}</div>`).join('');
   m.addEventListener('click', async (ev) => {
     const l = ev.target.closest('[data-usage-login]');
     if (!l) return;
@@ -609,7 +627,10 @@ addEventListener('keydown', onKey, true);
 const ctx = { go, togglePanel, askAbout, threadMenu, threadGlyph, viewContext, refreshChips, openLauncher };
 
 /* ---------- Live updates ---------- */
-on('threads', () => { renderChats(); renderNav(); });
+on('threads', () => {
+  renderChats(); renderNav();
+  if (current?.page === 'thread') { const title = Thread.title(current.params); if ($('mobileTitle').textContent !== title) { setMobileTitle(title); document.title = `${title} · Springroll`; } }
+});
 on('jobs', () => renderNav());
 on('desk:needs', () => Timeline.loadRead().then(renderNav));
 Timeline.loadRead().then(renderNav);

@@ -64,6 +64,8 @@ const KIND = {
 const LIVE = new Set(['pending', 'in_progress']);
 // A call whose command went on in the background is done; the work goes on as a background task.
 const isLive = (i) => LIVE.has(i.status) && !i.backgrounded;
+// A phone or tablet without a mouse: no Shift+Enter there, so Return can't be Send.
+const touchScreen = () => matchMedia('(pointer: coarse)').matches;
 // A background task's state, as its agent's adapter reported it.
 const TASK_STATE = {
   running: { dot: 'run', label: 'Running in the background', short: '' },
@@ -280,6 +282,8 @@ class ThreadView {
     this.$composer = el.querySelector('.composer');
     this.$bg = el.querySelector('.bg-work');
     this.bg = [];
+    this.bgRows = new Set();
+    this.bgObserver = new IntersectionObserver(() => this.renderBackground(), { root: this.$scroll, threshold: [0, .5, 1] });
     this.$bg.addEventListener('toggle', (e) => { if (e.target.matches?.('details.bg')) this.bgOpen = e.target.open; }, true);
     this.$bg.addEventListener('click', (e) => this.onBgClick(e));
     this.buildComposer();
@@ -304,7 +308,7 @@ class ThreadView {
     this.ticker = setInterval(() => this.tick(), 1000);
   }
 
-  destroy() { this.off.forEach((f) => f()); this.follow.destroy(); cancelAnimationFrame(this.raf); clearTimeout(this.readTimer); clearInterval(this.ticker); this.sgPanel?.panel.stop(); this.el.innerHTML = ''; }
+  destroy() { this.off.forEach((f) => f()); this.follow.destroy(); this.bgObserver.disconnect(); cancelAnimationFrame(this.raf); clearTimeout(this.readTimer); clearInterval(this.ticker); this.sgPanel?.panel.stop(); this.el.innerHTML = ''; }
   showing() { return this.el.getClientRects().length > 0; }
   working() { const t = this.thread; return !!t && !t.stopping && (t.running || ['running', 'starting', 'waiting'].includes(t.status)); }
   stop() { if (this.id) api.post(`api/agent/threads/${this.id}/cancel`).catch(() => {}); }
@@ -312,7 +316,7 @@ class ThreadView {
 
   async open(id, q = {}) {
     // The bar belongs to one chat. A new chat, or a different one, must not keep the last bar.
-    if (id !== this.id) { this.bg = []; this.bgAt = 0; this.renderBackground(); this.side = null; this.renderSide(); }
+    if (id !== this.id) { this.bg = []; this.bgAt = 0; this.bgObserver.disconnect(); this.bgRows.clear(); ui.morph(this.$bg, ''); this.side = null; this.renderSide(); }
     this.id = id; this.follow.follow();
     this.turnLimit = TURN_PAGE; this.recall = null; this.nudge = null;
     const reset = () => { this.$earlier.innerHTML = ''; this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.$report.hidden = true; this.$report.innerHTML = ''; this.reportDup = null; };
@@ -421,14 +425,19 @@ class ThreadView {
     // No "Working" pill: the timeline already shows the agent at work.
     const status = t.status === 'waiting' ? '<span class="ui-pill attention"><span class="ui-dot warn"></span>Needs you</span>'
       : t.status === 'error' ? (errorLevel(t.error) === 'warn' ? '<span class="ui-status"><span class="ui-dot warn"></span>Limit reached</span>' : '<span class="ui-status"><span class="ui-dot danger"></span>Error</span>') : '';
+    // On a phone the title and ⋯ live in the top bar and the agent in the composer: this header shows
+    // only what's left (a job, a status, a folder other than ~/home), or nothing.
+    const cwd = home(t.cwd);
+    this.$head.classList.toggle('th-extra', !!(job || status || cwd !== '~/home'));
+    this.$head.classList.toggle('th-cwd', cwd !== '~/home');
     ui.morph(this.$head, `
       <div class="th-main">
         <h1 class="th-title" title="Click to rename">${ui.esc(t.title || 'New chat')}</h1>
         <div class="th-meta">
           ${job ? `<a class="ui-context" href="#/jobs/${job}"><span class="dot ui-dot"></span><span class="kind">Job</span><b>${ui.esc(job)}</b></a>` : ''}
           ${job ? `<a class="ui-btn quiet sm" href="#/r/${t.id}">${ui.icon('file-text', 'sm')}Report</a>` : ''}
-          ${ui.agentMark(t.agent, agentName(t.agent), 'sm')}<span>${ui.esc(agentName(t.agent))}</span>
-          <span class="sep">·</span><span class="ui-mono">${ui.esc(home(t.cwd))}</span>
+          <span class="th-who">${ui.agentMark(t.agent, agentName(t.agent), 'sm')}<span>${ui.esc(agentName(t.agent))}</span></span>
+          <span class="sep th-who">·</span><span class="ui-mono th-cwd">${ui.esc(cwd)}</span>
           ${status ? `<span class="sep"></span>${status}` : ''}
         </div>
       </div>
@@ -502,6 +511,8 @@ class ThreadView {
     this.renderComposerFoot();
     this.renderSide();
     if (first) this.follow.follow(); else this.follow.pin();
+    this.watchBackgroundRows();
+    this.renderBackground();
   }
 
   showEarlier() {
@@ -565,7 +576,7 @@ class ThreadView {
     const facts = [tools.length ? `${tools.length} step${tools.length === 1 ? '' : 's'}` : null, edits ? `${edits} edit${edits === 1 ? '' : 's'}` : null, failed ? `${failed} failed` : null].filter(Boolean).join(' · ');
     const key = `t${k}:work:${work[0].id}`;
     const last = work[work.length - 1], kind = KIND[last.toolKind] || KIND.other;
-    const status = last.kind === 'tool' ? `${LIVE.has(last.status) ? kind.live : kind.done} ${toolTarget(last).text || ''}` : last.kind === 'thought' ? 'Thinking' : last.kind === 'plan' ? 'Planning' : 'Working';
+    const status = last.kind === 'tool' ? `${isLive(last) ? kind.live : kind.done} ${toolTarget(last).text || ''}` : last.kind === 'thought' ? 'Thinking' : last.kind === 'plan' ? 'Planning' : 'Working';
     const icon = last.kind === 'tool' ? kind.icon : last.kind === 'thought' ? 'brain' : last.kind === 'plan' ? 'list-todo' : 'message-square';
     const label = live ? (this.thread?.stopping ? 'Stopping' : this.thread?.status === 'waiting' ? 'Waiting for you' : 'Working')
       : end ? `Worked for ${ui.duration(end.durationMs || 0)}` : work.every((i) => i.kind === 'thought') ? 'Thought' : 'Worked';
@@ -1057,32 +1068,72 @@ class ThreadView {
       const r = await api.get(`api/agent/threads/${id}/background`);
       if (id !== this.id) return;
       this.bg = r.items || [];
-    } catch { this.bg = []; }
+    } catch { if (id !== this.id) return; this.bg = []; }
+    this.renderBackground();
+  }
+
+  // The transcript owns task and agent rows. The dock only links back to work outside the
+  // viewport; timers have no transcript row, so they keep their own list here.
+  watchBackgroundRows() {
+    const rows = new Set(this.$timeline.querySelectorAll('[data-side].running, [data-side].waiting'));
+    for (const row of this.bgRows) if (!rows.has(row)) this.bgObserver.unobserve(row);
+    for (const row of rows) if (!this.bgRows.has(row)) this.bgObserver.observe(row);
+    this.bgRows = rows;
+  }
+
+  backgroundRow(kind, id) {
+    return this.$timeline.querySelector(`[data-side="${kind}"][data-side-id="${CSS.escape(id)}"]`);
+  }
+
+  hiddenBackground() {
+    if (!this.id || this.thread?.id !== this.id) return [];
+    const view = this.$scroll.getBoundingClientRect();
+    return this.items.filter((i) => {
+      if (!['task', 'agent'].includes(i.kind) || i.state !== 'running') return false;
+      const id = i.kind === 'task' ? i.taskId : i.sessionId;
+      if (this.side?.kind === i.kind && this.side.id === id) return false;
+      const row = this.backgroundRow(i.kind, id), box = row?.getBoundingClientRect();
+      return !box?.height || Math.min(box.bottom, view.bottom) - Math.max(box.top, view.top) < box.height / 2;
+    });
+  }
+
+  jumpToBackground() {
+    const item = this.hiddenBackground()[0];
+    if (!item) return;
+    const id = item.kind === 'task' ? item.taskId : item.sessionId;
+    // A worker's command lives in its side pane, rather than the main conversation.
+    if (item.worker) return this.openSide(item.kind, id);
+    this.follow.pause();
+    const turns = [...new Set(this.items.map((i) => i.turn))].sort((a, b) => a - b);
+    this.turnLimit = Math.max(this.turnLimit, turns.length - turns.indexOf(item.turn));
+    const key = `t${item.turn}:agents`;
+    if (item.kind === 'agent') { this.open_.add(key); this.shut_.delete(key); }
+    this.turnCache.delete(item.turn); // The reader may have folded the group since its last render.
+    this.render();
+    const row = this.backgroundRow(item.kind, id);
+    if (!row) return this.openSide(item.kind, id);
+    row.scrollIntoView({ block: 'center', behavior: 'instant' });
+    row.focus({ preventScroll: true });
     this.renderBackground();
   }
 
   renderBackground() {
-    const items = this.bg;
-    if (!items.length) { ui.morph(this.$bg, ''); return; }
-    const KINDS = { task: ['terminal', 'Command'], timer: ['alarm-clock', 'Timer'], agent: ['bot', 'Subagent'] };
-    const counts = Object.entries(items.reduce((n, i) => ({ ...n, [i.kind]: (n[i.kind] || 0) + 1 }), {}))
-      .map(([k, n]) => `${n} ${({ task: 'command', timer: 'timer', agent: 'subagent' })[k] || k}${n === 1 ? '' : 's'}`).join(' · ');
-    ui.morph(this.$bg, `<details class="bg"${this.bgOpen ? ' open' : ''}>
-      <summary><span class="ui-dot run"></span><span class="ui-shimmer">Working in the background</span><span class="bg-counts">${ui.esc(counts)}</span>${ui.icon('chevron-up', 'sm')}</summary>
-      <div class="bg-list">${items.map((i) => {
-        const [icon, what] = KINDS[i.kind] || KINDS.task;
-        const meta = i.kind === 'timer' ? `<span class="ui-mono">${ui.esc(i.once ? 'once' : i.schedule)}</span>` : `<span class="ui-mono" data-since="${i.since}">${ui.duration(Date.now() - i.since)}</span>`;
-        const opens = i.kind === 'task' || i.kind === 'agent';
-        return `<div class="bg-row${opens ? ' opens' : ''}" title="${ui.esc(i.detail || i.label)}"${opens ? ` data-side="${i.kind}" data-side-id="${ui.esc(i.id)}" role="button" tabindex="0"` : ''}>${ui.icon(icon, 'sm')}<span class="bg-what">${what}</span><span class="bg-label">${ui.esc(i.label)}</span>${meta}
-          ${i.stoppable ? `<button type="button" class="ui-btn quiet sm" data-bg-stop="${ui.esc(i.id)}">Stop</button>` : '<span></span>'}</div>`;
-      }).join('')}</div></details>`);
+    const hidden = this.hiddenBackground();
+    const counts = ['task', 'agent'].map((kind) => {
+      const n = hidden.filter((i) => i.kind === kind).length;
+      return n ? `${n} running ${kind === 'task' ? 'command' : 'agent'}${n === 1 ? '' : 's'}` : '';
+    }).filter(Boolean).join(' · ');
+    const jump = hidden.length ? `<button type="button" class="ui-btn quiet sm bg-jump" data-bg-jump title="Go to running work elsewhere in this chat">${ui.icon('arrow-right', 'sm')}<span>Jump to ${counts}</span></button>` : '';
+    const timers = this.bg.filter((i) => i.kind === 'timer');
+    ui.morph(this.$bg, jump + (timers.length ? `<details class="bg"${this.bgOpen ? ' open' : ''}>
+      <summary>${ui.icon('alarm-clock', 'sm')}<span>${timers.length} timer${timers.length === 1 ? '' : 's'}</span>${ui.icon('chevron-up', 'sm')}</summary>
+      <div class="bg-list">${timers.map((i) => {
+        return `<div class="bg-row" title="${ui.esc(i.detail || i.label)}"><span class="bg-label">${ui.esc(i.label)}</span><span class="ui-mono">${ui.esc(i.once ? 'once' : i.schedule)}</span></div>`;
+      }).join('')}</div></details>` : ''));
   }
 
   onBgClick(e) {
-    const b = e.target.closest('[data-bg-stop]');
-    if (b) return this.stopTask(b.dataset.bgStop, b);
-    const row = e.target.closest('[data-side]');
-    if (row) this.openSide(row.dataset.side, row.dataset.sideId);
+    if (e.target.closest('[data-bg-jump]')) this.jumpToBackground();
   }
 
   /* ----- Dock: approvals, queued messages ----- */
@@ -1232,7 +1283,7 @@ class ThreadView {
   buildComposer() {
     this.$composer.innerHTML = `
       <div class="c-head"></div>
-      <textarea rows="1" placeholder="Ask anything, or describe something to build"></textarea>
+      <textarea rows="1" placeholder="${matchMedia('(max-width: 860px)').matches ? 'Ask anything' : 'Ask anything, or describe something to build'}" enterkeyhint="enter"></textarea>
       <div class="c-foot"></div>
       <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>`;
     this.$file = this.$composer.querySelector('input[type=file]');
@@ -1263,7 +1314,8 @@ class ThreadView {
         this.menuEl.dispatchEvent(new KeyboardEvent('keydown', { key: e.key === 'Tab' ? 'Enter' : e.key }));
         return;
       }
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.menuOpen()) { e.preventDefault(); this.send(); }
+      // On a touch screen Return is a new line and the send button sends, as in other chat apps.
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.menuOpen() && !touchScreen()) { e.preventDefault(); this.send(); }
       if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.isComposing && !this.menuOpen() && !ui.popoverOpen()
         && (!this.$input.value || this.$input.value === this.recall?.text) && this.recallStep(e.key === 'ArrowUp' ? 1 : -1)) e.preventDefault();
       // (Escape while it works is Stop: main.js's key handler sees it first.)
@@ -1326,14 +1378,19 @@ class ThreadView {
       <div class="ui-spacer"></div>
       ${usage != null ? `<span class="usage ui-mono" title="Context used">${usage}%</span>` : ''}
       ${running ? `<button class="ui-round stop filled c-stop" data-a="stop" title="Stop (Esc)">${ui.icon('square', 'sm')}</button>` : ''}
-      ${running ? '' : `<button class="ui-round primary c-send" data-a="send" title="Send (Enter)">${ui.icon('arrow-up')}</button>`}`);
+      ${`<button class="ui-round primary c-send" data-a="send" title="${running ? 'Send after this turn (Enter)' : 'Send (Enter)'}">${ui.icon('arrow-up')}</button>`}`);
     this.updateSend();
   }
 
   updateSend() {
+    // While the agent works, Send (it queues) shows beside Stop once there's something to send:
+    // a touch screen has no other way, Return being a new line there.
     const b = this.$foot.querySelector('.c-send');
-    if (b) b.disabled = !this.$input.value.trim() && !this.attached.length;
+    if (!b) return;
+    const empty = !this.$input.value.trim() && !this.attached.length;
+    if (this.$foot.querySelector('.c-stop')) { b.hidden = empty; b.disabled = false; } else { b.hidden = false; b.disabled = empty; }
   }
+
 
   // ----- Changing a setting (from the composer's two menus) -----
   // In a chat, model and effort change its session; in a new chat they're sent when it starts.

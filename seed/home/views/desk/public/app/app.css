@@ -130,8 +130,14 @@ button { background: none; border: 0; padding: 0; }
   .side { background: color-mix(in srgb, var(--fg) 3%, var(--bg)); }
   .shell.side-open .scrim-side { display: block; }
   .hide-mobile, .expand-side { display: none !important; }
-  .mobile-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; padding-top: max(6px, env(safe-area-inset-top)); flex: none; }
-  .mobile-title { flex: 1; text-align: center; font-weight: 650; font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The top bar is the phone's handle on everything: thumb-sized targets (46px), 22px icons. */
+  .mobile-bar { display: flex; align-items: center; gap: 4px; padding: 6px; padding-top: max(6px, env(safe-area-inset-top)); flex: none; }
+  .mobile-bar > .ui-icon-btn { width: 46px; height: 46px; --icon: 22px; border-radius: var(--radius); }
+  .mobile-title { flex: 1; min-width: 0; border: 0; background: none; display: flex; align-items: center; justify-content: center; gap: 4px; height: 46px; padding: 0 8px; border-radius: var(--radius); color: var(--fg); font-weight: 650; font-size: var(--text-base); }
+  .mobile-title > .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-title > .ui-icon { flex: none; color: var(--faint); }
+  .mobile-title:disabled { cursor: default; opacity: 1; }
+  .mobile-title:not(:disabled):active { background: var(--state-hover); }
   .panel { position: fixed; inset: 0; z-index: 15; border: 0; }
   .shell:not(.panel-open) .panel { display: none; }
   /* Phones: the Chat button lives in the top bar, so it never covers the page. */
@@ -139,4 +145,13 @@ button { background: none; border: 0; padding: 0; }
   :root { --fab-room: var(--gutter); }
   .shell:not(.panel-open) .page.fab-band > iframe { height: 100%; }
   .mobile-chat:not([hidden]) { display: inline-flex; }
+  /* Utilization in the drawer is one line of marks and numbers (tap for the detail), so chats keep the room. */
+  .usage { flex-direction: row; flex-wrap: wrap; gap: 2px; padding: 4px 6px; }
+  .usage > header, .usage-bar { display: none; }
+  .usage-row { width: auto; gap: 5px; padding: 2px 6px; }
+  .usage-pct { width: auto; }
+  .usage-pct.warn { color: var(--warn); } .usage-pct.danger { color: var(--danger); }
+  .usage-row.again { display: none; }
+  /* No hover on a phone: New chat beside the Chats heading always shows. */
+  .side-sec .add { opacity: 1; }
 }

@@ -6,6 +6,8 @@ window.desk = { settings: { defaultAgent: 'claude' } };
 state.agents = [{ id: 'claude', name: 'Claude Code', installed: true, acpInstalled: true, signedIn: true }];
 let seq = 0;
 const chats = new Map();
+const backgrounds = new Map();
+const posts = [];
 const emit = (type, detail) => bus.dispatchEvent(new CustomEvent('agent:' + type, { detail }));
 function model(id) {
   if (!chats.has(id)) chats.set(id, {
@@ -15,10 +17,13 @@ function model(id) {
   return chats.get(id);
 }
 api.get = async (url) => {
+  const bg = url.match(/threads\/([^/]+)\/background$/)?.[1];
+  if (bg) return { items: backgrounds.get(bg) || [] };
+  if (url.endsWith('/output')) return { text: 'Checked deployment: still building.\n', missing: false };
   const id = url.match(/threads\/([^/]+)$/)?.[1];
   return id ? structuredClone(model(id)) : { models: [], effort: null };
 };
-api.post = async () => ({});
+api.post = async (url, body) => { posts.push({ url, body }); return { ok: true }; };
 api.patch = async () => ({});
 const ctx = { go() {}, threadMenu() {}, viewContext() {} };
 const item = (data, id = 'main') => {
@@ -34,7 +39,8 @@ function status(patch, id = 'main') {
   emit('thread', { thread: structuredClone(model(id).thread) });
 }
 window.chatTest = {
-  item, status,
+  item, status, posts,
+  background(items, id = 'main') { backgrounds.set(id, items); },
   finish() { item({ kind: 'turn', stopReason: 'end_turn', durationMs: 4200 }); status({ running: false, status: 'idle' }); },
   async theme(name) {
     const themes = await fetch('/ui/themes.json').then((r) => r.json());

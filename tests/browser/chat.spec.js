@@ -133,7 +133,9 @@ test('scrolling down to the end and sending each resume following', async ({ pag
   await atEnd(page);
   await wheelUp(page);
   await page.locator('#chat textarea').fill('Summarize that.');
-  await page.locator('#chat textarea').press('Enter');
+  // A touch screen sends with the button (Return is a new line there).
+  if (test.info().project.name === 'phone') await page.locator('#chat .c-send').click();
+  else await page.locator('#chat textarea').press('Enter');
   await atEnd(page);
 });
 
