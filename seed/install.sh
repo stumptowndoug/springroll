@@ -205,8 +205,8 @@ elif [ "$TAILSCALE" = 1 ]; then
 else
   say "Springroll is on 127.0.0.1:8000. From your computer: ssh -N -L 8000:127.0.0.1:8000 $U@<this-host>, then open http://localhost:8000"
 fi
-[ -f $H/.config/springroll/claude-token ] || say "No Claude token: open Springroll and sign in from Settings → Coding agents (or /login in the terminal)."
-say "More Views: Springroll → Settings → Views, or: sudo -u $U add-view --list"
+[ -f $H/.config/springroll/claude-token ] || say "No Claude token: open Springroll and sign in from Connections → Coding agents (or /login in the terminal)."
+say "More apps: Springroll → Apps → Ready to add, or: sudo -u $U add-view --list"
 say "Phone notifications: subscribe to ntfy topic $(cat $H/.config/springroll/ntfy-topic)"
 [ "$WARNINGS" -gt 0 ] && say "($WARNINGS warning(s) above.)"
 exit 0
