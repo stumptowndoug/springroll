@@ -5,6 +5,33 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-19 · Files open beside the chat; open tabs pick up new code
+
+- **`show <file>` from a chat opens it beside that chat** (`bin/show`, `views/desk/server.mjs`,
+  `public/app/thread.js`, `thread.css`, `main.js`): `show` sends `$SPRINGROLL_THREAD`, and a desk
+  showing that chat opens the file in the chat's side pane (the one background tasks and delegated
+  agents use) instead of leaving for Files. Markdown renders as a document with Preview/Source; other
+  text is code with `path:12-20` lines marked; images, audio and video show inline; a PDF is a card
+  that opens it in a new tab (raw files stay sandboxed, which keeps the browser's PDF viewer out); a
+  folder still opens Files. It re-reads the file every 3 s while open, so a document the agent is
+  still writing stays current. Paths in backticks in the chat (`views/desk/server.mjs:480`), changed
+  files and links inside a document open there too. The pane is resizable from its left edge (width
+  remembered, double-click resets). From a terminal, a job, or a chat nobody is looking at, `show`
+  opens Files as before. Going back and forth between a chat and Files to read what the agent
+  shared was the annoyance.
+- **AGENTS.md** says to put anything worth reading or looking at in a file and `show` it;
+  `skills/apps/SKILL.md` describes what the pane shows.
+- **Open tabs reload after Springroll's own page code changes** (`server.mjs`, `public/app/main.js`,
+  `api.js`): the server fingerprints `public/index.html`, `app/` and `ui/` and sends `build` on the
+  event stream; a tab that sees a new one says so in a toast and reloads the next time it's out of
+  sight, never while an app's `beforeunload` objects (Files with an unsaved edit). Before this, a tab
+  open across an update kept running the old code until someone reloaded it.
+- **If you changed this**: the side pane is `ThreadView.openFile`/`loadFile`/`renderFile`/`fileSide`
+  in `thread.js`, routed by `Thread.showFile` from the `desk:show` handler in `main.js`; keep
+  `bin/show` sending the thread. A machine that reworked the chat's side pane can take just the
+  routing and render files in its own pane. Tabs already open when this lands need one manual reload
+  (they predate the reload code).
+
 ## 2026-10-18 · Keys for dev servers, dev databases, paste a .env; Keys page grouped and quieter
 
 - **A project's keys in the Dev app** (`views/dev/devlib.py`, `server.py`, `index.html`, `bin/dev`):

@@ -1,5 +1,5 @@
 // Shared client state and live events for Springroll.
-//   desk events  (/api/events):       views, show, notify, settings, agent, sessions
+//   desk events  (/api/events):       views, show, notify, settings, agent, sessions, build
 //   agent events (/api/agent/events): thread, item, append (streamed text), removed (a queued message taken back), jobs, signals, deleted
 export const bus = new EventTarget();
 export const on = (type, fn) => { const h = (e) => fn(e.detail); bus.addEventListener(type, h); return () => bus.removeEventListener(type, h); };
@@ -66,7 +66,7 @@ export const chatDefaults = (agent) => desk.settings?.chatDefaults?.[agent] || {
 
 export function connect() {
   const desk = new EventSource('api/events');
-  for (const t of ['views', 'show', 'notify', 'settings', 'agent', 'sessions', 'go', 'connections', 'needs']) desk.addEventListener(t, (e) => fire('desk:' + t, JSON.parse(e.data)));
+  for (const t of ['views', 'show', 'notify', 'settings', 'agent', 'sessions', 'go', 'connections', 'needs', 'build']) desk.addEventListener(t, (e) => fire('desk:' + t, JSON.parse(e.data)));
   const agent = new EventSource('api/agent/events');
   agent.onmessage = (e) => {
     const ev = JSON.parse(e.data);

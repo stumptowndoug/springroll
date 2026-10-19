@@ -3,8 +3,9 @@
 #   show mail                  open (or reload) a View
 #   show ~/home/AGENTS.md:12   open a file in Files, at line 12
 #   show '#/jobs'              go to a Springroll page
+# From a chat, a file opens beside that chat (when a desk is showing it) instead of in Files.
 set -euo pipefail
 [ $# -eq 1 ] || { echo "usage: show <view|file[:line]|#/route|url>" >&2; exit 1; }
 curl -fsS -X POST localhost:8000/api/show -H 'content-type: application/json' \
-  -d "$(jq -n --arg t "$1" '{target: $t}')"
+  -d "$(jq -n --arg t "$1" --arg th "${SPRINGROLL_THREAD:-}" '{target: $t} + (if $th != "" then {thread: $th} else {} end)')"
 echo
