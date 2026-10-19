@@ -25,7 +25,16 @@ if [ "$FILE" = --offsite ]; then
   fi
   if [ -z "${SPRINGROLL_BACKUP_PASSPHRASE:-}" ] && [ ! -s "$PASSFILE" ] && [ -t 0 ]; then read -rsp "Backup passphrase: " SPRINGROLL_BACKUP_PASSPHRASE; echo; fi
   if [ -n "${SPRINGROLL_BACKUP_PASSPHRASE:-}" ]; then export RESTIC_PASSWORD="$SPRINGROLL_BACKUP_PASSPHRASE"; else export RESTIC_PASSWORD_FILE="$PASSFILE"; fi
-  restic -r "$REPO" restore "${3:-latest}" --target "$STAGE/r" -q
+  RESTIC_ARGS=()
+  if [[ "$REPO" == gs:* ]] && [ -f "$HOME/home/desk.json" ]; then
+    connections=$(jq -r '.backup.offsite.connections // 5' "$HOME/home/desk.json")
+    [[ "$connections" =~ ^[1-9][0-9]*$ ]] || { echo "backup.offsite.connections must be a positive integer" >&2; exit 1; }
+    RESTIC_ARGS=(-o "gs.connections=$connections")
+    if jq -e '.backup.offsite.http2 == false' "$HOME/home/desk.json" >/dev/null; then
+      export GODEBUG="${GODEBUG:+$GODEBUG,}http2client=0"
+    fi
+  fi
+  restic "${RESTIC_ARGS[@]}" -r "$REPO" restore "${3:-latest}" --target "$STAGE/r" --verify
   SRC=$(dirname "$(find "$STAGE/r" -name home.bundle -print -quit)")
 else
   [ -f "$FILE" ] || { echo "no such file: $FILE" >&2; exit 1; }
@@ -82,4 +91,23 @@ for u in ~/home/views/*/*.service ~/home/views/*/*.timer ~/home/agentd/agentd.se
   [ -e "$u" ] && grep -q '^\[Install\]' "$u" && systemctl --user enable --now "$(basename "$u")" >/dev/null 2>&1 || true
 done
 systemctl --user restart desk desk-term agentd
+
+# The coding agents the backup's machine had (manifest "agents"): their programs aren't in the backup,
+# so install the missing ones the way Connections does (agents.json install / acpInstall). Sign-ins came
+# with the secrets; one that didn't (a backup from before they were kept) is a sign-in in Connections.
+[ -f ~/.config/springroll/env ] && . ~/.config/springroll/env
+jq -c '.agents // [] | .[]' "$SRC/manifest.json" | while read -r want; do
+  a=$(jq -c --arg id "$(jq -r .id <<<"$want")" '.[] | select(.id == $id)' ~/home/agents/agents.json)
+  [ -n "$a" ] || continue
+  name=$(jq -r .name <<<"$a"); bin=$(jq -r .bin <<<"$a"); acp=$(jq -r '.acp[0] // ""' <<<"$a")
+  if ! command -v "$bin" >/dev/null; then
+    echo "Installing $name…"; bash -c "$(jq -r .install <<<"$a")" </dev/null >/dev/null 2>&1 || echo "  $name didn't install: add it in Connections"; hash -r
+  fi
+  if [ "$(jq -r .chat <<<"$want")" = true ] && [ -n "$(jq -r '.acpInstall // ""' <<<"$a")" ] && ! command -v "$acp" >/dev/null; then
+    echo "Installing $name's chat…"; bash -c "$(jq -r .acpInstall <<<"$a")" </dev/null >/dev/null 2>&1 || echo "  $name's chat didn't install: add it in Connections"; hash -r
+  fi
+  signed() { local f; for f in $(jq -r "$1 // [] | .[]" <<<"$a"); do [ -e "${f/#\~/$HOME}" ] && return 0; done; return 1; }
+  signed .auth || echo "  $name needs a sign-in: Connections → $name"
+  [ "$(jq -r .chat <<<"$want")" = true ] && [ "$(jq -r '.chatSignin.auth // empty' <<<"$a")" ] && ! signed .chatSignin.auth && echo "  $name's chat needs a sign-in: Connections → $name" || true
+done
 echo "Restored. The previous ~/home is at ~/home.before-restore-$STAMP"

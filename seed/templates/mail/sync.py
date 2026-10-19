@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Read-only Gmail IMAP -> SQLite sync, every account in Connections → Gmail. Never writes to a mailbox."""
-import email, email.policy, email.utils, imaplib, json, os, re, sqlite3, ssl, sys, time, urllib.parse, urllib.request
+import checks, email, email.policy, email.utils, imaplib, json, os, re, sqlite3, ssl, sys, time, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
 GOOGLE = os.path.expanduser("~/.config/springroll/google.json")  # accounts (app passwords / Google sign-ins)
@@ -16,7 +16,7 @@ DROPPED_NEEDS = []  # messages that left the inbox while on Home's "Needs you"
 MSGS = """CREATE TABLE IF NOT EXISTS msgs(
   id INTEGER PRIMARY KEY AUTOINCREMENT, account TEXT NOT NULL, uid INTEGER NOT NULL, msgid TEXT, from_name TEXT, from_addr TEXT,
   to_addrs TEXT, subject TEXT, snippet TEXT, date INTEGER, seen INTEGER, text TEXT, html TEXT, attachments TEXT,
-  UNIQUE(account, uid));"""
+  warnings TEXT, UNIQUE(account, uid));"""
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
 """ + MSGS + """
@@ -35,6 +35,7 @@ def db():
         c.execute("DELETE FROM meta")
     else:
         never_reuse_ids(c)
+        add_warnings(c)
     c.executescript(SCHEMA)
     setmeta(c, "schema", "2"); c.commit()
     return c
@@ -50,7 +51,8 @@ def never_reuse_ids(c):
     c.execute("ALTER TABLE msgs RENAME TO msgs_old")
     c.execute("DROP INDEX IF EXISTS msgs_date"); c.execute("DROP INDEX IF EXISTS msgs_account")
     c.execute(MSGS)
-    c.execute("INSERT INTO msgs SELECT * FROM msgs_old")
+    cols = "id,account,uid,msgid,from_name,from_addr,to_addrs,subject,snippet,date,seen,text,html,attachments"
+    c.execute(f"INSERT INTO msgs({cols}) SELECT {cols} FROM msgs_old")
     c.execute("DROP TABLE msgs_old")
     high = [c.execute("SELECT max(id) FROM msgs").fetchone()[0] or 0]
     stale = []
@@ -70,6 +72,19 @@ def never_reuse_ids(c):
     c.commit()
     clear_needs([m for m, cat in stale if cat == "needs_you"])
     print(f"ids are never reused now; {len(stale)} inherited triage decisions undone (sorted again next run)")
+
+def add_warnings(c):
+    """Once: the warnings column (checks.py), filled in for mail already here from what we kept
+    (the HTML and sender; the arrival headers weren't kept, so no sender-authentication result)."""
+    if not has_table(c, "msgs") or any(r[1] == "warnings" for r in c.execute("PRAGMA table_info(msgs)")): return
+    c.execute("ALTER TABLE msgs ADD COLUMN warnings TEXT")
+    n = 0
+    for mid, html, text, name, addr, subj in c.execute("SELECT id,html,text,from_name,from_addr,subject FROM msgs").fetchall():
+        _, warn = checks.check(text, html, name, addr, subject=subj or "")
+        if warn:
+            c.execute("UPDATE msgs SET warnings=? WHERE id=?", (json.dumps(warn), mid)); n += 1
+    c.commit()
+    print(f"phishing checks: {n} messages already here have warnings")
 
 def clear_needs(ids):
     """Take messages' "Needs you" items off Home (the triage job posts them as mail:<id>)."""
@@ -111,12 +126,6 @@ def getmeta(c, k, d=None):
 def setmeta(c, k, v):
     c.execute("INSERT OR REPLACE INTO meta VALUES(?,?)", (k, str(v)))
 
-def html_to_text(h):
-    h = re.sub(r"(?is)<(script|style|head).*?</\1>", " ", h)
-    h = re.sub(r"(?s)<[^>]+>", " ", h)
-    import html
-    return re.sub(r"\s+", " ", html.unescape(h)).strip()
-
 def make_snippet(body):
     b = re.sub(r"(?s)<[^>]*>?", " ", body)
     b = re.sub(r"https?://\S+|\[image:[^\]]*\]|[\u200b-\u200f\u2060\u00ad\u034f\ufeff\u00a0]", " ", b)
@@ -149,18 +158,19 @@ def parse(account, uid, raw, flags):
                 atts.append(fn or "attachment")
         except Exception:
             pass
-    body = text or (html_to_text(html) if html else "")
+    # What a person sees, never what's hidden in the HTML; warnings for the triage job (checks.py)
+    body, warn = checks.check(text, html, name, addr, hdr("Reply-To"), checks.auth_results(m), hdr("Subject"))
     snippet = make_snippet(body)
     return dict(account=account, uid=uid, msgid=hdr("Message-ID"), from_name=name or addr, from_addr=addr,
                 to_addrs=hdr("To")[:500], subject=hdr("Subject") or "(no subject)",
                 snippet=snippet, date=ts, seen=int(b"\\Seen" in flags), text=body,
-                html=html, attachments="\n".join(atts)), inline
+                html=html, attachments="\n".join(atts), warnings=json.dumps(warn) if warn else None), inline
 
 def save(c, d, inline):
     if c.execute("SELECT 1 FROM msgs WHERE account=? AND uid=?", (d["account"], d["uid"])).fetchone():
         return
-    cur = c.execute("INSERT INTO msgs(account,uid,msgid,from_name,from_addr,to_addrs,subject,snippet,date,seen,text,html,attachments) "
-                    "VALUES(:account,:uid,:msgid,:from_name,:from_addr,:to_addrs,:subject,:snippet,:date,:seen,:text,:html,:attachments)", d)
+    cur = c.execute("INSERT INTO msgs(account,uid,msgid,from_name,from_addr,to_addrs,subject,snippet,date,seen,text,html,attachments,warnings) "
+                    "VALUES(:account,:uid,:msgid,:from_name,:from_addr,:to_addrs,:subject,:snippet,:date,:seen,:text,:html,:attachments,:warnings)", d)
     mid = cur.lastrowid
     c.execute("INSERT INTO fts(rowid,subject,from_name,from_addr,text) VALUES(?,?,?,?,?)",
               (mid, d["subject"], d["from_name"], d["from_addr"], d["text"][:200000]))

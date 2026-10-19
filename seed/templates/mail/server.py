@@ -39,6 +39,13 @@ def w(sql, args=(), many=False):
         c.commit(); return cur.rowcount
     finally: c.close()
 
+def with_warnings(r):
+    """A row with its phishing warnings as a list (checks.py; [] when none)."""
+    d = dict(r)
+    try: d["warnings"] = json.loads(d.get("warnings") or "[]")
+    except ValueError: d["warnings"] = []
+    return d
+
 def fts_query(s):
     toks = re.findall(r"\w+", s)
     return " ".join(f'"{t}"*' for t in toks)
@@ -116,12 +123,12 @@ class H_(BaseHTTPRequestHandler):
         if p == "/api/triage/pending":
             # New mail the job hasn't sorted yet: the last 2 days only (never the backlog), headers and preview only.
             lim = min(int(qs.get("limit", ["200"])[0] or 200), 500)
-            rows = q("SELECT m.id, m.account, m.from_name, m.from_addr, m.to_addrs, m.subject, m.snippet, m.date, m.seen, m.attachments!='' AS att "
+            rows = q("SELECT m.id, m.account, m.from_name, m.from_addr, m.to_addrs, m.subject, m.snippet, m.date, m.seen, m.attachments!='' AS att, m.warnings "
                      "FROM msgs m WHERE m.date > ? AND m.id NOT IN (SELECT msg FROM triage) ORDER BY m.date DESC LIMIT ?",
                      (int(time.time()) - 2 * 86400, lim)) if self.has_triage() else \
-                   q("SELECT id, account, from_name, from_addr, to_addrs, subject, snippet, date, seen, attachments!='' AS att FROM msgs WHERE date > ? ORDER BY date DESC LIMIT ?",
+                   q("SELECT id, account, from_name, from_addr, to_addrs, subject, snippet, date, seen, attachments!='' AS att, warnings FROM msgs WHERE date > ? ORDER BY date DESC LIMIT ?",
                      (int(time.time()) - 2 * 86400, lim))
-            return self.send(200, {"items": [dict(r) for r in rows]})
+            return self.send(200, {"items": [with_warnings(r) for r in rows]})
         if p == "/api/corrections":
             rows = q("SELECT * FROM corrections WHERE seen=0 ORDER BY at") if self.has_triage() else []
             return self.send(200, {"items": [dict(r) for r in rows]})
@@ -131,11 +138,11 @@ class H_(BaseHTTPRequestHandler):
             try: off = json.load(open(os.path.expanduser("~/home/jobs/mail-triage/job.json"))).get("enabled") is False
             except Exception: off = True
             if not self.has_triage(): return self.send(200, {"items": [], "pending": 0, "off": off})
-            rows = q("SELECT m.id AS uid, m.account, m.msgid, m.from_name, m.from_addr, m.subject, m.snippet, m.date, m.seen, "
+            rows = q("SELECT m.id AS uid, m.account, m.msgid, m.from_name, m.from_addr, m.subject, m.snippet, m.date, m.seen, m.warnings, "
                      "t.category, t.reason, t.action, t.draft, t.done, t.at FROM triage t JOIN msgs m ON m.id=t.msg "
                      "WHERE m.date > ? ORDER BY m.date DESC", (int(time.time()) - 7 * 86400,))
             pending = q("SELECT count(*) n FROM msgs WHERE date > ? AND id NOT IN (SELECT msg FROM triage)", (int(time.time()) - 2 * 86400,))
-            return self.send(200, {"items": [dict(r) for r in rows], "pending": pending[0]["n"] if pending else 0, "off": off})
+            return self.send(200, {"items": [with_warnings(r) for r in rows], "pending": pending[0]["n"] if pending else 0, "off": off})
         if p == "/api/status":
             m = {r["k"]: r["v"] for r in q("SELECT k,v FROM meta")}
             n = q("SELECT count(*) c, sum(seen=0) u FROM msgs")
@@ -146,9 +153,9 @@ class H_(BaseHTTPRequestHandler):
                                    "count": n[0]["c"] if n else 0, "unread": (n[0]["u"] or 0) if n else 0})
         m = re.fullmatch(r"/api/msg/(\d+)", p)
         if m:
-            r = q("SELECT id AS uid,account,msgid,from_name,from_addr,to_addrs,subject,date,seen,text,html!='' AND html IS NOT NULL AS has_html,attachments FROM msgs WHERE id=?", (int(m.group(1)),))
+            r = q("SELECT id AS uid,account,msgid,from_name,from_addr,to_addrs,subject,date,seen,text,html!='' AND html IS NOT NULL AS has_html,attachments,warnings FROM msgs WHERE id=?", (int(m.group(1)),))
             if not r: return self.send(404, {"error": "not found"})
-            d = dict(r[0]); d["attachments"] = [a for a in d["attachments"].split("\n") if a]
+            d = with_warnings(r[0]); d["attachments"] = [a for a in d["attachments"].split("\n") if a]
             return self.send(200, d)
         m = re.fullmatch(r"/frame/(\d+)", p)
         if m:

@@ -28,6 +28,7 @@
 #head .from { display: flex; gap: 10px; align-items: center; min-width: 0; font-size: var(--text-sm); }
 #head .from > div { min-width: 0; }
 #head .addrs { word-break: break-word; }
+#warns { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--text-sm); }
 #atts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: var(--text-sm); }
 
 /* Sandboxed mail body. The mail keeps its own colors inside the frame; in dark
@@ -200,6 +201,7 @@ async function open(uid) {
     <div class="from"><span class="ui-avatar" style="--hue:${ui.hue(name)}">${esc(ui.initials(name))}</span>
       <div><div class="ui-truncate"><b>${esc(m.from_name || m.from_addr)}</b>${m.from_name ? ` <span class="ui-muted">&lt;${esc(m.from_addr)}&gt;</span>` : ''}</div>
       <div class="ui-muted addrs">${accounts.length > 1 ? `In ${esc(m.account)} · ` : ''}To ${esc(m.to_addrs || '')} · ${esc(new Date(m.date * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</div></div></div>`
+    + ((m.warnings || []).length ? `<div id="warns">${m.warnings.map((w) => `<span class="ui-status"><span class="ui-dot warn"></span>${esc(w)}</span>`).join('')}</div>` : '')
     + (m.attachments.length ? `<div id="atts" class="ui-muted">${ui.icon('paperclip', 'sm')}${m.attachments.map((a) => `<span class="ui-badge">${esc(a)}</span>`).join('')}<span class="ui-faint">Attachments aren’t downloaded</span></div>` : '');
   $('view').hidden = false;
   setFrame(m);

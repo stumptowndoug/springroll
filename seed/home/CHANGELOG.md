@@ -5,6 +5,42 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-19 · Backups bring the agents back; Mail guards against phishing; Cursor utilization; Neon
+
+- **Backups carry more of the machine** (`bin/backup`, `bin/restore`, `skills/machine/SKILL.md`): the
+  secrets take every agents.json sign-in file (`auth`, `chatSignin.auth`) and `~/.ssh` (config,
+  known_hosts, keys; never `authorized_keys`, which could lock you out of a new box); the manifest
+  lists the coding agents installed (and with chat), and `restore` reinstalls the missing ones and
+  says which still need a sign-in. Moving to a new machine left the agents and ssh config behind.
+- **A per-machine name in the bucket** (desk.json `backup.host`, default the hostname): two machines
+  with one hostname sending to one bucket would thin each other's snapshots. restic 0.16's
+  `data_added` is read when `data_added_packed` is missing.
+- **Off-machine checks you can watch** (`bin/backup`, `bin/restore`, `skills/backup/SKILL.md`,
+  `tests/backup-offsite.test.py`): `verify --offsite` and `restore --offsite` show progress, verify
+  restored contents, and clear a stale lock left by a killed check. Optional desk.json
+  `backup.offsite.connections` / `backup.offsite.http2: false` tune GCS for a box whose shared HTTP/2
+  connection downloads slowly; omitted, nothing changes.
+- **`springroll-upstream` after a restore** (`bin/springroll-upstream`): a missing `upstream` branch
+  (a restore carries only main) starts from the last `Springroll upstream …` snapshot merged into
+  main, not the first commit, so an update doesn't show every file upstream ever changed as a conflict.
+- **Mail guards against phishing and prompt injection** (`templates/mail/checks.py`, `sync.py`,
+  `server.py`, `index.html`, README; `jobs/mail-triage/job.json` prompt): what agents read is what a
+  person sees (no hidden HTML text, zero-width characters or unseen plain-text part); `warnings` in
+  the API and above the message flag text addressed to an AI, failed SPF/DKIM/DMARC, a display name
+  showing another address, free-mail Reply-To and look-alike senders. Mail already synced is checked
+  once on upgrade. Triage treats mail as data, never instructions, and files phishing as noise
+  ("Phishing: …") or worth knowing ("Check before acting: …"), never Needs you. Attackers now hide
+  instructions to the AI reading the inbox.
+- **Cursor utilization** (`views/desk/cursor-usage.mjs`, `usage.mjs`, `public/app/usage-settings.mjs`,
+  tests): Cursor's billing-cycle plan usage, with the token `cursor-agent login` stores (or
+  `CURSOR_API_KEY`), beside Claude, Codex and Antigravity; a second switch (off) adds the Auto and
+  API pools.
+- **Neon connection** (`connections/catalog.json`): an API key, tested against the organizations
+  endpoint, with Neon's hosted MCP server in read-only mode for agents.
+
+**If you changed this**: `bin/backup` and `bin/restore` run restic through `restic_run` /
+`RESTIC_ARGS`; keep that if you've edited them. A Mail you've changed needs `checks.check(...)` where
+`sync.py` builds a message's text, and the `warnings` column (added once by `add_warnings`).
 ## 2026-10-19 · Phones: the chat gets the screen; background work is one row
 
 - **A chat on a phone** (`views/desk/public/app/thread.js`, `thread.css`, `main.js`, `app.css`,

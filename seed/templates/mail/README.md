@@ -29,11 +29,22 @@ Read-only Gmail reader: inbox list, search, sandboxed HTML reading pane.
 
 ## JSON API (for other Views/agents)
 
-`curl localhost:8101/api/list?q=<text>&before=<unix ts>&account=<address>` (60 newest per page: uid (Mail's id), account, from_name, from_addr, subject, snippet, date, seen, att), `/api/msg/<uid>` (full text, headers, account), `/api/status` (count, unread, last_sync, accounts: email, count, unread, error).
+`curl localhost:8101/api/list?q=<text>&before=<unix ts>&account=<address>` (60 newest per page: uid (Mail's id), account, from_name, from_addr, subject, snippet, date, seen, att), `/api/msg/<uid>` (full text, headers, account, warnings), `/api/status` (count, unread, last_sync, accounts: email, count, unread, error).
 
 Agents act on mail with `gmail` (`~/home/bin/gmail`: show, reply, send, archive, move; a Mail id works as
 the ref, via `/api/msg/<uid>`'s `msgid`). Mail itself doesn't send: its Ask buttons call
 `desk.askAbout` with a note about the message, and the agent does the rest (agent first).
+
+## Phishing and prompt injection
+
+Agents read this mail, so a message can address them instead of the owner. `checks.py` runs on
+every message at sync: the stored `text` is what a person sees (for HTML mail, the visible HTML:
+no comments, no `display:none`/zero-size/invisible text, no zero-width characters, never the unseen
+plain-text part), and `warnings` (a list; `[]` in the API when none) name what was off: hidden or
+plain-text-only words addressed to an AI, an encoded block, failed SPF/DKIM/DMARC (Gmail's own
+`Authentication-Results`), a display name showing another address, free-mail Reply-To, invisible
+characters in the sender or subject. They're hints for the triage job and show above the message.
+Tuned on 915 real messages to zero false alarms; keep it that way when adding checks.
 
 ## UI
 

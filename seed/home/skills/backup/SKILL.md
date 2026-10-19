@@ -121,6 +121,13 @@ bucket name or repository is wrong, the passphrase changed (restic: "wrong passw
 one back, or `restic key passwd` with both), a stale lock (`backup` already runs `restic unlock`).
 The local backup still happened; fix the off-machine part and run `backup` again.
 
+For a slow GCS test, read the check/restore progress and compare an ordinary bucket download
+before extending the job timeout. Optional `desk.json` fields `backup.offsite.http2: false`
+and `backup.offsite.connections: 30` make `backup` and `restore` use separate HTTP/1.1
+connections. Omitted, restic keeps HTTP/2 and five connections. These settings affect only
+GCS; validate with a complete test restore. On a fresh machine without this config,
+`GODEBUG=http2client=0 restore --offsite <repository>` selects HTTP/1.1.
+
 ## Restoring a machine
 
 On a fresh machine (after `install.sh`): put the bucket key where restic finds it (e.g.
