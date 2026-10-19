@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+// Screenshots of a page the way every check needs them: a dark and a light theme, desktop and phone
+// width, full page. The theme is set inside the test browser only (its /api/settings answer is swapped),
+// never with `desk theme`, so the owner's screen doesn't change.
+//   shots <url|/path|#/route> [--out DIR] [--themes dark-id,light-id] [--widths 1280,375] [--wait ms]
+//   shots /v/explainers/                 the live Springroll (localhost:$SPRINGROLL_PORT, else 8000)
+//   shots http://localhost:8010/#/jobs   a change's copy (`change up`)
+// Prints each PNG with what to look at: content wider than the screen, errors in the page's console.
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const { createRequire } = require('node:module');
+
+const args = process.argv.slice(2);
+const opt = (name, def) => { const i = args.indexOf(name); return i < 0 ? def : args.splice(i, 2)[1]; };
+const out = opt('--out', null);
+const themes = opt('--themes', 'springroll-dark,springroll-light').split(',');
+const widths = opt('--widths', '1280,375').split(',').map(Number);
+const wait = Number(opt('--wait', '1200'));
+let target = args[0];
+if (!target || target.startsWith('-')) {
+  console.error(fs.readFileSync(__filename, 'utf8').split('\n').slice(1, 8).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+  process.exit(1);
+}
+const base = `http://localhost:${process.env.SPRINGROLL_PORT || 8000}`;
+if (target.startsWith('#')) target = `${base}/${target}`;
+else if (target.startsWith('/')) target = base + target;
+
+// Playwright: the installer's global copy (npm i -g playwright), else a local one (tests/browser).
+let chromium;
+const { execFileSync } = require('node:child_process');
+const roots = [];
+try { roots.push(execFileSync('npm', ['root', '-g'], { encoding: 'utf8', timeout: 10000 }).trim()); } catch {}
+roots.push(path.join(os.homedir(), '.npm-global', 'lib', 'node_modules'), path.join(os.homedir(), 'home', 'tests', 'browser', 'node_modules'));
+for (const r of roots) { try { ({ chromium } = createRequire(path.join(r, 'x.js'))('playwright')); break; } catch {} }
+if (!chromium) { console.error('shots needs Playwright: npm i -g playwright && playwright install chromium'); process.exit(1); }
+
+const all = JSON.parse(fs.readFileSync(path.join(os.homedir(), 'home', 'views', 'desk', 'public', 'ui', 'themes.json'), 'utf8'));
+const slug = (new URL(target).pathname + new URL(target).hash).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'home';
+const dir = out || path.join(os.tmpdir(), 'shots', `${slug}-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`);
+fs.mkdirSync(dir, { recursive: true });
+
+(async () => {
+  const browser = await chromium.launch();
+  let failed = false;
+  for (const id of themes) {
+    const theme = all.find((t) => t.id === id);
+    if (!theme) { console.error(`no theme ${id} (see views/desk/public/ui/themes.json)`); failed = true; continue; }
+    for (const width of widths) {
+      const page = await browser.newPage({ viewport: { width, height: width < 600 ? 812 : 900 }, deviceScaleFactor: width < 600 ? 2 : 1 });
+      const errors = [];
+      page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.route('**/api/settings', async (route) => {
+        if (route.request().method() !== 'GET') return route.fulfill({ status: 403, body: 'shots: settings are read-only here' });
+        const res = await route.fetch(); const s = await res.json();
+        route.fulfill({ response: res, json: { ...s, theme } });
+      });
+      await page.goto(target, { waitUntil: 'networkidle', timeout: 30000 }).catch((e) => errors.push(e.message));
+      await page.waitForTimeout(wait);
+      const file = path.join(dir, `${id}-${width}.png`);
+      await page.screenshot({ path: file, fullPage: true });
+      const wide = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth).catch(() => 0);
+      console.log([file, wide > 1 ? `${wide}px wider than the screen` : null, errors.length ? `${errors.length} console error(s): ${errors.slice(0, 2).join(' | ').slice(0, 200)}` : null].filter(Boolean).join('  ·  '));
+      await page.close();
+    }
+  }
+  await browser.close();
+  process.exit(failed ? 1 : 0);
+})();

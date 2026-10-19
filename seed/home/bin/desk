@@ -4,12 +4,12 @@ set -euo pipefail
 case "${1:-}" in
   theme)
     if [ -z "${2:-}" ]; then
-      cur=$(curl -fsS localhost:8000/api/settings | jq -r .theme.id)
+      cur=$(curl -fsS localhost:${SPRINGROLL_PORT:-8000}/api/settings | jq -r .theme.id)
       jq -r --arg cur "$cur" '.[] | (if .id == $cur then "* " else "  " end) + .id + "  " + .name' "$HOME/home/views/desk/public/ui/themes.json"
     else
-      curl -fsS -X POST localhost:8000/api/settings -H 'content-type: application/json' \
+      curl -fsS -X POST localhost:${SPRINGROLL_PORT:-8000}/api/settings -H 'content-type: application/json' \
         -d "$(jq -n --arg t "$2" '{theme: $t}')" | jq -r '"theme: " + .theme.name'
     fi ;;
-  settings) curl -fsS localhost:8000/api/settings | jq '{theme: .theme.id, fontSize}' ;;
+  settings) curl -fsS localhost:${SPRINGROLL_PORT:-8000}/api/settings | jq '{theme: .theme.id, fontSize}' ;;
   *) echo "usage: desk theme [id] | desk settings" >&2; exit 1 ;;
 esac

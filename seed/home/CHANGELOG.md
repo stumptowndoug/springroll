@@ -5,6 +5,38 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-19 · Change Springroll in a copy: the owner's screen moves once, when the work is done
+
+- **The live desk serves its page code as committed** (`views/desk/server.mjs`): `public/` (`index.html`,
+  `app/`, `ui/`) comes from HEAD, exported to `~/.desk/live/<tree>` and checked every 2 s, instead of
+  straight from the folder. A half-done edit never reaches the owner's screen; a commit does, and open
+  tabs reload when the owner looks away (the `build` event, now the tree's hash). `ui/custom.css`, the
+  owner's own overrides, is still served from the folder. Before, every save an agent made to
+  Springroll itself went live, and checks flipped the owner's theme to take screenshots.
+- **`bin/change`**: `change start <name>` makes a worktree `~/work/home-<name>` on branch
+  `change/<name>`; `change up <name> [--agentd]` runs it as a copy on 8010-8029 with a preview link
+  (`--agentd`: its own agentd on 8091-8099 with a copy of agentd.db); `change merge <name>` merges it
+  into main once, restarts the desk or an app if their server code changed, and removes the worktree
+  and branch; `change list`, `change drop`, and `change tidy` (run by nightly housekeeping: removes
+  empty changes untouched for a day, stops copies untouched for 12 h, clears servers, state and preview
+  links left behind, lists work untouched for 7 days; never deletes work).
+- **A copy's environment** (`views/desk/server.mjs`, `needs.mjs`, `secrets.mjs`, `agentd/server.mjs`,
+  `jobs.mjs`, `threads.mjs`): `SPRINGROLL_REPO`, `SPRINGROLL_PORT`, `SPRINGROLL_AGENTD_PORT`,
+  `SPRINGROLL_SETTINGS`, `SPRINGROLL_AGENTD_DATA` and `SPRINGROLL_COPY=1` (the desk serves its files as
+  they are; agentd runs no scheduled jobs and sends nothing to the phone). Unset, everything is as
+  before: ~/home, 8000, 8090. `bin/show`, `desk`, `notify`, `secret`, `signal`, `report` follow the
+  ports, so in a copy's chats they reach the copy; `notify` from a copy skips the phone.
+- **`bin/shots <page>`**: screenshots in a dark and a light theme at desktop and phone width, with the
+  theme swapped inside the test browser only (its `/api/settings` answer; writes are refused), plus
+  overflow and console errors. Uses the installer's global Playwright.
+- **AGENTS.md, skills/apps, skills/machine, skills/update, DESIGN.md, housekeeping NOTES.md, READMEs**:
+  Springroll itself (desk, kit, Settings, agentd) changes in a copy; checks use `shots`, never
+  `desk theme`; housekeeping runs `change tidy`. `.gitignore`: `node_modules` (a worktree links it).
+- **If you changed this**: if your `views/desk/server.mjs` serves `public/` differently, keep the idea:
+  serve page code from a committed tree unless `SPRINGROLL_COPY` is set, and send `build` when that
+  tree changes. If you have your own housekeeping notes, add the `change tidy` item. Nothing to migrate:
+  `~/work` and `~/.desk/live` are made on first use.
+
 ## 2026-10-19 · Files open beside the chat; open tabs pick up new code
 
 - **`show <file>` from a chat opens it beside that chat** (`bin/show`, `views/desk/server.mjs`,

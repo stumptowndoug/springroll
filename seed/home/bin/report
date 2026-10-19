@@ -17,7 +17,7 @@ thread=${SPRINGROLL_THREAD:-${AGENTOS_THREAD:-}}
 [ -n "$thread" ] || { echo "report: only works inside a job run" >&2; exit 1; }
 if [ $# -ge 1 ]; then body=$(cat "$1"); else body=$(cat); fi
 [ -n "${body//[[:space:]]/}" ] || { echo "report: empty report" >&2; exit 1; }
-curl -fsS -X POST localhost:8090/runs/report -H 'content-type: application/json' \
+curl -fsS -X POST localhost:${SPRINGROLL_AGENTD_PORT:-8090}/runs/report -H 'content-type: application/json' \
   -d "$(jq -n --arg t "$thread" --arg m "$body" --arg title "$title" '{thread: $t, markdown: $m} + (if $title != "" then {title: $title} else {} end)')" >/dev/null \
   || { echo "report: couldn't publish (is this a job run?)" >&2; exit 1; }
 echo "Published the report."

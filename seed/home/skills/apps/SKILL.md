@@ -77,12 +77,31 @@ one). Fonts: `ui/fonts.json`. Shortcuts: `ui/hotkeys.json`. The owner's choices:
 ## Springroll itself
 
 `views/desk/` is the Springroll app itself (`public/app/` is its UI, `server.mjs` its server) and
-`views/settings/` its settings page. You can change both. Restart after server changes:
-`systemctl --user restart desk` (or `agentd`). Log changes to Springroll itself in `LOCAL.md`.
+`views/settings/` its settings page. You can change both, and agentd, but not on main: the owner is
+using them while you work. The live Springroll serves its page code (`views/desk/public`) as committed
+on main, so a half-done edit never reaches the owner's screen; a commit does.
+
+    change start chat-pane        a worktree ~/work/home-chat-pane on branch change/chat-pane
+    (edit and commit there)
+    change up chat-pane           its own desk on 8010+ (and a preview link); --agentd adds its own agentd
+    shots http://localhost:8010/#/t/<id>    check it there
+    change merge chat-pane        into main once: restarts the desk or an app if their server changed
+
+The copy reads the same `~/data`, Keys and chats; `change up --agentd` gives it a copy of the chats
+and no scheduled jobs (for work on agentd). In the copy's own chats `show`, `desk` and `notify` go
+to the copy. Restarting the live agentd stops every running chat and job, yours included: after an
+agentd change merges, tell the owner and restart it when nothing's running. Only what's committed
+goes into a worktree: commit on main first anything the change needs. `change list` shows every
+change in progress; `change drop <name>` throws one away; merge and drop remove the worktree and
+branch, and nightly housekeeping runs `change tidy` for the ones left behind. Apps the owner isn't using, jobs, skills
+and docs don't need a copy: edit them in place.
+
+Log changes to Springroll itself in `LOCAL.md`.
 
 ## Before you say it's done
 
 `curl` the app through Springroll (`curl -s localhost:8000/v/<name>/`), read the service logs
-(`journalctl --user -u <name> -n 50`), and for anything visual load it in a headless browser
-(Playwright) and look at screenshots in a dark and a light theme and at phone width. Then
-`show <name>`.
+(`journalctl --user -u <name> -n 50`), and for anything visual run `shots /v/<name>/` (a dark and a
+light theme, desktop and phone width; the theme is set in the test browser only) and look at every
+picture. Never `desk theme` to check: that changes the owner's screen. Then `show <name>`, once, for
+the owner.

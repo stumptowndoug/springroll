@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+# Change Springroll itself without moving the owner's screen: work in a git worktree of ~/home, run it as
+# a copy on its own port, check it there, merge once.
+#   change start <name>            a worktree ~/work/home-<name> on branch change/<name>, from main
+#   change up <name> [--agentd]    run the copy: its desk on 8010-8029 and a preview link; --agentd adds
+#                                  its own agentd (8091-8099, a copy of the chats, no scheduled jobs)
+#   change down <name>             stop the copy
+#   change list [--json]           every change: branch, commits, uncommitted files, ports
+#   change merge <name>            merge it into main (commit in the worktree first), restart what
+#                                  changed, remove the worktree
+#   change drop <name> [--force]   remove it without merging (--force: even with unmerged commits)
+#   change tidy [--dry-run]        nightly (housekeeping): remove empty changes untouched for a day, stop
+#                                  copies untouched for 12h, list changes with work untouched for 7 days
+# The live Springroll serves only what's committed on main, so a change reaches the owner when it merges.
+# The copy shares ~/data, Keys and (without --agentd) the live chats: same house, another door.
+# Check it with `shots <copy url>`; in the copy's chats `show` and `desk` go to the copy.
+set -euo pipefail
+HOMEREPO="$HOME/home"
+WORK="$HOME/work"
+STATE="$WORK/.changes"
+mkdir -p "$STATE"
+
+die() { echo "change: $*" >&2; exit 1; }
+need_name() {
+  [[ "${1:-}" =~ ^[a-z0-9][a-z0-9-]{0,39}$ ]] || die "name it in lowercase letters, digits and dashes (e.g. chat-pane)"
+}
+wt() { echo "$WORK/home-$1"; }
+active() { systemctl --user is-active --quiet "$1" 2>/dev/null; }
+free_port() { # first port in $1..$2 nobody listens on
+  local p used; used=$(ss -Hltn | awk '{print $4}' | sed 's/.*://')
+  for p in $(seq "$1" "$2"); do grep -qx "$p" <<<"$used" || { echo "$p"; return; }; done
+  die "no free port in $1-$2"
+}
+state_get() { [ -f "$STATE/$1.env" ] && sed -n "s/^$2=//p" "$STATE/$1.env" || true; }
+
+start() {
+  local name=$1 dir; need_name "$name"; dir=$(wt "$name")
+  [ -e "$dir" ] && die "$dir already exists (change list)"
+  [ "$(git -C "$HOMEREPO" branch --show-current)" = main ] || die "~/home isn't on main"
+  local dirty; dirty=$(git -C "$HOMEREPO" status --porcelain --untracked-files=normal | grep -v ' desk.json$' || true)
+  git -C "$HOMEREPO" worktree add -q -b "change/$name" "$dir" main
+  # Big ignored things the copy needs: the browser tests' packages.
+  [ -d "$HOMEREPO/tests/browser/node_modules" ] && ln -s "$HOMEREPO/tests/browser/node_modules" "$dir/tests/browser/node_modules"
+  echo "Started change $name: $dir (branch change/$name, from main $(git -C "$HOMEREPO" rev-parse --short main))"
+  if [ -n "$dirty" ]; then
+    echo "Not in the copy (uncommitted on main; commit them on main first if this change needs them):"
+    sed 's/^/  /' <<<"$dirty"
+  fi
+  echo "Next: edit and commit in $dir, then \`change up $name\` to run it."
+}
+
+up() {
+  local name=$1 agentd=${2:-} dir; need_name "$name"; dir=$(wt "$name")
+  [ -d "$dir" ] || die "no change $name (change start $name)"
+  local dport aport=8090 settings="$STATE/$name.desk.json"
+  dport=$(state_get "$name" DESK_PORT); [ -n "$dport" ] && active "change-$name-desk" || dport=$(free_port 8010 8029)
+  # Its own settings file, starting from the owner's, so `desk theme` in the copy stays in the copy.
+  [ -f "$settings" ] || cp "$HOMEREPO/desk.json" "$settings" 2>/dev/null || echo '{}' > "$settings" # none until a setting is saved
+  if [ "$agentd" = --agentd ]; then
+    aport=$(state_get "$name" AGENTD_PORT); [ -n "$aport" ] && active "change-$name-agentd" || aport=$(free_port 8091 8099)
+    local data="$STATE/$name-agentd"
+    if [ ! -f "$data/agentd.db" ]; then # a copy of the chats as they are now; the live database is never opened for writing
+      mkdir -p "$data"
+      node -e 'const { DatabaseSync } = require("node:sqlite"); new DatabaseSync(process.argv[1], { readOnly: true }).exec(`VACUUM INTO '"'"'${process.argv[2]}'"'"'`)' \
+        "$HOME/data/agentd/agentd.db" "$data/agentd.db"
+    fi
+    active "change-$name-agentd" || systemd-run --user --quiet --unit "change-$name-agentd" \
+      -p MemoryHigh=400M -p MemoryMax=800M -p OOMScoreAdjust=500 -p TimeoutStopSec=10 \
+      --setenv=SPRINGROLL_COPY=1 --setenv=SPRINGROLL_REPO="$dir" --setenv=SPRINGROLL_SETTINGS="$settings" \
+      --setenv=SPRINGROLL_PORT="$dport" --setenv=SPRINGROLL_AGENTD_PORT="$aport" --setenv=SPRINGROLL_AGENTD_DATA="$data" \
+      node "$dir/agentd/server.mjs"
+  fi
+  active "change-$name-desk" || systemd-run --user --quiet --unit "change-$name-desk" \
+    -p MemoryHigh=300M -p MemoryMax=600M -p OOMScoreAdjust=500 -p TimeoutStopSec=10 \
+    --setenv=SPRINGROLL_COPY=1 --setenv=SPRINGROLL_REPO="$dir" --setenv=SPRINGROLL_SETTINGS="$settings" \
+    --setenv=SPRINGROLL_PORT="$dport" --setenv=SPRINGROLL_AGENTD_PORT="$aport" \
+    node "$dir/views/desk/server.mjs"
+  printf 'DESK_PORT=%s\nAGENTD_PORT=%s\n' "$dport" "$([ "$aport" = 8090 ] || echo "$aport")" > "$STATE/$name.env"
+  for _ in $(seq 1 20); do curl -fsS -o /dev/null "localhost:$dport/" 2>/dev/null && break; sleep 0.5; done
+  curl -fsS -o /dev/null "localhost:$dport/" || die "its desk didn't come up: journalctl --user -u change-$name-desk -n 30"
+  local url; url=$(preview "$dport" --no-show 2>/dev/null | grep -o 'https\?://[^ ]*' | head -1 || true)
+  echo "Change $name runs on localhost:$dport${url:+ ($url)}, from $dir."
+  [ "$aport" != 8090 ] && echo "Its agentd: localhost:$aport (a copy of the chats; no scheduled jobs, no phone notifications)."
+  local envs="SPRINGROLL_PORT=$dport"; [ "$aport" != 8090 ] && envs+=" SPRINGROLL_AGENTD_PORT=$aport"
+  echo "Check it: shots http://localhost:$dport/<page>   ·   a command against it: $envs <command>"
+}
+
+down() {
+  local name=$1 port; need_name "$name"
+  for u in desk agentd; do active "change-$name-$u" && systemctl --user stop "change-$name-$u"; done
+  systemctl --user reset-failed "change-$name-desk" "change-$name-agentd" 2>/dev/null || true
+  port=$(state_get "$name" DESK_PORT); [ -n "$port" ] && preview "$port" off >/dev/null 2>&1 || true
+  echo "Stopped change $name."
+}
+
+forget() { # the copy's servers, state, worktree
+  local name=$1 dir; dir=$(wt "$name")
+  down "$name" >/dev/null
+  rm -rf "$STATE/$name.env" "$STATE/$name.desk.json" "$STATE/$name-agentd"
+  [ -d "$dir" ] && git -C "$HOMEREPO" worktree remove --force "$dir"
+  git -C "$HOMEREPO" worktree prune
+}
+
+merge() {
+  local name=$1 dir; need_name "$name"; dir=$(wt "$name")
+  git -C "$HOMEREPO" rev-parse -q --verify "change/$name" >/dev/null || die "no branch change/$name"
+  if [ -d "$dir" ] && [ -n "$(git -C "$dir" status --porcelain)" ]; then
+    git -C "$dir" status --short >&2; die "commit (or drop) these in $dir first"
+  fi
+  [ "$(git -C "$HOMEREPO" branch --show-current)" = main ] || die "~/home isn't on main"
+  local n; n=$(git -C "$HOMEREPO" rev-list --count "main..change/$name")
+  [ "$n" -gt 0 ] || { echo "Nothing to merge: change/$name has no commits beyond main."; forget "$name"; git -C "$HOMEREPO" branch -q -d "change/$name"; return; }
+  local before; before=$(git -C "$HOMEREPO" rev-parse main)
+  local subject; subject=$(git -C "$HOMEREPO" log -1 --format=%s "change/$name")
+  if ! git -C "$HOMEREPO" merge -q --no-ff "change/$name" -m "Merge change $name: $subject" 2>/tmp/change-merge.$$; then
+    cat /tmp/change-merge.$$ >&2; rm -f /tmp/change-merge.$$
+    git -C "$HOMEREPO" merge --abort 2>/dev/null || true
+    die "it doesn't merge cleanly: in $dir run \`git rebase main\`, fix, commit, then merge again"
+  fi
+  rm -f /tmp/change-merge.$$
+  local changed; changed=$(git -C "$HOMEREPO" diff --name-only "$before" HEAD)
+  echo "Merged change $name into main ($n commit$([ "$n" = 1 ] || echo s)): $(wc -l <<<"$changed") files."
+  forget "$name"; git -C "$HOMEREPO" branch -q -d "change/$name"
+  # Page code reaches open tabs by itself (they reload when the owner looks away); servers need a restart.
+  if grep -qE '^views/desk/[^/]+\.(mjs|js|json)$' <<<"$changed"; then systemctl --user restart desk && echo "Restarted Springroll's server (open tabs reconnect)."; fi
+  local app
+  for app in $(grep -vE '\.md$|/(ICON|README)$' <<<"$changed" | grep -oE '^views/[^/]+/' | cut -d/ -f2 | sort -u); do
+    [ "$app" = desk ] && continue
+    [ -f "$HOMEREPO/views/$app/PORT" ] && systemctl --user cat "$app" >/dev/null 2>&1 && systemctl --user restart "$app" && echo "Restarted the $app app."
+  done
+  if grep -qE '^agentd/[^/]+\.mjs$' <<<"$changed"; then
+    echo "agentd changed. Restarting it stops every running chat and job, this one included: tell the owner, and restart"
+    echo "it when nothing's running (systemctl --user restart agentd)."
+  fi
+}
+
+drop() {
+  local name=$1 force=${2:-}; need_name "$name"
+  if git -C "$HOMEREPO" rev-parse -q --verify "change/$name" >/dev/null; then
+    local n; n=$(git -C "$HOMEREPO" rev-list --count "main..change/$name")
+    [ "$n" -gt 0 ] && [ "$force" != --force ] && die "change/$name has $n commit(s) not on main: merge it, or drop it with --force"
+  fi
+  local dir; dir=$(wt "$name")
+  if [ -d "$dir" ] && [ -n "$(git -C "$dir" status --porcelain)" ] && [ "$force" != --force ]; then
+    die "$dir has uncommitted work: commit and merge it, or drop it with --force"
+  fi
+  forget "$name"
+  git -C "$HOMEREPO" branch -q -D "change/$name" 2>/dev/null || true
+  echo "Dropped change $name."
+}
+
+# When a change was last worked on: its newest commit beyond main, its newest uncommitted file, or
+# when its worktree was made.
+activity() {
+  local name=$1 dir t=0 c f m; dir=$(wt "$name")
+  c=$(git -C "$HOMEREPO" log -1 --format=%ct "main..change/$name" 2>/dev/null || true); [ -n "$c" ] && t=$c
+  if [ -d "$dir" ]; then
+    m=$(stat -c %Y "$dir/.git" 2>/dev/null || echo 0); [ "$m" -gt "$t" ] && t=$m
+    while read -r f; do
+      m=$(stat -c %Y "$dir/${f##* -> }" 2>/dev/null || echo 0); [ "$m" -gt "$t" ] && t=$m
+    done < <(git -C "$dir" status --porcelain | cut -c4-)
+  fi
+  echo "$t"
+}
+
+# Never deletes work: a change with commits or uncommitted files is only stopped and listed.
+tidy() {
+  local dry=${1:-} now b name dir ahead dirty age said=0 do=""
+  [ "$dry" = --dry-run ] && do="(dry run) "
+  now=$(date +%s)
+  [ -z "$do" ] && git -C "$HOMEREPO" worktree prune
+  while read -r b; do
+    [ -n "$b" ] || continue
+    name=${b#change/}; dir=$(wt "$name")
+    ahead=$(git -C "$HOMEREPO" rev-list --count "main..$b")
+    dirty=0; [ -d "$dir" ] && dirty=$(git -C "$dir" status --porcelain | wc -l)
+    age=$(( (now - $(activity "$name")) / 3600 ))
+    if [ "$ahead" -eq 0 ] && [ "$dirty" -eq 0 ] && [ "$age" -ge 24 ]; then
+      [ -z "$do" ] && forget "$name" && git -C "$HOMEREPO" branch -q -D "$b"
+      echo "${do}Removed change $name: nothing in it beyond main, untouched for $((age / 24))d."; said=1; continue
+    fi
+    if active "change-$name-desk" && [ "$age" -ge 12 ]; then
+      [ -z "$do" ] && down "$name" >/dev/null
+      echo "${do}Stopped change $name's copy: untouched for ${age}h (its work is kept)."; said=1
+    fi
+    if [ "$age" -ge 168 ]; then
+      echo "Waiting: change $name has $ahead commit(s) and $dirty uncommitted file(s), untouched for $((age / 24))d$([ -d "$dir" ] || echo ', no folder (branch only)'): merge it (change merge $name) or drop it (change drop $name --force)."; said=1
+    fi
+  done < <(git -C "$HOMEREPO" for-each-ref --format='%(refname:short)' 'refs/heads/change/')
+  # Left behind by hand: copies' servers and state for changes that are gone, folders git doesn't know.
+  local u n
+  while read -r u; do
+    n=${u#change-}; n=${n%-desk.service}; n=${n%-agentd.service}
+    git -C "$HOMEREPO" rev-parse -q --verify "change/$n" >/dev/null && continue
+    [ -z "$do" ] && { systemctl --user stop "$u" 2>/dev/null || true; systemctl --user reset-failed "$u" 2>/dev/null || true; }
+    echo "${do}Stopped $u: its change is gone."; said=1
+  done < <(systemctl --user list-units --all --plain --no-legend 'change-*' | awk '{print $1}')
+  for f in "$STATE"/*.env; do
+    [ -e "$f" ] || continue; n=$(basename "$f" .env)
+    git -C "$HOMEREPO" rev-parse -q --verify "change/$n" >/dev/null && continue
+    [ -z "$do" ] && rm -rf "$f" "$STATE/$n.desk.json" "$STATE/$n-agentd"
+    echo "${do}Cleared the state of change $n: its change is gone."; said=1
+  done
+  # Preview links on the copies' ports (8010-8029) with nothing listening behind them.
+  local p listening; listening=$(ss -Hltn | awk '$4 ~ /^127\.0\.0\.1:/ {print $4}' | sed 's/.*://') # a copy binds 127.0.0.1; preview's forwarder doesn't count
+  for p in $(preview list 2>/dev/null | awk '$1 >= 8010 && $1 <= 8029 {print $1}'); do
+    grep -qx "$p" <<<"$listening" && continue
+    [ -z "$do" ] && { preview "$p" off >/dev/null 2>&1 || true; }
+    echo "${do}Closed the preview link on :$p: no copy runs there."; said=1
+  done
+  for f in "$WORK"/home-*; do
+    [ -d "$f" ] || continue
+    git -C "$HOMEREPO" worktree list --porcelain | grep -qx "worktree $f" && continue
+    echo "Unknown folder $f (not a change's worktree): left alone; look at it and delete it by hand."; said=1
+  done
+  [ "$said" = 1 ] || echo "Changes: $(git -C "$HOMEREPO" for-each-ref 'refs/heads/change/' | wc -l) in progress, nothing to tidy."
+}
+
+list() {
+  local json=${1:-} rows=() b name dir
+  while read -r b; do
+    name=${b#change/}; dir=$(wt "$name")
+    local ahead dirty dport aport running=false
+    ahead=$(git -C "$HOMEREPO" rev-list --count "main..$b")
+    dirty=$([ -d "$dir" ] && git -C "$dir" status --porcelain | wc -l || echo 0)
+    dport=$(state_get "$name" DESK_PORT); aport=$(state_get "$name" AGENTD_PORT)
+    active "change-$name-desk" && running=true || { dport=""; aport=""; }
+    rows+=("$(jq -cn --arg n "$name" --arg d "$dir" --argjson a "$ahead" --argjson u "$dirty" --arg p "$dport" --arg ap "$aport" --argjson r $running \
+      '{name: $n, branch: ("change/" + $n), dir: $d, commits: $a, uncommitted: $u, running: $r, port: ($p | tonumber? // null), agentdPort: ($ap | tonumber? // null)}')")
+  done < <(git -C "$HOMEREPO" for-each-ref --format='%(refname:short)' 'refs/heads/change/')
+  if [ "$json" = --json ]; then printf '%s\n' "${rows[@]}" | jq -s .; return; fi
+  [ ${#rows[@]} -eq 0 ] && { echo "No changes in progress."; return; }
+  printf '%s\n' "${rows[@]}" | jq -r '"\(.name)\t\(.commits) commit(s), \(.uncommitted) uncommitted\t\(if .running then "running on :\(.port)" + (if .agentdPort then " (agentd :\(.agentdPort))" else "" end) else "stopped" end)\t\(.dir)"' | column -t -s $'\t'
+}
+
+case "${1:-}" in
+  start) start "${2:-}" ;;
+  up) up "${2:-}" "${3:-}" ;;
+  down) down "${2:-}" ;;
+  merge) merge "${2:-}" ;;
+  drop) drop "${2:-}" "${3:-}" ;;
+  list|"") list "${2:-}" ;;
+  tidy) tidy "${2:-}" ;;
+  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

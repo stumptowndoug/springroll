@@ -37,6 +37,13 @@ clean up what's clearly pointless, and report in a few lines. When in doubt, lea
   (`~/data/system/incidents/`). New ones since the last run: say what tripped it and whether it
   recurs (same service, same hour).
 
+- **Changes to Springroll** (worktrees in `~/work`, `bin/change`): run `change tidy`. It removes
+  changes with nothing in them untouched for a day, stops copies untouched for 12 hours, clears what
+  was left behind by hand (servers, state, preview links), and never deletes work. Report what it
+  did in a line. Its "Waiting:" lines (work untouched for 7+ days) go in one plain
+  `signal --key housekeeping:changes` for the owner (merge or drop); none: `signal --clear
+  housekeeping:changes`. "Unknown folder" lines: mention them, don't delete.
+
 - **Skills** (`~/home/skills/`, plus `AGENTS.md` and `notes/memory.md`, which every chat loads):
   run `~/home/jobs/housekeeping/skills-check.sh`. It prints one line per skill (size, frontmatter,
   linked into Claude/Codex/Pi, chats that read it in 30 days, paths it names that are gone) and the
@@ -49,7 +56,8 @@ clean up what's clearly pointless, and report in a few lines. When in doubt, lea
   `signal --needs --key housekeeping:skills` with the exact edits in `--note`, so Chat can apply
   them. Nothing wrong: one line in the report, no signal.
 
-Never touch `~/home`, `~/data`, `~/projects`, `~/backups` or `~/.config`. Never stop Springroll
+Never touch `~/home`, `~/data`, `~/projects`, `~/backups` or `~/.config` (`change tidy` is the one
+exception: it only removes empty changes). Never stop Springroll
 (`desk`, `desk-term`, `agentd`, `system`), the owner's terminal sessions, a job's own running work,
 or anything listed under **This machine** below.
 

@@ -15,7 +15,7 @@
 #          bring a done item back), --hours N (expiry), --quiet (no phone ping).
 # Run from a chat or job, a signal links back to it and is named after it.
 set -euo pipefail
-API=localhost:8090
+API=localhost:${SPRINGROLL_AGENTD_PORT:-8090}
 
 if [ "${1:-}" = list ]; then
   curl -sS --fail-with-body "$API/signals" | jq -r --arg p "${2:-}" '.[] | select(.key // "" | startswith($p)) | "\(.level)\t\(.key // "-")\t\(.title)"'

@@ -22,7 +22,7 @@ const DIR = path.join(HOME, 'data', 'desk', 'needs');
 const WORK = path.join(DIR, 'work'); // the agent runs here: no AGENTS.md, nothing to act on
 fs.mkdirSync(WORK, { recursive: true });
 const F = { read: path.join(DIR, 'read.json'), state: path.join(DIR, 'state.json'), prefs: path.join(DIR, 'preferences.md'), config: path.join(DIR, 'config.json') };
-const AGENTD = 'http://127.0.0.1:8090', MAIL = 'http://127.0.0.1:8101', SYSTEM = 'http://127.0.0.1:8102';
+const AGENTD = `http://127.0.0.1:${Number(process.env.SPRINGROLL_AGENTD_PORT) || 8090}`, MAIL = 'http://127.0.0.1:8101', SYSTEM = 'http://127.0.0.1:8102';
 const WINDOW = 36 * 3600e3;
 const MIN_GAP = 10 * 60e3, URGENT_GAP = 2 * 60e3, IDLE_GAP = 60 * 60e3;
 const DEFAULT_PREFS = `- Lead with what's waiting on me: emails to answer or decide, approvals, failures only I can fix.

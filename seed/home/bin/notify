@@ -3,8 +3,11 @@
 set -euo pipefail
 [ $# -ge 1 ] || { echo "usage: notify <text>" >&2; exit 1; }
 msg="$*"
-topic=$(cat "$HOME/.config/springroll/ntfy-topic")
-curl -fsS -o /dev/null -d "$msg" "https://ntfy.sh/$topic"
-curl -fsS -o /dev/null -X POST localhost:8000/api/notify -H 'content-type: application/json' \
+# A copy of Springroll (`change up`, SPRINGROLL_COPY) shows it on its own screen, never on the phone.
+if [ -z "${SPRINGROLL_COPY:-}" ]; then
+  topic=$(cat "$HOME/.config/springroll/ntfy-topic")
+  curl -fsS -o /dev/null -d "$msg" "https://ntfy.sh/$topic"
+fi
+curl -fsS -o /dev/null -X POST localhost:${SPRINGROLL_PORT:-8000}/api/notify -H 'content-type: application/json' \
   -d "$(jq -n --arg t "$msg" '{text: $t}')" || true
 echo sent

@@ -160,10 +160,9 @@ hover-only affordances must have a visible alternative on touch.
 
 ## Before you say a View is done
 
-1. Screenshot it with Playwright in a dark theme and a light one
-   (`desk theme springroll-dark`, `desk theme springroll-light`, then restore the
-   owner's from `desk settings`), at desktop and phone width, with real data,
-   empty, and loading.
+1. Screenshot it with `shots <page>`: a dark theme and a light one, desktop and
+   phone width, set inside the test browser (never `desk theme`: that's the
+   owner's screen). With real data, empty, and loading.
 2. Check: no hex colors or borders in View CSS, no new font sizes, one primary
    action, status as dots, the page anatomy (heading, lede, pagebar), cards and
    rows that keep their size whatever the text, no browser dialogs, an `ICON`
