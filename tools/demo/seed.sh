@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fill a fresh Springroll with a believable week, for screenshots. Runs on the demo machine as the
 # agent user (tools/demo/up.sh copies it there). Everything here is made up; nothing is real data.
-#   seed.sh            jobs with reports, Timeline items, a to-do list, settings
+#   seed.sh            jobs with reports and prompts, Timeline items, a to-do list, settings
 set -euo pipefail
 DEMO=$(cd "$(dirname "$0")" && pwd)
 A=localhost:8090
@@ -56,6 +56,28 @@ for job, (days, hour) in back.items():
     db.execute("update items set created=created+?, updated=updated+? where thread_id=?", (shift, shift, tid))
 db.commit()
 PY
+
+# Now that the runs are in, each job becomes what it would be on a real machine: an agent job whose
+# prompt is one sentence, with a few lines of the notes an agent keeps between runs.
+agentjob() { # name prompt notes
+  jq --arg p "$2" 'del(.command) | .type = "agent" | .agent = "claude" | .prompt = $p | .retries = 2' "jobs/$1/job.json" > "jobs/$1/job.tmp"
+  mv "jobs/$1/job.tmp" "jobs/$1/job.json"
+  printf '%s\n\n%s\n' "$(head -1 "jobs/$1/NOTES.md")" "$3" > "jobs/$1/NOTES.md"
+}
+agentjob morning-brief "Every morning, look at my calendar and the weather and tell me what today looks like, and which emails need me before noon." \
+  "- Lead with the weather only if it changes plans (rain, a late flight).
+- Priya's lunches are always downtown; don't repeat the address."
+agentjob price-watch "Every six hours, check the prices on my watch list and tell me when one drops, with a chart of the last month." \
+  "- The watch list is ~/data/prices/watch.md (9 items).
+- The desk's store shows a sale price only after 6am; check after that."
+agentjob site-traffic "Every morning, check yesterday's visitors and sign-ups and tell me if anything looks off." \
+  "- Search has driven most of the growth since Oct 12.
+- Sundays run about 10% low; that's normal, not a drop."
+agentjob repos-week "Every Monday, sum up what changed in my GitHub repos last week, and what's waiting on my review." \
+  "- Three repos: app, site, scripts. Dependabot PRs count as merged work, not review."
+agentjob bills "On the 1st, check that every bill got paid and tell me the total." \
+  "- Four bills from the joint account. Electric varies with the season; flag only a jump over 25%."
+git add jobs && git commit -qm "Demo: the jobs as their prompts" || true
 
 # The Timeline: what needs you, and what's worth knowing.
 signal --needs --quiet --key demo:quote --source Mail --icon mail \
