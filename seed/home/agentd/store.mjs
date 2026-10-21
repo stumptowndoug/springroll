@@ -44,7 +44,7 @@ export function openStore(dir) {
   // room) and survives restarts; attempt counts retries; how is scheduled | manual | retry.
   // Threads: the agent's settings as it reports them, Full access or Ask first, the effort chosen.
   for (const col of ['options text', "access text default 'full'", 'effort text', 'persona text']) { try { db.exec(`alter table threads add column ${col}`); } catch {} }
-  for (const col of ['report text', 'title text', 'attempt integer not null default 1', 'not_before integer', 'how text']) { try { db.exec(`alter table runs add column ${col}`); } catch {} }
+  for (const col of ['report text', 'title text', 'attempt integer not null default 1', 'not_before integer', 'how text', 'report_turn integer', 'report_revised integer']) { try { db.exec(`alter table runs add column ${col}`); } catch {} }
   // Signals from connectors: an icon, the note an agent gets when the owner asks about it, and a revision
   // (what changed upstream) so an item the owner marked done stays done until something new happens.
   for (const col of ['icon text', 'note text', 'rev text']) { try { db.exec(`alter table signals add column ${col}`); } catch {} }
@@ -83,7 +83,8 @@ export function openStore(dir) {
     finishRun: db.prepare('update runs set finished = ?, status = ?, summary = ? where id = ?'),
     runs: db.prepare('select id, job, thread_id, started, finished, status, summary, title, attempt, not_before, how from runs where job = ? order by id desc limit ?'),
     runByThread: db.prepare('select * from runs where thread_id = ? order by id desc limit 1'),
-    setReport: db.prepare('update runs set report = ?, title = ?, summary = ? where id = ?'),
+    // report_turn: the chat turn that published it, so the chat shows it there (later turns follow it).
+    setReport: db.prepare('update runs set report_revised = (report is not null), report = ?, title = ?, summary = ?, report_turn = ? where id = ?'),
     lastRuns: db.prepare("select * from runs where id in (select max(id) from runs where status != 'queued' group by job)"),
     queueRun: db.prepare("insert into runs (job, started, status, attempt, not_before, how) values (?, ?, 'queued', ?, ?, ?)"),
     queued: db.prepare("select * from runs where status = 'queued' order by coalesce(not_before, 0), id"),
@@ -150,7 +151,7 @@ export function openStore(dir) {
     finishRun: (id, status, summary) => q.finishRun.run(now(), status, summary, id),
     runs: (job, limit = 30) => q.runs.all(job, limit),
     runByThread: (threadId) => q.runByThread.get(threadId) || null,
-    setReport: (id, report, title, summary) => q.setReport.run(report, title, summary, id),
+    setReport: (id, report, title, summary, turn = null) => q.setReport.run(report, title, summary, turn, id),
     lastRuns: () => Object.fromEntries(q.lastRuns.all().map((r) => [r.job, r])),
 
     // Signals: what jobs and agents tell the owner through Today. Levels:

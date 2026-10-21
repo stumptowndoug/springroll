@@ -21,12 +21,12 @@ const update = (u, sessionId = 's1') => send({ method: 'session/update', params:
 const say = (text, messageId) => update({ sessionUpdate: 'agent_message_chunk', ...(messageId ? { messageId } : {}), content: { type: 'text', text } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const waiting = new Map();
-let nextId = 1000, cancelled = false;
+let nextId = 1000, cancelled = false, clientInfo = null;
 
 readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
   if (m.id != null && !m.method) return waiting.get(m.id)?.(m.result);
-  if (m.method === 'initialize') return send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false, promptCapabilities: { image: true } } } });
+  if (m.method === 'initialize') { clientInfo = m.params.clientInfo; return send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false, promptCapabilities: { image: true } }, agentInfo: { name: 'fake-acp', title: 'Fake adapter', version: '9.9.9' } } }); }
   if (m.method === 'session/new') return send({ id: m.id, result: { sessionId: 's1', configOptions: [{ id: 'model', category: 'model', type: 'select', name: 'Model', currentValue: 'small', options: [{ value: 'small', name: 'Small' }, { value: 'big', name: 'Big' }] }] } });
   if (m.method === 'session/cancel') { cancelled = true; return; }
   if (m.method === '_session/async_task/stop') {
@@ -37,6 +37,7 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   cancelled = false;
   const text = m.params.prompt.map((p) => p.text || '').join(' ');
   const done = (stopReason = 'end_turn') => send({ id: m.id, result: { stopReason } });
+  if (/whoami/.test(text)) { say(JSON.stringify(clientInfo)); return done(); }
   if (/echoall/.test(text)) { say(JSON.stringify(m.params.prompt.map((p) => p.text || p.type))); return done(); }
   if (/hang/.test(text)) return say('working');
   if (/slow/.test(text)) {

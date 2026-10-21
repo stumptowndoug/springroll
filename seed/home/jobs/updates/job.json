@@ -1,0 +1,14 @@
+{
+  "title": "Updates",
+  "group": "Springroll",
+  "type": "command",
+  "schedule": "40 4 * * *",
+  "command": "~/home/bin/updates apply",
+  "timeout": "45m",
+  "retries": 1,
+  "retryDelay": "30m",
+  "enabled": true,
+  "catchUp": "once",
+  "keep": "failures",
+  "timeline": "failures"
+}

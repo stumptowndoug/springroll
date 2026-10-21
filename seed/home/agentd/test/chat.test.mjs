@@ -55,6 +55,15 @@ test('streamed text: one item per message, batched, in order, replayable from ev
   assert.ok(ends.get(id)[0].text.endsWith('Next part.'), 'the final message reaches onTurnEnd');
 });
 
+test('the handshake: Springroll says its real version; the adapter\'s name and version are kept on the chat', async () => {
+  const id = await chat('whoami');
+  await turnsEnded(id);
+  const sent = JSON.parse(store.items(id).find((i) => i.kind === 'text').text);
+  assert.equal(sent.name, 'springroll');
+  assert.notEqual(sent.version, '0.1');
+  assert.deepEqual(store.thread(id).options.agentInfo, { name: 'fake-acp', title: 'Fake adapter', version: '9.9.9' });
+});
+
 test('Stop: the turn ends cancelled and messages queued behind it are not sent', async () => {
   const id = await chat('slow');
   await until(() => store.items(id).some((i) => i.kind === 'text'));

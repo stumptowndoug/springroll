@@ -1,0 +1,328 @@
+#!/usr/bin/env node
+// Keeps the software Springroll installs outside ~/home current. One kind of item so far: each coding
+// agent's chat part (its ACP adapter), which bundles its own copy of the agent and so falls behind the CLI.
+//   updates [--json]           what's installed, what's newer, what's held back
+//   updates apply [item…]      move what's set up to its newest ready version (the daily `updates` job)
+//   updates install <item>     set one up now (Connections → Add chat)
+//   updates remove <item>
+// Items: chat:<agent> for each agent in agents/agents.json with "acpPackage" (npm) or "acpRegistry"
+// (the ACP registry, for Antigravity's runtime from Google).
+//
+// A version is ready once it's been out 3 days: a bad or hijacked publish is usually pulled by then. Each
+// version goes in its own folder ~/.local/share/springroll/chat/<agent>/<version>/ and becomes `current`
+// only after it answers ACP initialize; one that doesn't is held back and the old one keeps working. The
+// launcher (~/.local/bin/<acp command>, ahead of ~/.npm-global/bin on PATH) reads `current` as a chat
+// starts, so a running chat keeps its folder; folders (and old npm -g copies) no process uses are removed
+// on a later run. npm runs as the owner's own, so their .npmrc registry and proxy apply.
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
+const HOME = os.homedir();
+const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..'); // ~/home (or a change's copy)
+const BASE = path.join(HOME, '.local/share/springroll/chat');
+const BIN = path.join(HOME, '.local/bin');
+const READY_DAYS = Number(process.env.SPRINGROLL_UPDATE_DAYS ?? 3);
+const RETRY_HELD_DAYS = 7; // a held-back version is tried again after this, in case it was this machine's fault
+const INIT_MS = 120000;
+const REGISTRY = 'https://raw.githubusercontent.com/agentclientprotocol/registry/main';
+const ARCH = { x64: 'x86_64', arm64: 'aarch64' }[process.arch] || process.arch;
+const DAY = 86400000;
+
+const die = (msg) => { console.error(`updates: ${msg}`); process.exit(1); };
+const readJson = (f, d = null) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+const exists = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
+
+// ---------- Items ----------
+
+function items() {
+  const agents = readJson(path.join(REPO, 'agents/agents.json'), []);
+  return agents.filter((a) => a.acp && (a.acpPackage || a.acpRegistry)).map((a) => {
+    const dir = path.join(BASE, a.id);
+    const it = { id: `chat:${a.id}`, agent: a, name: `${a.name} chat`, dir, launcher: path.join(BIN, a.acp[0]), source: a.acpPackage ? npmSource(a) : registrySource(a) };
+    it.current = () => { try { return path.basename(fs.readlinkSync(path.join(dir, 'current'))); } catch { return null; } };
+    it.state = () => readJson(path.join(dir, 'state.json'), {});
+    it.save = (s) => { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ ...it.state(), ...s }, null, 2) + '\n'); };
+    return it;
+  });
+}
+
+// An adapter published to npm: versions and their publish times from the registry the owner's npm uses.
+function npmSource(a) {
+  const pkg = a.acpPackage;
+  const bin = a.acp[0];
+  return {
+    kind: 'npm',
+    async versions() {
+      const { stdout } = await run('npm', ['view', pkg, 'time', 'dist-tags', '--json'], { timeout: 60000 });
+      const v = JSON.parse(stdout);
+      const latest = v['dist-tags']?.latest;
+      return Object.entries(v.time || {}).filter(([k]) => /^\d+\.\d+\.\d+$/.test(k) && cmp(k, latest) <= 0).map(([version, t]) => ({ version, published: Date.parse(t) }));
+    },
+    async fetch(version, into) {
+      fs.mkdirSync(into, { recursive: true });
+      fs.writeFileSync(path.join(into, 'package.json'), '{"private":true}\n');
+      await run('npm', ['install', '--prefix', into, '--no-audit', '--no-fund', '--loglevel=error', `${pkg}@${version}`], { timeout: 600000, maxBuffer: 16 << 20 });
+      if (!exists(path.join(into, 'node_modules/.bin', bin))) throw new Error(`${pkg}@${version} has no ${bin} command`);
+    },
+    entry: (dir) => [path.join(dir, 'node_modules/.bin', bin)],
+    // The global copy from before `updates` (npm i -g): removed once nothing runs it.
+    legacy: [...new Set([pkg, ...(a.acpLegacy || [])])].map((p) => ({ what: `npm -g ${p}`, dir: path.join(npmRoot(), p), remove: () => run('npm', ['rm', '-g', p], { timeout: 120000 }) })),
+    async legacyVersion() { return readJson(path.join(npmRoot(), pkg, 'package.json'))?.version || null; },
+  };
+}
+
+// A binary listed in the ACP registry (github.com/agentclientprotocol/registry): only its newest version is
+// listed, and only a download from the place agents.json "acpRegistry" allows is taken. Fetching and checking
+// it is the item's own installer (agy-acp-install --fetch), which keeps hashes for one pinned fallback version.
+function registrySource(a) {
+  const r = a.acpRegistry; // { id, archive: "https://…{version}…{arch}….zip", arch: {x86_64: "x86_64", …}, fetch, pinned, cmd, args }
+  const archive = (version) => r.archive.replaceAll('{version}', version).replaceAll('{arch}', r.arch?.[ARCH] || ARCH);
+  return {
+    kind: 'registry',
+    async versions() {
+      const res = await fetch(`${REGISTRY}/${r.id}/agent.json`, { signal: AbortSignal.timeout(30000) });
+      if (!res.ok) throw new Error(`the ACP registry answered ${res.status}`);
+      const entry = await res.json();
+      const version = entry.version;
+      const listed = entry.distribution?.binary?.[`${process.platform}-${ARCH}`]?.archive;
+      if (!/^\d+\.\d+\.\d+$/.test(version || '')) throw new Error(`the registry lists an odd version (${version})`);
+      if (listed !== archive(version)) throw new Error(`the registry's download (${listed}) isn't ${new URL(archive(version)).hostname}'s versioned one; not taking it`);
+      const head = await fetch(listed, { method: 'HEAD', signal: AbortSignal.timeout(30000) });
+      const published = Date.parse(head.headers.get('last-modified') || '');
+      const out = [{ version, published: Number.isFinite(published) ? published : Date.now() }];
+      if (r.pinned && r.pinned !== version) out.push({ version: r.pinned, published: 0, pinned: true });
+      return out;
+    },
+    async fetch(version, into) {
+      const [cmd, ...args] = r.fetch;
+      await run(path.join(REPO, cmd), [...args, version, into], { timeout: 1800000, maxBuffer: 16 << 20 });
+    },
+    entry: (dir) => [path.join(dir, r.cmd), ...(r.args || [])],
+    legacy: (r.legacy || []).map((d) => ({ what: d, dir: expand(d), remove: async () => fs.rmSync(expand(d), { recursive: true, force: true }) })),
+    async legacyVersion() { for (const d of r.legacy || []) { const v = fs.existsSync(expand(d)) && fs.readdirSync(expand(d)).find((x) => /^\d/.test(x)); if (v) return v.split('-')[0]; } return null; },
+  };
+}
+
+const expand = (p) => p.replace(/^~(?=\/)/, HOME);
+let _npmRoot;
+function npmRoot() {
+  if (_npmRoot === undefined) { try { _npmRoot = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim(); } catch { _npmRoot = path.join(HOME, '.npm-global/lib/node_modules'); } }
+  return _npmRoot;
+}
+
+function cmp(a, b) {
+  const x = String(a).split('.').map(Number), y = String(b || '0').split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0);
+  return 0;
+}
+
+// The newest version that's been out READY_DAYS, isn't held back, and isn't a step down.
+function pick(versions, state, now = Date.now()) {
+  const held = state.held && now - state.held.at < RETRY_HELD_DAYS * DAY ? state.held.version : null;
+  const sorted = versions.filter((v) => !v.pinned).sort((a, b) => cmp(b.version, a.version));
+  const ready = sorted.find((v) => now - v.published >= READY_DAYS * DAY && v.version !== held);
+  return { newest: sorted[0], ready, pinned: versions.find((v) => v.pinned), held };
+}
+
+// ---------- Checking a version: it has to answer ACP initialize ----------
+
+function initialize(argv) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(argv[0], argv.slice(1), { cwd: HOME, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    let out = '', err = '', done = false;
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); try { process.kill(-p.pid, 'SIGTERM'); } catch {} fn(v); };
+    const timer = setTimeout(() => finish(reject, new Error(`no answer to initialize in ${INIT_MS / 1000}s`)), INIT_MS);
+    p.on('error', (e) => finish(reject, e));
+    p.on('exit', (code) => finish(reject, new Error(`it exited (${code}) before answering${err.trim() ? `: ${err.trim().split('\n').pop().slice(0, 200)}` : ''}`)));
+    p.stderr.on('data', (d) => { err = (err + d).slice(-4000); });
+    p.stdout.on('data', (d) => {
+      out += d;
+      for (let i; (i = out.indexOf('\n')) >= 0;) {
+        const line = out.slice(0, i); out = out.slice(i + 1);
+        let msg; try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.id !== 1) continue;
+        if (msg.error) return finish(reject, new Error(`initialize failed: ${msg.error.message}`));
+        if (!msg.result?.protocolVersion) return finish(reject, new Error('initialize answered without a protocol version'));
+        return finish(resolve, msg.result);
+      }
+    });
+    p.stdin.on('error', () => {});
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'springroll-updates', title: 'Springroll updates', version: springrollVersion() } } }) + '\n');
+  });
+}
+
+function springrollVersion() {
+  try { return execFileSync('git', ['-C', REPO, 'log', '-1', '--format=%cs-%h'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return 'unknown'; }
+}
+
+// ---------- Installing, switching, pruning ----------
+
+function writeLauncher(it) {
+  const [entry, ...args] = it.source.entry('$d');
+  const q = (s) => (s.startsWith('$d') ? `"${s}"` : `'${s.replaceAll("'", "'\\''")}'`);
+  fs.mkdirSync(BIN, { recursive: true });
+  const tmp = `${it.launcher}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, `#!/bin/sh\n# ${it.name} (${it.agent.acpPackage || it.agent.acpRegistry.id}): the version \`updates\` made current (~/home/bin/updates)\nd=$(readlink -e '${path.join(it.dir, 'current')}') || { echo "${it.name} isn't installed: updates install ${it.id}" >&2; exit 127; }\nexec ${[entry, ...args].map(q).join(' ')} "$@"\n`, { mode: 0o755 });
+  fs.renameSync(tmp, it.launcher);
+}
+
+async function installVersion(it, version, log) {
+  const dir = path.join(it.dir, version);
+  const stage = path.join(it.dir, `.stage-${version}-${process.pid}`);
+  if (!fs.existsSync(path.join(dir, '.ok'))) {
+    fs.rmSync(stage, { recursive: true, force: true });
+    fs.mkdirSync(stage, { recursive: true });
+    try {
+      log(`Fetching ${it.name} ${version}…`);
+      await it.source.fetch(version, stage);
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.renameSync(stage, dir);
+    } catch (e) {
+      fs.rmSync(stage, { recursive: true, force: true });
+      throw Object.assign(new Error(`couldn't fetch ${version}: ${(e.stderr || e.message || '').toString().trim().split('\n').slice(-2).join(' ')}`), { transient: true });
+    }
+  }
+  log(`Checking that ${it.name} ${version} starts…`);
+  let info;
+  try { info = await initialize(it.source.entry(dir)); } catch (e) {
+    it.save({ held: { version, why: e.message, at: Date.now() } });
+    throw new Error(`${version} held back: ${e.message}`);
+  }
+  fs.writeFileSync(path.join(dir, '.ok'), '');
+  const link = path.join(it.dir, `.current-${process.pid}`);
+  fs.rmSync(link, { force: true });
+  fs.symlinkSync(version, link);
+  fs.renameSync(link, path.join(it.dir, 'current'));
+  writeLauncher(it);
+  it.save({ held: null, removed: null, agentInfo: info.agentInfo || null, protocolVersion: info.protocolVersion, installed: Date.now() });
+  return info;
+}
+
+// Every path a running process has open as its program or names in its command line, resolved.
+function inUse() {
+  const used = [];
+  for (const pid of fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d))) {
+    try { used.push(fs.realpathSync(`/proc/${pid}/exe`)); } catch {}
+    try { for (const a of fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0')) if (a.startsWith('/')) { try { used.push(fs.realpathSync(a)); } catch { used.push(a); } } } catch {}
+  }
+  return (dir) => { const d = fs.existsSync(dir) ? fs.realpathSync(dir) : dir; return used.some((p) => p === d || p.startsWith(d + '/')); };
+}
+
+// Old versions (and the npm -g copy from before `updates`) once no process uses them. Without a current
+// version only a removed item is swept, so nothing is cleaned before its replacement works.
+async function prune(it, log) {
+  const cur = it.current();
+  if (!cur && !it.state().removed) return;
+  if (!fs.existsSync(it.dir)) return;
+  const busy = inUse();
+  for (const d of fs.readdirSync(it.dir)) {
+    const full = path.join(it.dir, d);
+    if ((cur && d === cur) || d === 'current' || d === 'state.json') continue;
+    if (d.startsWith('.stage-') && Number(d.split('-').pop()) !== process.pid && !exists(`/proc/${d.split('-').pop()}`)) { fs.rmSync(full, { recursive: true, force: true }); continue; }
+    if (d.startsWith('.') || busy(full)) continue;
+    fs.rmSync(full, { recursive: true, force: true });
+    log(`Removed ${it.name} ${d} (nothing was using it).`);
+  }
+  for (const l of process.env.SPRINGROLL_UPDATES_KEEP_OLD ? [] : it.source.legacy) { // (set in tests)
+    if (!fs.existsSync(l.dir) || busy(l.dir)) continue;
+    // An old npm -g copy's own command in ~/.npm-global/bin points into it too; both go with npm rm.
+    await l.remove().catch(() => {});
+    log(`Removed the old ${l.what} (nothing was using it).`);
+  }
+}
+
+// Set up: a current version, or an install from before `updates` (taken over on the next apply); not once removed.
+const setUp = (it) => !it.state().removed && (!!it.current() || fs.existsSync(it.launcher) || whichSync(it.agent.acp[0]));
+function whichSync(cmd) { return (process.env.PATH || '').split(':').some((d) => { try { fs.accessSync(path.join(d, cmd), fs.constants.X_OK); return true; } catch { return false; } }); }
+
+function signal(args) {
+  return run(path.join(REPO, 'bin/signal'), args, { timeout: 30000 }).catch(() => {});
+}
+
+// ---------- Commands ----------
+
+async function status(json) {
+  const out = [];
+  for (const it of items()) {
+    const s = it.state();
+    const row = { item: it.id, name: it.name, setUp: setUp(it), current: it.current(), legacy: it.current() ? null : await it.source.legacyVersion(), agentInfo: s.agentInfo || null, held: s.held || null, checked: s.checked || null };
+    if (row.setUp) {
+      try {
+        const v = pick(await it.source.versions(), s);
+        row.newest = v.newest?.version || null;
+        row.ready = v.ready?.version || null;
+        if (v.newest && v.newest !== v.ready) row.readyOn = new Date(v.newest.published + READY_DAYS * DAY).toISOString().slice(0, 10);
+      } catch (e) { row.error = e.message; }
+    }
+    out.push(row);
+  }
+  if (json) return console.log(JSON.stringify(out, null, 2));
+  for (const r of out) {
+    const have = !r.setUp ? null : r.current || (r.legacy ? `${r.legacy} (old install)` : null);
+    const info = r.agentInfo?.version && r.agentInfo.version !== r.current ? ` (${r.agentInfo.name || 'adapter'} ${r.agentInfo.version})` : '';
+    const what = !r.setUp ? 'not set up'
+      : r.error ? `couldn't check: ${r.error}`
+      : [r.ready && cmp(r.ready, r.current || r.legacy || '0') > 0 ? `${r.ready} ready` : 'up to date',
+        !r.current && r.legacy ? 'moves to its own folder on the next apply' : '',
+        r.newest && r.newest !== r.ready && cmp(r.newest, r.current || '0') > 0 ? `${r.newest} ready ${r.readyOn}` : '',
+        r.held ? `${r.held.version} held back: ${r.held.why}` : ''].filter(Boolean).join('; ');
+    console.log(`${r.item.padEnd(18)} ${(have ? have + info : '-').padEnd(34)} ${what}`);
+  }
+}
+
+async function apply(ids, { install = false } = {}) {
+  const all = items();
+  const chosen = ids.length ? ids.map((id) => all.find((it) => it.id === id || it.agent.id === id) || die(`no item ${id} (updates lists them)`)) : all.filter(setUp);
+  let failed = 0;
+  // Removed while a chat still ran it: its folders go once nothing does.
+  if (!ids.length) for (const it of all) if (it.state().removed) await prune(it, (m) => console.log(`${it.id}: ${m}`));
+  for (const it of chosen) {
+    const log = (m) => console.log(`${it.id}: ${m}`);
+    fs.mkdirSync(it.dir, { recursive: true });
+    try {
+      const s = it.state();
+      const v = pick(await it.source.versions(), s);
+      it.save({ checked: Date.now() });
+      const cur = it.current();
+      // A fresh install with nothing ready yet (a brand-new adapter, or Antigravity's newest under 3 days)
+      // takes the pinned version, else the newest.
+      const want = v.ready || (cur ? null : v.pinned || v.newest);
+      if (!want) { log(`${cur} is current${v.newest && v.newest.version !== cur ? `; ${v.newest.version} is ready ${new Date(v.newest.published + READY_DAYS * DAY).toISOString().slice(0, 10)}` : ''}.`); }
+      else if (cur && cmp(want.version, cur) <= 0) { log(`${cur} is current.`); }
+      else {
+        const info = await installVersion(it, want.version, log);
+        log(`Now on ${want.version}${info.agentInfo?.version && info.agentInfo.version !== want.version ? ` (${info.agentInfo.name || 'adapter'} ${info.agentInfo.version})` : ''}${cur ? `, from ${cur}` : ''}. New chats use it; running ones keep theirs.`);
+        await signal(['--clear', `updates:${it.id}`]);
+      }
+      await prune(it, log);
+    } catch (e) {
+      failed++;
+      console.error(`${it.id}: ${e.message}`);
+      // Held back: the old version keeps working, so it's worth knowing, not a failure to fix.
+      if (!e.transient && !install && /held back/.test(e.message)) { failed--; await signal(['--key', `updates:${it.id}`, '--icon', 'pause', '--source', 'Updates', `${it.name}: ${e.message.split(':')[0]}`, `${e.message.split(': ').slice(1).join(': ')}. Chat stays on ${it.current() || 'the version it had'}; a newer one is tried as it's ready.`]); }
+    }
+  }
+  if (failed) process.exit(1);
+}
+
+async function remove(id) {
+  const it = items().find((x) => x.id === id || x.agent.id === id) || die(`no item ${id}`);
+  fs.rmSync(it.launcher, { force: true });
+  fs.rmSync(path.join(it.dir, 'current'), { force: true });
+  // Folders a running chat still uses stay until a later `updates apply` sweeps them.
+  it.save({ removed: Date.now() });
+  await prune(it, () => {});
+  console.log(`Removed ${it.name}.`);
+}
+
+const [cmd = '', ...rest] = process.argv.slice(2);
+if (cmd === '-h' || cmd === '--help' || cmd === 'help') { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 16).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (cmd === '' || cmd === '--json' || cmd === 'check') await status(rest.includes('--json') || cmd === '--json');
+else if (cmd === 'apply') await apply(rest);
+else if (cmd === 'install') { if (!rest[0]) die('install <item>'); await apply(rest.slice(0, 1), { install: true }); }
+else if (cmd === 'remove') { if (!rest[0]) die('remove <item>'); await remove(rest[0]); }
+else die(`unknown command ${cmd} (updates --help)`);

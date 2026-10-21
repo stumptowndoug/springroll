@@ -118,7 +118,7 @@ function renderSort() {
   const by = read.agent === 'claude' || !read.agent ? 'Claude' : agentName(read.agent);
   const t = el.querySelector('#tSort');
   t.title = read.error ? `The last sort failed: ${read.error}` : read.generated ? `What waits on you was sorted by ${by} at ${ui.time(read.generated)}` : '';
-  ui.morph(t, read.generating ? ' · <span class="ui-shimmer">Sorting</span>' : read.error ? ' · <span class="ui-status"><span class="ui-dot danger"></span>Sort failed</span>' : '');
+  ui.morph(t, read.generating ? '<span class="ui-shimmer">Sorting</span>' : read.error ? '<span class="ui-status"><span class="ui-dot danger"></span>Sort failed</span>' : '');
 }
 
 // Agent first: each thing that needs you is a pointer (what, why, when) and a conversation. Ask opens
@@ -130,7 +130,7 @@ const ask = (item, primary = true) => `<button class="ui-btn sm${primary ? ' pri
 const external = (href) => /^https?:/i.test(href || '');
 // Rows without a View keep its space, so every row's actions line up.
 const view = (href) => (href ? `<a class="ui-btn sm quiet" href="${ui.esc(href)}"${external(href) ? ' target="_blank" rel="noopener"' : ''}>View</a>` : '<span class="ui-btn sm quiet" aria-hidden="true" style="visibility:hidden">View</span>');
-const done = (attrs) => `<button class="ui-icon-btn more" ${attrs} title="Done" aria-label="Done">${ui.icon('check')}</button>`;
+const done = (attrs) => `<button class="ui-icon-btn more done" ${attrs} title="Done" aria-label="Done">${ui.icon('check')}</button>`;
 const btn = (label, attrs, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" ${attrs}>${label}</button>`;
 
 function needRow(n) {
@@ -270,6 +270,9 @@ function mountSignins(sec) {
   }
 }
 
+// On touch (no hover), a waiting row shows Done and this; the rest of its buttons are in its menu.
+const menuBtn = `<button class="ui-icon-btn more tl-menu" data-acts-menu title="More" aria-label="More">${ui.icon('ellipsis')}</button>`;
+
 // A waiting row, shaped like every other feed row: how long it's waited · an amber icon · title, source,
 // one line · its buttons (on hover, unless it needs a direct answer: keep) · a drawer for sign-ins and keys.
 // open: what clicking the row does (its chat).
@@ -277,7 +280,7 @@ function task({ id, src = '', icon, danger, title, when, sub, code = '', acts = 
   const open = panel && openPanels.has(id);
   return `<div class="ui-feed-row tl-wait${open ? ' open' : ''}${keep || open ? ' keep' : ''}" data-task="${ui.esc(id)}"${onRow ? ` data-open='${ui.esc(JSON.stringify(onRow))}' tabindex="0"` : ''}>
     <span class="time">${when ? ui.esc(ui.ago(when)) : 'now'}</span><span class="lead${danger ? ' danger' : ''}">${ui.icon(icon, 'sm')}</span>
-    <span class="title">${ui.esc(title)}</span>${tag(src, title)}<span class="acts">${acts}</span>
+    <span class="title">${ui.esc(title)}</span>${tag(src, title)}<span class="acts">${acts}${keep ? '' : menuBtn}</span>
     ${code ? `<code class="sub code">${ui.esc(code)}</code>` : `<span class="sub"${sub ? ` title="${ui.esc(sub)}"` : ''}>${ui.esc(sub || '')}</span>`}
     ${open ? `<div class="drawer">${panel}</div>` : ''}
   </div>`;
@@ -483,10 +486,10 @@ function runRow(t) {
   const dot = t.status === 'waiting' ? 'warn' : t.status === 'error' ? 'danger' : isRunning(t) ? 'run' : t.unread ? 'accent' : 'ok';
   const title = t.title || jt;
   const sub = t.status === 'waiting' ? 'Needs you: approve an action' : t.status === 'error' ? (t.error || t.preview || 'Failed')
-    : isRunning(t) ? '' : /^(i )?published the report\.?$/i.test((t.preview || '').trim()) ? 'Report' : (t.preview || 'Done');
+    : isRunning(t) ? '' : /^(i )?published the report\.?$/i.test((t.preview || '').trim()) ? '' : (t.preview || 'Done');
   return `<a class="ui-feed-row" href="#/${job?.report === false ? 't' : 'r'}/${t.id}"><span class="time">${ui.time(isRunning(t) ? t.created || t.updated : t.updated)}</span><span class="ui-dot ${dot}"></span>
     <span class="title">${ui.esc(title)}</span>${tag(t.origin, title)}<span class="chev">›</span>
-    <span class="sub${t.status === 'error' ? ' danger' : ''}">${isRunning(t) ? `<span class="ui-shimmer">Running</span> · started ${ui.esc(ui.ago(t.created || t.updated))}` : ui.esc(sub.replace(/[#*`_>]/g, '').slice(0, 200))}</span></a>`;
+    ${!sub && !isRunning(t) ? '' : `<span class="sub${t.status === 'error' ? ' danger' : ''}">${isRunning(t) ? `<span class="ui-shimmer">Running</span> · started ${ui.esc(ui.ago(t.created || t.updated))}` : ui.esc(sub.replace(/[#*`_>]/g, '').slice(0, 200))}</span>`}</a>`;
 }
 
 function foldRow(f) {
@@ -511,6 +514,8 @@ function knowRow(s) {
 /* ---------- Actions ---------- */
 
 async function onClick(e) {
+  const mb = e.target.closest('[data-acts-menu]');
+  if (mb) { e.preventDefault(); return actsMenu(mb); }
   const q = e.target.closest('[data-ask]');
   if (q) { e.preventDefault(); return ctx.askAbout(JSON.parse(q.dataset.ask)); }
   const ts = e.target.closest('[data-term-setup]');
@@ -545,6 +550,20 @@ async function onClick(e) {
   if (!b) return;
   e.preventDefault();
   act(b);
+}
+
+// A waiting row's other buttons (Chat, View, 👍, 👎) as a menu; each item presses the real one.
+function actsMenu(b) {
+  const m = document.createElement('div');
+  m.className = 'ui-menu';
+  for (const x of b.parentElement.children) {
+    if (x === b || x.matches('.done, [aria-hidden="true"]')) continue;
+    const i = document.createElement('button');
+    i.innerHTML = `${x.querySelector('.ui-icon')?.outerHTML || ui.icon(x.matches('a') ? 'arrow-up-right' : 'circle', 'sm')}<span>${ui.esc(x.getAttribute('aria-label') || x.title || x.textContent.trim())}</span>${x.getAttribute('aria-pressed') === 'true' ? ui.icon('check', 'sm') : ''}`;
+    i.onclick = () => x.click();
+    m.append(i);
+  }
+  ui.popover(b, m, { temp: true, align: 'end' });
 }
 
 async function readAct(b) {

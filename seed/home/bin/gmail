@@ -5,11 +5,12 @@
   gmail search "<Gmail search, e.g. from:maya newer_than:7d>" [--account A] [--limit 20]
   gmail show <ref>
   gmail reply <ref> [--all] [--attach FILE]... [--approved]        the reply text on stdin
-  gmail send --from <account> --to <addr> [--cc <addr>] --subject <s> [--attach FILE]... [--approved]   text on stdin
+  gmail send --from <account> --to <addr> [--cc <addr>] --subject <s> [--as "<Name> <alias@…>"] [--attach FILE]... [--approved]   text on stdin
   gmail archive <ref>...                        out of the inbox (still in All Mail)
   gmail move <ref> <label>                      label it and take it out of the inbox
 
-<ref> is Mail's id (the number in Mail's API and Home's links) or account:<Message-ID> (from search).
+--as sends from one of the account's aliases (it must be under Gmail → Settings → Accounts → Send mail as,
+or Gmail puts the account's own address back). <ref> is Mail's id (the number in Mail's API and Home's links) or account:<Message-ID> (from search).
 Replies and new mail go out through Gmail (they land in Sent). Unless the owner chose "Send right away"
 (Connections → Gmail; "Ask me first" is the default), sending needs --approved: show them the exact email in the chat first.
 """
@@ -74,7 +75,7 @@ def resolve(ref):
     if ref.isdigit():
         m = mail_api(f"/api/msg/{ref}")
         if not m or m.get("error") or not m.get("msgid"): die(f"Mail has no message {ref}")
-        return m["account"], m["msgid"], int(ref)
+        return m["account"], m["msgid"].strip(), int(ref)
     if ":" in ref:
         acct, mid = ref.split(":", 1)
         return acct, mid, None
@@ -207,16 +208,17 @@ def main():
         print(f"Sent your reply to {to} from {a['email']}.")
         return
     if cmd == "send":
-        frm = arg("--from"); to = arg("--to"); cc = arg("--cc"); subj = arg("--subject"); approved = flag("--approved"); files = attachments()
+        frm = arg("--from"); to = arg("--to"); cc = arg("--cc"); subj = arg("--subject"); alias = arg("--as"); approved = flag("--approved"); files = attachments()
         if not (frm and to and subj): die("gmail send --from <account> --to <addr> --subject <s> (text on stdin)")
         a = account(c, frm); policy_ok(c, approved); text = body_from_stdin()
-        r = EmailMessage(); r["From"] = a["email"]; r["To"] = to
+        sender = alias or a["email"]
+        r = EmailMessage(); r["From"] = sender; r["To"] = to
         if cc: r["Cc"] = cc
         r["Subject"] = subj; r["Date"] = email.utils.formatdate(localtime=True); r.set_content(text); attach(r, files)
         S = smtp(a, c)
         try: S.send_message(r)
         finally: S.quit()
-        print(f"Sent to {to} from {a['email']}."); return
+        print(f"Sent to {to} from {sender} (account {a['email']})."); return
     if cmd in ("archive", "move"):
         label = sys.argv.pop(3) if cmd == "move" and len(sys.argv) > 3 else None
         if cmd == "move" and not label: die("gmail move <ref> <label>")

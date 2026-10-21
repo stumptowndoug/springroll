@@ -137,8 +137,19 @@ async function agentStatus() {
     // (Antigravity's runtime) a sign-in of its own (agents.json "chatSignin").
     const acpInstalled = !!a.acp && (a.acp[0] === a.bin ? !!where : !!(await sh(`command -v ${a.acp[0]}`)));
     const chatSignedIn = !a.chatSignin || authStamp(a.chatSignin.auth) > 0;
-    return { ...a, installed: !!where, version: versions.get(a.id) || null, signedIn, acpInstalled, chatSignedIn, disk: diskUse(a, !!where, acpInstalled) };
+    return { ...a, installed: !!where, version: versions.get(a.id) || null, signedIn, acpInstalled, chatSignedIn, chat: acpInstalled ? chatVersion(a) : null, disk: diskUse(a, !!where, acpInstalled) };
   }));
+}
+
+// The chat part's version as bin/updates keeps it (~/.local/share/springroll/chat/<agent>/): current, what it
+// said it is (ACP agentInfo), when it was last checked, and a version held back.
+function chatVersion(a) {
+  const dir = path.join(HOME, '.local/share/springroll/chat', a.id);
+  let current = null;
+  try { current = path.basename(fs.readlinkSync(path.join(dir, 'current'))); } catch { return null; }
+  let st = {};
+  try { st = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8')); } catch {}
+  return { version: current, agentInfo: st.agentInfo || null, checked: st.checked || null, held: st.held || null };
 }
 
 // What each agent's parts take on disk (agents.json "disk": paths, "npm:<package>" for a global npm package):

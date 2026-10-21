@@ -25,6 +25,8 @@ const IDLE_MS = (() => {
 })();
  // Scopes need the user's systemd manager (present when agentd runs as a user service).
 const SCOPES = (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true; } catch { return false; } })();
+// What we tell an agent we are (ACP clientInfo): Springroll as of its last commit.
+const CLIENT_INFO = { name: 'springroll', title: 'Springroll', version: (() => { try { return execFileSync('git', ['-C', REPO, 'log', '-1', '--format=%cs-%h'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return 'unknown'; } })() };
 const MEMORY_HIGH = `${Math.round((os.totalmem() / 2 ** 20) * 0.6)}M`;
 // A job run's agent, once its turn is over and nothing it started is still going (a background task, a
 // timer, a subagent, a Monitor before its deadline), is stopped after this long: runs otherwise pile up idle agents (mail triage every few
@@ -275,9 +277,12 @@ export class ThreadManager {
       protocolVersion: 1,
       // session.notices: the agent sends warnings as notices rather than bold text in its answer.
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, session: { notices: {} }, ...(AGENT_CAPS[def.id] || {}) },
-      clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' },
+      clientInfo: CLIENT_INFO,
     });
     live.capabilities = init?.agentCapabilities || {};
+    // Which adapter (and version) this chat really runs: the CLI's own version can differ (bin/updates).
+    const ai = init?.agentInfo;
+    live.agentInfo = ai && typeof ai === 'object' ? { name: str(ai.name, 100), title: str(ai.title, 100), version: str(ai.version, 50) } : null;
     const mcpServers = this.mcpServers();
     let session = null;
     if (thread.session_id && live.capabilities.loadSession) {
@@ -338,7 +343,7 @@ export class ThreadManager {
     const conn = new AcpConnection({ command, args, cwd, env });
     const timer = setTimeout(() => conn.kill(), PROBE_MS);
     const run = (async () => {
-      const init = await conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' } });
+      const init = await conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: CLIENT_INFO });
       const o = usableModels(readOptions(await conn.request('session/new', { cwd, mcpServers: [] })), def, env);
       if (!o.models.length && !o.effort) throw new Error('no models offered');
       const saved = { ...(this.store.agentOptions(agentId) || {}), models: o.models, currentModel: o.fallbackModel || o.currentModel, effort: o.effort, images: !!init?.agentCapabilities?.promptCapabilities?.image };
@@ -353,7 +358,7 @@ export class ThreadManager {
 
   // What the agent says it's using now, saved on the thread (a reconnect asks for the same) and shown.
   saveOptions(threadId, live) {
-    const o = live.options;
+    const o = { ...live.options, agentInfo: live.agentInfo || undefined };
     this.store.updateThread(threadId, { ...(o.currentModel ? { model: o.currentModel } : {}), mode: o.currentMode || null });
     this.store.db.prepare('update threads set options = ?, effort = coalesce(?, effort) where id = ?').run(JSON.stringify(o), o.effort?.current ?? null, threadId);
     // The agent switched itself to its full-access mode: it won't ask any more, so say so.

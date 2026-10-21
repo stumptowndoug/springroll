@@ -319,7 +319,7 @@ class ThreadView {
     if (id !== this.id) { this.bg = []; this.bgAt = 0; this.bgObserver.disconnect(); this.bgRows.clear(); ui.morph(this.$bg, ''); this.side = null; this.renderSide(); }
     this.id = id; this.follow.follow();
     this.turnLimit = TURN_PAGE; this.recall = null; this.nudge = null;
-    const reset = () => { this.$earlier.innerHTML = ''; this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.$report.hidden = true; this.$report.innerHTML = ''; this.reportDup = null; };
+    const reset = () => { this.$earlier.innerHTML = ''; this.items = []; this.turnCache.clear(); this.$report.hidden = true; this.$report.innerHTML = ''; this.reportDup = null; this.reportTurn = null; this.$timeline.after(this.$report); this.$timeline.innerHTML = ''; this.thread = null; };
     if (!id) {
       reset();
       this.draftAgent = q.agent || this.draftAgent || defaultAgent();
@@ -347,7 +347,8 @@ class ThreadView {
     this.loadBackground();
   }
 
-  // A job run's report, at the end of its chat: the work above, the result here.
+  // A job run's report, in its chat right after the turn that published it: the work above, the result
+  // here, and whatever the owner asks next below it. (Runs from before agentd kept that turn: at the end.)
   async loadReport() {
     const id = this.id, t = this.thread;
     if (!id || !t?.origin?.startsWith('job:')) { this.$report.hidden = true; return; }
@@ -358,8 +359,10 @@ class ThreadView {
     const dup = new Set(this.items.filter((i) => i.kind === 'text' && same(i.text, r.report)).map((i) => i.id));
     if ([...dup].join() !== [...(this.reportDup || [])].join()) { this.reportDup = dup; this.turnCache.clear(); this.render(); }
     if (!this.$report.querySelector('.report-body')) this.$report.innerHTML = '<header class="report-head"></header><div class="report-body"></div>';
-    ui.morph(this.$report.querySelector('.report-head'), `<span class="ui-label">${ui.icon('file-text', 'sm')}Report</span><b>${ui.esc(r.title || '')}</b><a class="ui-btn quiet" href="#/r/${id}">Open</a>`);
+    ui.morph(this.$report.querySelector('.report-head'), `<span class="ui-label">${ui.icon('file-text', 'sm')}${r.report_revised ? 'Report, updated' : 'Report'}</span><b>${ui.esc(r.title || '')}</b><a class="ui-btn quiet" href="#/r/${id}">Open</a>`);
     this.$report.hidden = false;
+    this.reportTurn = r.report_turn ?? null;
+    this.placeReport();
     await ui.report(this.$report.querySelector('.report-body'), r.report.replace(/^\s*#\s+(.+)\n+/, (m, h) => (h.trim() === (r.title || '').trim() ? '' : m)));
   }
 
@@ -436,7 +439,7 @@ class ThreadView {
         <div class="th-meta">
           ${job ? `<a class="ui-context" href="#/jobs/${job}"><span class="dot ui-dot"></span><span class="kind">Job</span><b>${ui.esc(job)}</b></a>` : ''}
           ${job ? `<a class="ui-btn quiet sm" href="#/r/${t.id}">${ui.icon('file-text', 'sm')}Report</a>` : ''}
-          <span class="th-who">${ui.agentMark(t.agent, agentName(t.agent), 'sm')}<span>${ui.esc(agentName(t.agent))}</span></span>
+          <span class="th-who"${t.options?.agentInfo?.version ? ` title="Chat adapter: ${ui.esc(t.options.agentInfo.name || t.options.agentInfo.title || '')} ${ui.esc(t.options.agentInfo.version)}"` : ''}>${ui.agentMark(t.agent, agentName(t.agent), 'sm')}<span>${ui.esc(agentName(t.agent))}</span></span>
           <span class="sep th-who">·</span><span class="ui-mono th-cwd">${ui.esc(cwd)}</span>
           ${status ? `<span class="sep"></span>${status}` : ''}
         </div>
@@ -468,6 +471,7 @@ class ThreadView {
     const view = this.context?.title, key = this.context?.key || '';
     // Asked about one item (an email, a failed run).
     const item = key.startsWith('item:') ? key.slice(5) : '';
+    this.$timeline.after(this.$report); this.$report.hidden = true;
     this.$timeline.innerHTML = `
       <div class="empty-chat">
         <h1 class="ui-display">${item ? 'Chat about this.' : view ? `Chat about ${ui.esc(view)}.` : 'New chat.'}</h1>
@@ -477,6 +481,18 @@ class ThreadView {
   }
 
   /* ----- Timeline ----- */
+  // The report card is one node (redraws never touch it, so its charts stay drawn), moved to sit after its turn.
+  placeReport() {
+    const tl = this.$timeline, rep = this.$report;
+    if (this.reportTurn == null) { if (rep.previousElementSibling !== tl) tl.after(rep); return; }
+    const turns = [...tl.querySelectorAll(':scope > section.turn')];
+    const at = turns.find((n) => Number(n.dataset.turn) === this.reportTurn);
+    if (at) { if (at.nextElementSibling !== rep) at.after(rep); return; }
+    // Its turn isn't shown (a long chat's earlier turns are folded away): keep it in time order anyway.
+    const next = turns.find((n) => Number(n.dataset.turn) > this.reportTurn);
+    if (next) { if (next.previousElementSibling !== rep) next.before(rep); } else if (rep.parentElement !== tl || rep.nextElementSibling) tl.append(rep);
+  }
+
   render(first = false) {
     if (!this.id) return;
     this.renderHead();
@@ -490,19 +506,21 @@ class ThreadView {
     const live = this.thread && (this.thread.running || this.thread.status === 'running' || this.thread.status === 'starting' || this.thread.status === 'waiting');
     const waitingOnly = (its) => its.every((i) => i.kind === 'user' && (i.queued || i.unsent)); // messages queued behind the live turn
     const lastTurn = keys.findLast((k) => !waitingOnly(turns.get(k)));
-    const existing = new Map([...this.$timeline.children].map((c) => [c.dataset.turn, c]));
+    for (const c of [...this.$timeline.children]) if (c !== this.$report && !c.matches('section.turn')) c.remove(); // e.g. the empty-chat greeting
+    const existing = new Map([...this.$timeline.querySelectorAll(':scope > section.turn')].map((c) => [c.dataset.turn, c]));
     let prev = null;
     for (const k of keys) {
       const its = turns.get(k);
       const isLive = live && k === lastTurn && !its.some((i) => i.kind === 'turn');
       const sig = its.map((i) => `${i.id}:${i.updated}`).join(',') + (isLive ? `:live:${this.thread.status}:${!!this.thread.stopping}` : '') + [...this.open_, ...[...this.shut_].map((o) => '-' + o)].filter((o) => o.replace(/^-/, '').startsWith(`t${k}:`)).join() + (this.side ? `:side:${this.side.id}` : '');
       let node = existing.get(String(k));
-      if (!node) { node = document.createElement('section'); node.className = 'turn'; node.dataset.turn = k; prev ? prev.after(node) : this.$timeline.prepend(node); }
+      if (!node) { node = document.createElement('section'); node.className = 'turn'; node.dataset.turn = k; prev ? (prev.nextElementSibling === this.$report ? this.$report : prev).after(node) : this.$timeline.prepend(node); }
       prev = node;
       if (this.turnCache.get(k) !== sig) { ui.morph(node, this.renderTurn(k, its, isLive)); this.turnCache.set(k, sig); if (!isLive) ui.highlight(node); }
       existing.delete(String(k));
     }
     for (const n of existing.values()) n.remove();
+    this.placeReport();
     const elapsed = this.$tail.querySelector('[data-elapsed]')?.textContent || '';
     const groupedWork = lastTurn != null && !turns.get(lastTurn).some((i) => i.kind === 'turn') && !!turnParts(turns.get(lastTurn)).segments.at(-1)?.work;
     ui.morph(this.$tail, live && !groupedWork ? `<div class="working"><span class="ui-shimmer">${this.liveLabel()}</span><span class="ui-mono ui-faint" data-elapsed>${elapsed}</span></div>` : '');

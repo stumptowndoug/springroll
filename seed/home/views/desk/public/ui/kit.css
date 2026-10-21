@@ -590,8 +590,6 @@ a.ui-tile:hover, button.ui-tile:hover, .ui-tile.hover:hover { background: var(--
 .ui-tile > .foot > .acts { margin-left: auto; margin-right: -8px; display: flex; align-items: center; gap: 2px; }
 .ui-tile > .foot label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .ui-tile.off .title, .ui-tile.off > .line { color: var(--muted); }
-/* One column (a phone): nothing to line up across, so a short description doesn't hold a blank line. */
-@media (max-width: 560px) { .ui-tile > .desc, .ui-tile > .desc.mono { min-height: 0; } }
 
 /* ---------- Selects: the kit's own list (kit.js opens ui.combobox on mouse and keyboard; phones keep the OS picker) ---------- */
 select[aria-expanded="true"] { border-color: color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); background-color: var(--bg); }

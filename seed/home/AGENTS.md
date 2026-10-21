@@ -61,7 +61,7 @@ own puts a row in the chat with live output and Stop. Work that must outlive the
 request|get|list|set` · `gmail accounts|search|show|reply|send|archive|move` · `report` (a job's
 report) · `focus` (what the owner's looking at) · `add-view` · `preview <port>` · `dev` (run ~/projects: servers, commands, ports) · `browser
 start|list|stop` · `backup` / `restore` · `springroll-upstream` · `sprite`, `sprite-job` ·
-`change` (work on Springroll itself in a copy) · `shots` (screenshots) · `desk theme` (when the owner asks)
+`change` (work on Springroll itself in a copy) · `shots` (screenshots) · `desk theme` (when the owner asks) · `updates` (chat adapters and other installs outside ~/home)
 
 ## Skills
 

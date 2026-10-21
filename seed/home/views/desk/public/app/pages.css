@@ -10,6 +10,8 @@
 .tl-tools { gap: 2px; }
 .tl-tools .ui-icon-btn { color: var(--muted); }
 .tl-tools .ui-icon-btn:hover { color: var(--fg); }
+/* The sort status ("Sorting", "Sort failed") follows the date. */
+#tSort:not(:empty)::before { content: " · "; }
 .tl-tools .ui-icon-btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-tint); }
 /* Upcoming: a scheduled run is a hollow dot (it hasn't happened). */
 .tl-plan .ui-dot.scheduled { background: none; box-shadow: inset 0 0 0 1.5px var(--faint); }
@@ -42,35 +44,48 @@
 }
 /* 👍 / 👎: a vote that's in stays lit. */
 #tFeed .vote[aria-pressed="true"] { color: var(--accent); }
-/* Narrow (a phone, or the chat panel open): no source tag; an approval's, key's or sign-in's buttons go
-   under the text; the rest still show on hover. On touch, tapping a row opens its chat: no buttons. */
+/* Touch (no hover): a waiting row keeps Done in reach and the rest behind ⋯; tapping the row opens its chat. */
+.tl-wait > .acts > .tl-menu { display: none; }
+@media (hover: none) {
+  .tl-wait:not(.keep) > .acts > :not(.done, .tl-menu) { display: none; }
+  .tl-wait:not(.keep) > .acts > .tl-menu { display: inline-grid; }
+}
+/* Narrow (a phone, or the chat panel open): stacked, so the title gets the width. Title (up to two lines),
+   what it said, then when and where it came from, small; the chevron or buttons trail. An approval's,
+   key's or sign-in's buttons go underneath. Columns: mark · gap · time · source · trailing. */
 @container (max-width: 680px) {
-  .tl-page .ui-feed-row { grid-template-columns: 3.9rem 7px minmax(0, 1fr) auto 30px; }
-  .tl-page .ui-feed-row > .ui-tag { display: none; }
-  .tl-page .ui-feed-row.tl-wait { grid-template-columns: 3.9rem 7px minmax(0, 1fr); }
-  .tl-page .ui-feed-row.tl-wait > .time, .tl-page .ui-feed-row.tl-wait > .lead { grid-row: 1 / 3; }
-  .tl-page .ui-feed-row.tl-wait > .sub { grid-row: 2; grid-column: 3; }
-  .tl-page .ui-feed-row.tl-wait.keep > .acts { grid-row: 3; grid-column: 3; justify-self: start; margin: 6px 0 0 -10px; flex-wrap: wrap; }
-  .tl-page .ui-feed-row.tl-wait:not(.keep):is(:hover, :focus-within) { grid-template-columns: 3.9rem 7px minmax(0, 1fr) auto; }
-  .tl-page .ui-feed-row.tl-wait:not(.keep):is(:hover, :focus-within) > .acts { grid-column: 4; }
+  .tl-page .ui-feed-row, .tl-page .ui-feed-row:has(> .ui-tag, > .acts) { grid-template-columns: 7px 14px auto minmax(0, 1fr) auto; grid-template-rows: none; column-gap: 0; row-gap: 3px; padding: 12px 10px 12px 12px; }
+  .tl-page .ui-feed-row > .ui-dot, .tl-page .ui-feed-row > .lead { grid-row: 1; grid-column: 1; align-self: start; margin-top: calc((var(--text-base) * 1.35 - 7px) / 2); }
+  .tl-page .ui-feed-row > .lead { margin-top: calc((var(--text-base) * 1.35 - 15px) / 2); }
+  .tl-page .ui-feed-row > .title { grid-row: 1; grid-column: 3 / 5; line-height: 1.35; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; text-wrap: pretty; }
+  .tl-page .ui-feed-row > .sub { grid-row: 2; grid-column: 3 / 5; max-width: none; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .tl-page .ui-feed-row > .time { grid-row: 3; grid-column: 3; font-size: var(--text-2xs); color: var(--faint); margin-top: 2px; }
+  .tl-page .ui-feed-row > .ui-tag { grid-row: 3; grid-column: 4; justify-self: start; min-width: 0; max-width: 100%; margin-top: 2px; padding: 0; background: none; font-size: var(--text-2xs); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-page .ui-feed-row > .ui-tag::before { content: "·"; margin: 0 6px; }
+  .tl-page .ui-feed-row > .chev, .tl-page .ui-feed-row > .acts { grid-row: 1 / 4; grid-column: 5; align-self: center; margin-left: 8px; }
+  .tl-page .ui-feed-row > .acts { margin-right: -4px; }
+  .tl-page .ui-feed-row.tl-wait.keep > .acts { grid-row: 4; grid-column: 3 / 6; justify-self: start; align-self: start; margin: 8px 0 0 -10px; flex-wrap: wrap; }
+  .tl-page .ui-feed-row.tl-wait > .drawer { grid-row: 5; grid-column: 3 / -1; }
   /* Room for the title: Chat as its icon, and no blank space held for a missing View. */
   .tl-wait:not(.keep) > .acts [data-ask] { padding: 0 9px; }
   .tl-wait:not(.keep) > .acts [data-ask] .label, .tl-wait:not(.keep) > .acts > [aria-hidden="true"] { display: none; }
+  .tl-page .tl-wait:not(.keep):is(:hover, :focus-within) > .acts { grid-column: 5; }
+  .tl-page .tl-folded { margin-left: 8px; }
 }
-@media (hover: none) { .tl-wait:not(.keep) > .acts { display: none; } }
 .tl-fold .chev .ui-icon { transition: transform var(--fast); }
 .tl-fold[aria-expanded="true"] .chev .ui-icon { transform: rotate(180deg); }
 .tl-folded { margin-left: 24px; padding-left: 8px; box-shadow: inset 1px 0 0 var(--line); }
 .tl-folded .ui-tag { visibility: hidden; }
 .tl-know { cursor: pointer; }
 .tl-older { margin: 18px 0 0 6px; }
-@media (max-width: 600px) {
-  .tl-page .ui-feed-row { grid-template-columns: 3.9rem 7px minmax(0, 1fr) 30px; }
-  .tl-page .ui-feed-row > .ui-tag { grid-row: 2; grid-column: 3; justify-self: start; margin-top: 4px; }
-  .tl-page .ui-feed-row:has(> .ui-tag) > .sub { grid-row: 3; }
-  .tl-page .ui-feed-row > .chev, .tl-page .ui-feed-row > .acts { grid-column: 4; grid-row: 1 / 4; }
-  .tl-page .ui-feed-row:has(> .ui-tag) > .time, .tl-page .ui-feed-row:has(> .ui-tag) > .ui-dot, .tl-page .ui-feed-row:has(> .ui-tag) > .lead { grid-row: 1 / 4; }
-  .tl-folded { margin-left: 8px; }
+
+/* Phones: the top bar already says Timeline and the first day says the date, so the heading is just its tools. */
+@media (max-width: 860px) {
+  .tl-page { padding-top: 10px; }
+  .tl-page .ui-heading { align-items: center; flex-wrap: nowrap; margin-bottom: 6px; }
+  .tl-page .ui-heading .ui-display, .tl-page #tDate, .tl-page #tSort::before { display: none; }
+  .tl-page .ui-heading .ui-eyebrow { margin: 0; }
+  .tl-page .ui-heading > .actions { margin-left: auto; margin-right: -6px; }
 }
 
 /* ---------- A run: title, links, the report ---------- */
@@ -162,7 +177,8 @@
 .key-row { display: grid; grid-template-columns: minmax(0, 1fr) 15ch auto; align-items: center; column-gap: 16px; }
 .key-row .body { min-width: 0; }
 .key-row .title { font-size: var(--text-base); }
-.key-row .title.ui-mono { white-space: normal; overflow-wrap: anywhere; }  /* a key's name is read in full */
+/* Every row the same height: name and note one line each, cut with … (the whole name is the row's tooltip). */
+.key-row .title { line-height: 1.45rem; }
 .key-row .title:not(.ui-mono) { font-weight: 550; }
 .key-row .sub a { color: inherit; text-decoration: none; }
 .key-row .sub a:hover { color: var(--fg); text-decoration: underline; }

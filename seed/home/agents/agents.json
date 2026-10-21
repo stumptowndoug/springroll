@@ -8,7 +8,7 @@
     "acp": [
       "claude-agent-acp"
     ],
-    "acpInstall": "npm i -g @agentclientprotocol/claude-agent-acp",
+    "acpInstall": "updates install chat:claude",
     "install": "curl -fsSL https://claude.ai/install.sh | bash",
     "login": "claude setup-token  # or run claude and use /login",
     "fullLogin": "env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
@@ -43,10 +43,11 @@
         "~/.local/share/claude"
       ],
       "chat": [
-        "npm:@agentclientprotocol/claude-agent-acp"
+        "~/.local/share/springroll/chat/claude"
       ]
     },
-    "acpRemove": "npm rm -g @agentclientprotocol/claude-agent-acp"
+    "acpRemove": "updates remove chat:claude",
+    "acpPackage": "@agentclientprotocol/claude-agent-acp"
   },
   {
     "id": "codex",
@@ -57,7 +58,7 @@
     "acp": [
       "codex-acp"
     ],
-    "acpInstall": "npm rm -g @zed-industries/codex-acp >/dev/null 2>&1; npm i -g @agentclientprotocol/codex-acp",
+    "acpInstall": "updates install chat:codex",
     "install": "npm i -g @openai/codex",
     "login": "codex login --device-auth",
     "auth": [
@@ -90,10 +91,14 @@
         "npm:@openai/codex"
       ],
       "chat": [
-        "npm:@agentclientprotocol/codex-acp"
+        "~/.local/share/springroll/chat/codex"
       ]
     },
-    "acpRemove": "npm rm -g @agentclientprotocol/codex-acp"
+    "acpRemove": "updates remove chat:codex",
+    "acpPackage": "@agentclientprotocol/codex-acp",
+    "acpLegacy": [
+      "@zed-industries/codex-acp"
+    ]
   },
   {
     "id": "opencode",
@@ -155,7 +160,7 @@
     "acp": [
       "pi-acp"
     ],
-    "acpInstall": "npm i -g pi-acp",
+    "acpInstall": "updates install chat:pi",
     "install": "npm rm -g @mariozechner/pi-coding-agent >/dev/null 2>&1; npm i -g @earendil-works/pi-coding-agent",
     "login": "pi  # then /login, or set a provider API key",
     "auth": [
@@ -183,10 +188,11 @@
         "npm:@earendil-works/pi-coding-agent"
       ],
       "chat": [
-        "npm:pi-acp"
+        "~/.local/share/springroll/chat/pi"
       ]
     },
-    "acpRemove": "npm rm -g pi-acp"
+    "acpRemove": "updates remove chat:pi",
+    "acpPackage": "pi-acp"
   },
   {
     "id": "cursor",
@@ -254,7 +260,7 @@
     "startWithPrompt": "agy --dangerously-skip-permissions -i {prompt}",
     "headless": "agy -p \"<prompt>\" --dangerously-skip-permissions --print-timeout 30m",
     "headlessContinue": "agy -p --continue \"<feedback>\" --dangerously-skip-permissions",
-    "notes": "Google AI subscription via Google sign-in (or GEMINI_API_KEY with modelProvider gemini). Chat runs Google's own runtime (agy-acp-install: pinned, checksummed; ~1 GB), which signs in with Google separately from agy. Each call loads its conversation history: for many parallel headless calls give each its own HOME sharing only antigravity-oauth-token (see carrot-extract).",
+    "notes": "Google AI subscription via Google sign-in (or GEMINI_API_KEY with modelProvider gemini). Chat runs Google's own runtime (kept current by `updates`; ~1 GB), which signs in with Google separately from agy. Each call loads its conversation history: for many parallel headless calls give each its own HOME sharing only antigravity-oauth-token.",
     "waitingPattern": "Allow|Approve|\\[y/n\\]",
     "headlessArgv": [
       "agy",
@@ -274,14 +280,14 @@
         "~/.local/bin/agy"
       ],
       "chat": [
-        "~/.local/share/springroll/agy-acp"
+        "~/.local/share/springroll/chat/antigravity"
       ]
     },
-    "acpRemove": "agy-acp-install --remove",
+    "acpRemove": "updates remove chat:antigravity",
     "acp": [
       "agy-acp-server"
     ],
-    "acpInstall": "agy-acp-install",
+    "acpInstall": "updates install chat:antigravity",
     "chatSignin": {
       "command": "agy-acp-install --signin",
       "kind": "paste",
@@ -289,6 +295,26 @@
         "~/.gemini/antigravity-acp/acp_token.json"
       ],
       "paste": "Paste the address of the page Google sends you to (it won't load; that's expected)"
+    },
+    "acpRegistry": {
+      "id": "antigravity-acp",
+      "archive": "https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-{version}-linux-{arch}.zip",
+      "arch": {
+        "x86_64": "x86_64",
+        "aarch64": "arm64"
+      },
+      "pinned": "1.3.0",
+      "fetch": [
+        "bin/agy-acp-install",
+        "--fetch"
+      ],
+      "cmd": "agy_acp_server.par",
+      "args": [
+        "--uid="
+      ],
+      "legacy": [
+        "~/.local/share/springroll/agy-acp"
+      ]
     }
   }
 ]

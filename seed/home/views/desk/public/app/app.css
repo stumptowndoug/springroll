@@ -35,8 +35,14 @@ button { background: none; border: 0; padding: 0; }
 .chat-item .t { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .chat-item.unread .t { color: var(--fg); font-weight: 650; }
 .chat-item .more { opacity: 0; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--faint); margin-right: -4px; }
-.chat-item:hover .more, .chat-item .more[aria-expanded="true"] { opacity: 1; }
-.chat-item:hover .glyph { display: none; }
+.chat-item .more[aria-expanded="true"] { opacity: 1; }
+/* Hover swaps the status for ⋯ only with a mouse: a touch screen spends its first tap on a hover that
+   changes the layout (iOS), so a chat took two taps to open. On touch both stay, side by side. */
+@media (hover: hover) {
+  .chat-item:hover .more { opacity: 1; }
+  .chat-item:hover .glyph { display: none; }
+}
+@media (hover: none) { .chat-item .more { opacity: 1; } }
 .chat-item .more:hover { background: var(--state-hover); color: var(--fg); }
 .glyph .spin { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--run) 30%, transparent); border-top-color: var(--run); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
