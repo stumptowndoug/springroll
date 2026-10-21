@@ -34,6 +34,7 @@
 .job-start .bubble { margin-top: 8px; background: var(--surface); padding: 10px 16px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); font-size: var(--text-sm); line-height: 1.5; }
 .chat-report { margin-top: 18px; margin-bottom: 8px; padding: 18px 20px 20px; box-sizing: border-box; border-radius: var(--radius); background: var(--surface); }
 .chat-report[hidden] { display: none; }
+.timeline > .chat-report { width: auto; margin-left: 0; margin-right: 0; } /* placed after its turn, inside the timeline */
 .report-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .report-head .ui-label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .report-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -180,6 +181,7 @@
 .thread.panel .thread-head { width: auto; margin: 0; padding: 10px 8px 6px 16px; align-items: center; gap: 2px; }
 .thread.panel .thread-head .ui-title { flex: 1; font-size: var(--text-sm); font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread.panel .timeline, .thread.panel .tail, .thread.panel .chat-report { width: calc(100% - 32px); }
+.thread.panel .timeline > .chat-report { width: auto; }
 .thread.panel .empty-chat { padding-top: 4vh; }
 .thread.panel .empty-chat .ui-display { font-size: 1.9rem; }
 .thread.panel .dock { padding: 0 12px 12px; background: linear-gradient(to top, var(--surface-recessed) 70%, transparent); }

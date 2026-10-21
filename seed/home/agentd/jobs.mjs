@@ -338,7 +338,7 @@ export class Jobs {
     const finish = job.report === false
       // Reports off: the run is a chat; its final message is the result.
       ? `Finish with the result for the owner: what you found or did, concise and specific. It's sent to their phone, so lead with the most important line.`
-      : `The owner reads your report, not this prompt or your steps. Publish it with the \`report\` command, written as ~/home/skills/report/SKILL.md says (Springroll's report format: Markdown, plus charts when there are numbers to compare). Lead with the result. If the work continues elsewhere (a Sprite, a long build), report where it stands and publish again when it changes. The report shows at the end of this chat, so after publishing it end with one short line (like "Published the report."), never a recap of it.`;
+      : `The owner reads your report, not this prompt or your steps. Publish it with the \`report\` command, written as ~/home/skills/report/SKILL.md says (Springroll's report format: Markdown, plus charts when there are numbers to compare). Lead with the result. If the work continues elsewhere (a Sprite, a long build), report where it stands and publish again when it changes. The report shows in this chat right after the turn that publishes it, so after publishing it end with one short line (like "Published the report."), never a recap of it.`;
     const prompt = `${job.prompt.trim()}\n\n---\n${memory}\n\n${finish}`;
     try { await this.threads.prompt(thread.id, { text: prompt }); }
     catch (e) { this.settle(job, a, 'failed', e.message); } // the agent couldn't start: that's a failed run too
@@ -356,7 +356,7 @@ export class Jobs {
     const job = this.read(run.job);
     const t = (title || heading || job?.title || run.job).slice(0, 160);
     const summary = reportPreview(body);
-    this.store.setReport(run.id, body, t, summary);
+    this.store.setReport(run.id, body, t, summary, this.store.maxTurn(threadId) || null);
     this.store.updateThread(threadId, { preview: summary || t, title: t });
     this.emit({ type: 'jobs' });
     this.emit({ type: 'run', threadId });

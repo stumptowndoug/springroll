@@ -51,5 +51,11 @@ rules) when they ask. Upstream Springroll keeps improving, and you keep this mac
 merging it with judgment: the weekly **Update Springroll** job (`jobs/springroll-update`) follows
 `skills/update/SKILL.md`. `springroll-upstream` shows what's new; `CHANGELOG.md` explains it.
 
+What Springroll installs outside ~/home moves on with `updates` (the daily **Updates** job,
+`jobs/updates/NOTES.md`): for now each agent's chat part (its ACP adapter, which bundles its own copy
+of the agent). `updates` shows what's installed, newer and held back; `updates apply` moves on
+whatever's ready (out 3 days and answers ACP initialize). Never `npm i -g` a chat adapter: that
+replaces files under running chats; `updates install chat:<agent>` puts each version in its own folder.
+
 When you change Springroll itself (not an app or job of the owner's), add a line to `LOCAL.md`:
 what and why. That's how updates know to keep it.

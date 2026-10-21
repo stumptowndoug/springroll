@@ -276,6 +276,8 @@ matchMedia('(max-width: 860px)').addEventListener('change', () => renderNav());
 $('collapse').onclick = $('expandSide').onclick = () => toggleSide();
 $('menuBtn').onclick = () => shell.classList.add('side-open');
 $('scrimSide').onclick = () => shell.classList.remove('side-open');
+// A link in the phone drawer closes it, even one to the page you're on (no hashchange, so route() doesn't run).
+$('side').addEventListener('click', (e) => { if (mobile() && e.target.closest('a[href^="#"]') && !e.target.closest('[data-thread-menu]')) shell.classList.remove('side-open'); });
 $('launchBtn').onclick = () => openLauncher();
 $('exitFocus').onclick = () => setFocusMode(false);
 

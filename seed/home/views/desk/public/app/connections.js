@@ -78,6 +78,15 @@ async function addChat(a) {
   await loadAgents(); render();
 }
 
+// The chat part's version (bin/updates keeps it current; the daily Updates job), and one held back.
+function chatLine(a) {
+  const c = a.chat;
+  if (!c) return '';
+  const checked = c.checked ? ` · checked ${new Date(c.checked).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : '';
+  const held = c.held ? `<br>${ui.esc(c.held.version)} held back: ${ui.esc(c.held.why)}` : '';
+  return `<p class="ui-muted" style="font-size:var(--text-sm);margin:0">Chat adapter ${ui.esc(c.version)}${checked}${held}</p>`;
+}
+
 // A coding agent's sheet: who it's signed in as (GET api/agents/<id>/account, from agents.json "account"), and how.
 const PLANS = { max: 'Max', pro: 'Pro', prolite: 'Pro Lite', plus: 'Plus', team: 'Team', business: 'Business', enterprise: 'Enterprise', free: 'Free' };
 function agentSheet(a) {
@@ -97,7 +106,7 @@ function agentSheet(a) {
         <span style="flex:1">${a.chatSignedIn ? 'Chat is signed in too' : 'Chat needs its own sign-in'}</span><button class="ui-btn quiet" type="button" data-x="chat-signin">${a.chatSignedIn ? 'Sign in again' : 'Sign in'}</button></div>` : '';
     d.innerHTML = `
       <div class="ui-toolbar"><span class="conn-icon sm">${ui.agentMark(a.id, a.name)}</span><span class="ui-title">${ui.esc(a.name)}</span><div class="ui-spacer"></div><button class="ui-icon-btn plain" data-x="close" aria-label="Close">${ui.icon('x')}</button></div>
-      <div class="body ui-stack" style="gap:18px">${who}${chat}
+      <div class="body ui-stack" style="gap:18px">${who}${chat}${chatLine(a)}
         ${acct?.account ? '<p class="ui-note">To use a different account or subscription, sign in again with it. It replaces this one.</p>' : ''}</div>
       ${a.installed ? `<footer>${removable ? `<button class="ui-btn ghost" data-x="remove-chat" style="margin-right:auto;color:var(--danger)">Remove chat</button>` : ''}
         ${a.signedIn ? '<button class="ui-btn" data-x="signin">Sign in again</button>' : ''}</footer>` : ''}`;

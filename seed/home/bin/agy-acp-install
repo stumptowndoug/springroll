@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Antigravity's chat runtime: Google's official ACP server (agy_acp_server), separate from the agy CLI.
 
-  agy-acp-install            download, verify and install it (pinned version, SHA-256 checked)
-  agy-acp-install --remove   remove it
-  agy-acp-install --signin   sign the runtime in with Google (once; it doesn't use agy's login)
+  agy-acp-install                 install it (same as `updates install chat:antigravity`)
+  agy-acp-install --remove        remove it
+  agy-acp-install --signin        sign the runtime in with Google (once; it doesn't use agy's login)
+  agy-acp-install --fetch V DIR   download and check version V into DIR (what `updates` calls)
 
-Installs to ~/.local/share/springroll/agy-acp/<version>-<arch>/ and puts `agy-acp-server` (what chat runs,
-agents/agents.json "acp") in ~/.local/bin. Pins come from Google's versioned downloads listed in the ACP
-registry (github.com/agentclientprotocol/registry, antigravity-acp/agent.json); Google publishes no
-checksums. To move to a new version: download each archive from the registry's URLs, check its entries,
-and update VERSION and every hash together. Never pin a hash fetched alongside the download.
+`updates` (~/home/bin/updates) keeps it current: it reads the newest version from the ACP registry
+(github.com/agentclientprotocol/registry, antigravity-acp/agent.json), waits until it's been out 3 days,
+fetches it with this into ~/.local/share/springroll/chat/antigravity/<version>/, and switches only once it
+answers ACP initialize. `agy-acp-server` in ~/.local/bin is what chat runs (agents/agents.json "acp").
+Google publishes no checksums, so a download is taken only from dl.google.com's versioned URL, over HTTPS,
+with exactly the expected files. PINNED keeps SHA-256 hashes for one version, the fallback a fresh install
+takes when the newest is under 3 days old.
 
 Sign-in: Google sends the browser back to http://127.0.0.1:<port>/ on this machine, which the owner's
 browser (on another device) can't reach. So the owner pastes that address here and this fetches it
@@ -18,22 +21,19 @@ start without signing in again.
 """
 import atexit, hashlib, json, os, platform, queue, re, shutil, signal, subprocess, sys, threading, time, urllib.parse, urllib.request, zipfile
 
-VERSION = '1.3.0'
+PINNED = '1.3.0'
 FILES = ['agy_acp_server.par', 'localharness_external']
-PINS = {  # arch: (archive url, archive sha256, {file: sha256})
-    'x86_64': ('https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-1.3.0-linux-x86_64.zip',
-               '9fb60956af0a9d76220a4db91ca9ac88e2a2372ad68f985ab5fceace6b825b96',
+URL = 'https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-{version}-linux-{arch}.zip'
+PINS = {  # PINNED's hashes, per arch: (archive sha256, {file: sha256})
+    'x86_64': ('9fb60956af0a9d76220a4db91ca9ac88e2a2372ad68f985ab5fceace6b825b96',
                {'agy_acp_server.par': 'cf6feaebdacfc2255dcfc8883db99b15de8554698554e2a1e78e5ccec1c68a20',
                 'localharness_external': '63042ca43fc7a69600683920f7706689b82cf8aecefe21dc18cf35e99c9dde4d'}),
-    'arm64': ('https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-1.3.0-linux-arm64.zip',
-              '500b0bc0fb858e88f4df404d4cedf80bf9298c178291e39e383d6c50b111cbdf',
+    'arm64': ('500b0bc0fb858e88f4df404d4cedf80bf9298c178291e39e383d6c50b111cbdf',
               {'agy_acp_server.par': '03ea51ff7a60cb1b44e65da40fdb35f1f457db7950d1651d9e86945c8aa584c6',
                'localharness_external': '7fe676f1234889900800bad3ca50fb9b55f1e16ee4cb82b789f84ae5145fd582'}),
 }
 HOME = os.path.expanduser('~')
 ARCH = {'aarch64': 'arm64', 'arm64': 'arm64'}.get(platform.machine(), platform.machine())
-BASE = os.path.join(HOME, '.local/share/springroll/agy-acp')
-DIR = os.path.join(BASE, f'{VERSION}-{ARCH}')
 LAUNCHER = os.path.join(HOME, '.local/bin/agy-acp-server')
 SETTINGS = os.path.join(HOME, '.gemini/antigravity-acp/settings.json')
 AUTH_LINE = 'Open the following link to authenticate the ACP server:'
@@ -52,72 +52,44 @@ def sha256(path):
     return h.hexdigest()
 
 
-def install():
+def fetch(version, into):
+    """Download version into the (empty) folder into: Google's versioned URL only, exactly FILES, hashes if pinned."""
     if sys.platform != 'linux' or ARCH not in PINS:
-        die(f'No verified Antigravity chat runtime for {sys.platform} {ARCH} yet.')
-    url, archive_sha, file_shas = PINS[ARCH]
-    if all(os.path.isfile(os.path.join(DIR, f)) and sha256(os.path.join(DIR, f)) == file_shas[f] for f in FILES):
-        write_launcher()
-        print(f'Antigravity chat runtime {VERSION} is already installed.')
-        return
-    os.makedirs(BASE, exist_ok=True)
-    stage = os.path.join(BASE, f'.install-{os.getpid()}')
-    shutil.rmtree(stage, ignore_errors=True)
-    os.makedirs(stage)
-    try:
-        archive = os.path.join(stage, 'runtime.zip')
-        print(f'Downloading Antigravity chat runtime {VERSION} from Google (about 330 MB)…', flush=True)
-        r = subprocess.run(['curl', '--fail', '--location', '--silent', '--show-error', '--proto', '=https', '--proto-redir', '=https',
-                            '--connect-timeout', '15', '--max-time', '900', '--max-filesize', '600000000', '-o', archive, url])
-        if r.returncode:
-            die("Couldn't download the Antigravity chat runtime. Check the connection and try again.")
-        print('Checking the download…', flush=True)
-        if sha256(archive) != archive_sha:
-            die('The download failed its integrity check, so it was not installed.')
-        z = zipfile.ZipFile(archive)
-        if sorted(z.namelist()) != sorted(FILES):
-            die('The download has unexpected contents, so it was not installed.')
-        print('Unpacking (about 1 GB)…', flush=True)
-        for name in FILES:  # exact entries only; paths and modes in the zip aren't trusted
-            out = os.path.join(stage, name)
-            with z.open(name) as src, open(out, 'wb') as dst:
-                shutil.copyfileobj(src, dst, 1 << 20)
-            os.chmod(out, 0o700)
-            if sha256(out) != file_shas[name]:
-                die(f"{name} failed its integrity check, so it was not installed.")
-        os.remove(archive)
-        old = DIR + f'.old-{os.getpid()}'
-        if os.path.exists(DIR):
-            os.rename(DIR, old)
-        os.rename(stage, DIR)
-        shutil.rmtree(old, ignore_errors=True)
-    finally:
-        shutil.rmtree(stage, ignore_errors=True)
-    # Older versions: gone once this one is in place.
-    for d in os.listdir(BASE):
-        if d != os.path.basename(DIR) and not d.startswith('.'):
-            shutil.rmtree(os.path.join(BASE, d), ignore_errors=True)
-    write_launcher()
-    print(f'Installed the Antigravity chat runtime {VERSION}.')
+        die(f'No Antigravity chat runtime for {sys.platform} {ARCH} yet.')
+    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
+        die(f'Not a version: {version}')
+    pins = PINS[ARCH] if version == PINNED else None
+    url = URL.format(version=version, arch=ARCH)
+    os.makedirs(into, exist_ok=True)
+    archive = os.path.join(into, '.runtime.zip')
+    print(f'Downloading Antigravity chat runtime {version} from Google (about 330 MB)…', flush=True)
+    r = subprocess.run(['curl', '--fail', '--location', '--silent', '--show-error', '--proto', '=https', '--proto-redir', '=https',
+                        '--connect-timeout', '15', '--max-time', '1500', '--max-filesize', '600000000', '-o', archive, url])
+    if r.returncode:
+        die("Couldn't download the Antigravity chat runtime. Check the connection and try again.")
+    if pins and sha256(archive) != pins[0]:
+        die('The download failed its integrity check, so it was not installed.')
+    z = zipfile.ZipFile(archive)
+    if sorted(z.namelist()) != sorted(FILES):
+        die('The download has unexpected contents, so it was not installed.')
+    print('Unpacking (about 1 GB)…', flush=True)
+    for name in FILES:  # exact entries only; paths and modes in the zip aren't trusted
+        out = os.path.join(into, name)
+        with z.open(name) as src, open(out, 'wb') as dst:
+            shutil.copyfileobj(src, dst, 1 << 20)
+        os.chmod(out, 0o700)
+        if pins and sha256(out) != pins[1][name]:
+            die(f"{name} failed its integrity check, so it was not installed.")
+    os.remove(archive)
 
 
-def write_launcher():
-    os.makedirs(os.path.dirname(LAUNCHER), exist_ok=True)
-    with open(LAUNCHER, 'w') as f:  # the registry's Linux command line: --uid= with no value
-        f.write(f'#!/bin/sh\n# Antigravity chat runtime (installed by agy-acp-install)\nexec "{DIR}/agy_acp_server.par" --uid= "$@"\n')
-    os.chmod(LAUNCHER, 0o755)
-
-
-def remove():
-    shutil.rmtree(BASE, ignore_errors=True)
-    if os.path.exists(LAUNCHER):
-        os.remove(LAUNCHER)
-    print('Removed the Antigravity chat runtime. Its Google sign-in is kept for if you add it again.')
+def updates(*args):
+    sys.exit(subprocess.run([os.path.join(HOME, 'home/bin/updates'), *args]).returncode)
 
 
 def signin():
-    if not os.path.exists(LAUNCHER):
-        install()
+    if not os.path.exists(LAUNCHER) and subprocess.run([os.path.join(HOME, 'home/bin/updates'), 'install', 'chat:antigravity']).returncode:
+        die("The Antigravity chat runtime didn't install.")
     p = subprocess.Popen([LAUNCHER], cwd=HOME, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, start_new_session=True)
     # Cancelled (the sign-in panel closes its terminal) or done: stop the runtime and its helper.
     atexit.register(lambda: os.killpg(p.pid, signal.SIGTERM) if p.poll() is None else None)
@@ -195,5 +167,14 @@ def save_auth():
 
 
 if __name__ == '__main__':
-    arg = sys.argv[1] if len(sys.argv) > 1 else ''
-    {'': install, '--remove': remove, '--signin': signin}.get(arg, lambda: die(__doc__))()
+    a = sys.argv[1:]
+    if a[:1] == ['--fetch'] and len(a) == 3:
+        fetch(a[1], a[2])
+    elif not a:
+        updates('install', 'chat:antigravity')
+    elif a == ['--remove']:
+        updates('remove', 'chat:antigravity')
+    elif a == ['--signin']:
+        signin()
+    else:
+        die(__doc__)

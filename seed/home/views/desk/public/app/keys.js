@@ -124,7 +124,7 @@ function keyFacts(k) {
 function keyRow(k, keyForm) {
   const f = keyFacts(k);
   return `<div class="ui-row key-row" title="${ui.esc(f.full)}">
-    <div class="body"><span class="title ui-mono">${ui.esc(k.name)}</span>${f.line ? `<span class="sub">${ui.esc(f.line)}</span>` : ''}</div>
+    <div class="body"><span class="title ui-mono">${ui.esc(k.name)}</span><span class="sub">${f.line ? ui.esc(f.line) : '&nbsp;'}</span></div>
     <span class="key-value ui-mono">${ui.esc(k.hint)}</span>
     <div class="key-actions">${keys.reveal ? showBtn(k.name) : ''}
       <button class="ui-icon-btn plain" data-k="more" data-name="${k.name}" title="More" aria-label="More for ${ui.esc(k.name)}">${ui.icon('ellipsis', 'sm')}</button></div>

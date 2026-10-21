@@ -5,6 +5,31 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-21 · Reports stay where they were written; chat adapters stay current; phone polish; gmail --as
+
+- **A job run's report sits after the turn that published it** (`agentd/store.mjs`, `agentd/jobs.mjs`,
+  `views/desk/public/app/thread.js`, `thread.css`, `agentd/test/report.test.mjs`): it was pinned to the
+  end of the run's chat, so follow-up questions landed above it. runs gains `report_turn` and
+  `report_revised` (added on start); the card moves after its turn, later turns flow below it, and a
+  republished report moves to its new turn as "Report, updated". Runs from before keep the old
+  placement. Needs an agentd restart. **If you changed this:** keep the report card one persistent
+  node (redraws never touch it, so charts stay drawn) and have the turn loop skip it.
+- **Chat adapters stay current** (`bin/updates`, `jobs/updates/`, `agents/agents.json`
+  `acpPackage`/`acpRegistry`, `bin/agy-acp-install`, `agentd/threads.mjs`, `views/desk/server.mjs`,
+  `app/connections.js`, `skills/machine/SKILL.md`, `agents/README.md`, AGENTS.md): each agent's chat
+  part (its ACP adapter, which bundles its own copy of the agent) fell behind the CLI and never caught
+  up. The daily **Updates** job moves each to its newest version once it's 3 days old and answers ACP
+  initialize, each version in its own folder so running chats keep theirs; an `npm -g` install from
+  before is taken over on the next run. Connections says "Chat adapter <version>". **If you changed
+  this:** never `npm i -g` an adapter under running chats; use `updates install chat:<agent>`.
+- **Phones** (`app/timeline.js`, `pages.css`, `app.css`, `main.js`, `ui/kit.css`, `app/keys.js`): Timeline
+  rows stack on narrow screens (title full width, up to two lines; touch actions); a sidebar chat opens
+  with one tap (iOS spent the first tap on the hover swap); tiles keep their two-line description so
+  cards are one height; Keys rows are one height (names and notes cut with …, full name in the tooltip).
+- **`gmail send --as "<Name> <alias@…>"`** (`bin/gmail`): send from one of the account's aliases (it
+  must be under Gmail → Settings → Accounts → Send mail as, or Gmail puts the account's address back).
+  Also: Mail's Message-IDs are stripped of whitespace before a reply looks them up.
+
 ## 2026-10-19 · Backups bring the agents back; Mail guards against phishing; Cursor utilization; Neon
 
 - **Backups carry more of the machine** (`bin/backup`, `bin/restore`, `skills/machine/SKILL.md`): the

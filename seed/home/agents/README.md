@@ -14,8 +14,13 @@ it).
 Every agent is optional, in two parts: the CLI (`install`; terminal and jobs) and
 chat (`acp`: the command Springroll's chat runs, an Agent Client Protocol mode).
 Chat is built in when `acp[0]` is the CLI itself (`opencode acp`, `cursor-agent
-acp`); otherwise `acpInstall` adds an adapter or runtime and `acpRemove` takes it
-away. Connections → Coding agents shows both parts with what they take on disk:
+acp`); otherwise it's an adapter or runtime that bundles its own copy of the agent,
+so `bin/updates` installs and keeps it current (`acpInstall` / `acpRemove` call it):
+`acpPackage` is its npm package (`acpLegacy`: old package names to clean up),
+`acpRegistry` a binary from the ACP registry (Antigravity). Each version gets its
+own folder under `~/.local/share/springroll/chat/<agent>/`, is checked with ACP
+initialize before it's used, and the daily `updates` job moves it on once a
+release is 3 days old. Connections → Coding agents shows both parts with what they take on disk:
 `size` is the estimate in MB (`cli`, `chat`, and `chatDownload` when the download
 differs), and `disk` lists the paths measured once installed (`npm:<package>` for
 a global npm package; globs allowed). Install there does both parts and signs in;
@@ -29,9 +34,9 @@ the harness doesn't say. It must not print secrets.
 
 `chatSignin` is for a chat runtime that signs in on its own, apart from the CLI
 (`command`, `kind` like `signin`, its `auth` files, and `paste`: what to ask the
-owner to paste). Antigravity's is Google's official ACP server, installed by
-`bin/agy-acp-install` (pinned version, SHA-256 checked; see the script to move
-to a new version); its Google sign-in ends on a 127.0.0.1 page on this machine,
+owner to paste). Antigravity's is Google's official ACP server, fetched by
+`bin/agy-acp-install` for `updates` (Google's versioned download only, with
+hashes kept for one pinned fallback version); its Google sign-in ends on a 127.0.0.1 page on this machine,
 so the owner pastes that address back and the script fetches it here.
 
 `providerAuth` is for harnesses that take any provider and list models they
