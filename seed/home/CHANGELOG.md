@@ -5,6 +5,29 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-28 · Phone menus without the keyboard; bigger chat type on phones; Gmail replies quote; Stripe; housekeeping tidies worktrees and agentd
+
+- **Menus on phones** (`views/desk/public/ui/kit.js`, `tests/browser/phone.spec.js`): `ui.combobox` focused
+  its search field on open, so on a phone the composer's model menu came up under the keyboard. On
+  touch screens (no fine pointer) the list takes focus; tap the field to search. Computers still type
+  straight into it. **If you changed this:** keep the focus choice in the combobox, not in each caller.
+- **Chat type a step bigger on phones** (`views/desk/public/app/thread.css`): under 860px `.thread`
+  redefines `--text-2xs` … `--text-lg` one step up (15px body → 16px). 16px also stops iOS zooming
+  into the composer. Desktop sizes are unchanged. **If you changed this:** override the tokens on the
+  thread, not single rules, so every part of the chat moves together.
+- **`gmail reply` quotes the original like Gmail does** (`bin/gmail`): replies threaded correctly but
+  carried only the new text, so in the Gmail app they read as fresh emails. Each reply now has plain
+  and HTML parts with "On … wrote:" and the original in a `gmail_quote` blockquote; `--as` works on
+  replies; a blank subject becomes "Re:"; `GMAIL_DRY_RUN=1` prints the message instead of sending.
+  `gmail search` escapes quotes in the query (it found nothing before).
+- **Stripe connection** (`connections/catalog.json`): a restricted key (never `sk_live_`), tested
+  against subscriptions, plus Stripe's hosted MCP server; it can do exactly what the key allows.
+- **Housekeeping tidies more** (`jobs/housekeeping/worktrees.sh`, `restart-agentd.sh`, `NOTES.md`):
+  `worktrees.sh --remove` removes git worktrees of `~/projects` repos that are clean, merged (or
+  their PR merged), a day old and not used by a job, a dev recipe or a process; the branch stays.
+  agentd's memory grows while it's up, so over 2 GB the nightly run queues `restart-agentd.sh`, which
+  waits until no chat turn or job run is going, restarts it and signals if it doesn't come back.
+
 ## 2026-10-21 · Reports stay where they were written; chat adapters stay current; phone polish; gmail --as
 
 - **A job run's report sits after the turn that published it** (`agentd/store.mjs`, `agentd/jobs.mjs`,

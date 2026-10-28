@@ -44,6 +44,20 @@ clean up what's clearly pointless, and report in a few lines. When in doubt, lea
   `signal --key housekeeping:changes` for the owner (merge or drop); none: `signal --clear
   housekeeping:changes`. "Unknown folder" lines: mention them, don't delete.
 
+- **Worktrees** of the owner's repos (`~/projects/<repo>-<name>`, made for a feature and left
+  behind; a frontend one can be ~1 GB with node_modules): run `~/home/jobs/housekeeping/worktrees.sh
+  --remove`. It removes only worktrees that are clean, merged (or their PR merged), untouched for a
+  day, and not a job's or dev recipe's checkout or any process's cwd; the branch stays, so nothing
+  is lost. Report what it removed and the MB in a line. "keep … uncommitted changes" lines: mention
+  them; don't commit, stash or delete them.
+
+- **agentd's memory**: it grows while it's up (a few GB after several days). Report its RSS
+  (`ps -o rss= -p $(systemctl --user show -p MainPID --value agentd)`). Over **2 GB**: restart it once
+  nothing is busy, after your report is written, as the last thing you do (the restart ends your own
+  run): `systemd-run --user --unit=agentd-restart-when-idle ~/home/jobs/housekeeping/restart-agentd.sh
+  --if-over 2048`. It waits for no chat turn or job run, restarts, and signals if agentd doesn't come
+  back. Idle chats resume on their next message. Say in the report that it's queued.
+
 - **Skills** (`~/home/skills/`, plus `AGENTS.md` and `notes/memory.md`, which every chat loads):
   run `~/home/jobs/housekeeping/skills-check.sh`. It prints one line per skill (size, frontmatter,
   linked into Claude/Codex/Pi, chats that read it in 30 days, paths it names that are gone) and the
@@ -56,9 +70,9 @@ clean up what's clearly pointless, and report in a few lines. When in doubt, lea
   `signal --needs --key housekeeping:skills` with the exact edits in `--note`, so Chat can apply
   them. Nothing wrong: one line in the report, no signal.
 
-Never touch `~/home`, `~/data`, `~/projects`, `~/backups` or `~/.config` (`change tidy` is the one
-exception: it only removes empty changes). Never stop Springroll
-(`desk`, `desk-term`, `agentd`, `system`), the owner's terminal sessions, a job's own running work,
+Never touch `~/home`, `~/data`, `~/projects`, `~/backups` or `~/.config` (`change tidy` and
+`worktrees.sh` are the exceptions: they only remove empty changes and finished worktrees). Never stop Springroll
+(`desk`, `desk-term`, `agentd`, `system`; the agentd restart above is the one exception), the owner's terminal sessions, a job's own running work,
 or anything listed under **This machine** below.
 
 ## Report

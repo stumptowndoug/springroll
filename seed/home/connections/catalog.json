@@ -133,5 +133,13 @@
     "help": "Neon console → Organization settings → API keys (covers every project in the organization), or a project's Settings → API keys for just one project. The MCP server is read-only: SELECTs and schema inspection, no writes.",
     "test": "curl -fsS -H \"Authorization: Bearer $NEON_API_KEY\" https://console.neon.tech/api/v2/users/me/organizations | jq -r '\"Connected · \" + ([.organizations[].name] | join(\", \"))'",
     "mcp": { "type": "http", "url": "https://mcp.neon.tech/mcp?readonly=true", "headers": { "Authorization": "Bearer ${NEON_API_KEY}" }, "note": "Neon's hosted MCP server in read-only mode: run_sql for SELECTs, table schemas, branches and query stats. Write tools are removed." }
+  },
+  {
+    "id": "stripe", "name": "Stripe", "icon": "credit-card", "category": "Business",
+    "description": "Customers, subscriptions, invoices and refunds, through Stripe's API and MCP server.",
+    "fields": [{ "key": "STRIPE_API_KEY", "label": "Restricted key", "secret": true, "placeholder": "rk_live_…" }],
+    "help": "Stripe dashboard → Developers → API keys → Create restricted key. Give it only what agents need (e.g. Customers: Read, Subscriptions: Write, Invoices: Read) and leave the rest None. Never use the secret key (sk_live_…).",
+    "test": "curl -fsS -u \"$STRIPE_API_KEY:\" 'https://api.stripe.com/v1/subscriptions?limit=1' | jq -r '\"Connected · \" + (if .data[0].livemode == false then \"test mode\" else \"live\" end)'",
+    "mcp": { "type": "http", "url": "https://mcp.stripe.com", "headers": { "Authorization": "Bearer ${STRIPE_API_KEY}" }, "note": "Stripe's hosted MCP server: customers, subscriptions (list, update, cancel), invoices, refunds. It can do exactly what the restricted key allows, nothing more." }
   }
 ]

@@ -190,6 +190,8 @@
 /* Phones: the screen is the conversation. The title and ⋯ are in the top bar (tap the title), the agent
    is in the composer; the header keeps one line only for a job, a status or a folder other than ~/home. */
 @media (max-width: 860px) {
+  /* A phone is read at arm's length: the chat's type one step up (15px body → 16px; 16px also keeps iOS from zooming the composer). */
+  .thread { --text-2xs: 0.75rem; --text-xs: 0.8125rem; --text-sm: 0.875rem; --text-base: 1rem; --text-lg: 1.125rem; }
   .thread.page .thread-head:not(.th-extra) { display: none; }
   .thread.page .thread-head { padding: 0 0 2px; align-items: center; }
   .thread.page .th-title, .thread.page .thread-head > [data-a="menu"], .thread.page .th-who { display: none; }
