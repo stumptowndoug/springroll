@@ -47,3 +47,18 @@ test('on a touch screen Return is a new line and the button sends', async ({ pag
   await page.locator('#chat .c-send').click();
   await expect.poll(() => page.evaluate(() => JSON.stringify(window.chatTest.posts.at(-1)?.body || {}))).toContain('First line\\nsecond line');
 });
+
+test('a menu opens without raising the keyboard on a phone; a computer types straight into its search', async ({ page }) => {
+  const focused = await page.evaluate(() => {
+    const options = Array.from({ length: 10 }, (_, i) => ({ value: 'm' + i, label: 'Model ' + i, group: 'Model' }));
+    ui.combobox(document.querySelector('#chat .c-settings'), { options, placeholder: 'Search agents and models' });
+    return document.activeElement.tagName;
+  });
+  await expect(page.locator('.ui-popover .search input')).toBeVisible();
+  expect(focused).toBe(phone() ? 'DIV' : 'INPUT');
+});
+
+test('chat text is a step bigger on a phone', async ({ page }) => {
+  const px = await page.locator('#chat .msg-user .bubble').evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(px).toBe(phone() ? 16 : 15);
+});
