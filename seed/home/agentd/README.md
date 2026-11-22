@@ -21,9 +21,10 @@ to the phone.
   mode; `ask` switches it back (right away, mid-chat) and shows requests to the
   owner. The thread's `options` (models, effort, modes, other settings such as
   Fast mode) follow what the agent reports, including changes it makes itself
-  (`config_option_update`); a refused change leaves a `notice`. A model picked
-  in the composer is what new chats with that agent start on
-  (`agent_options.preferredModel`). For an agent with `providerAuth` in
+  (`config_option_update`); a refused change leaves a `notice`. A model or
+  effort picked in the composer is what new chats with that agent start on
+  (`agent_options.preferredModel`, `preferredEffort`; Settings' default for
+  the agent comes first, and jobs keep their own). For an agent with `providerAuth` in
   `agents.json` (OpenCode), models of providers it has no key for are left out,
   and one it starts on that it can't use is switched for a usable one
   (`usableModels` in `threads.mjs`). An agent that hasn't started within a

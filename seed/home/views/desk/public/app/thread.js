@@ -12,11 +12,13 @@ export function init(el, ctx) { pageCtx = ctx; page = new ThreadView(el, { ctx, 
 export function show(el, r) { page.open(r.id || null, r.q || {}); }
 export function title(r) { if (!r.id) return 'New chat'; return state.threads.find((t) => t.id === r.id)?.title || 'Chat'; }
 export function focusComposer() { const v = panel || page; v?.focusComposer(); return !!v; }
-export function mountPanel(el, { id, context, ctx, onCreated, onClose, text }) {
+// suggest: a next step shown under a new chat's empty box (a tap puts it in the box); earlier: the last chat
+// about the same item, offered as a link (a new chat is never the old one reopened).
+export function mountPanel(el, { id, context, ctx, onCreated, onClose, suggest, earlier }) {
   panel?.destroy();
   el.innerHTML = '';
   panel = new ThreadView(el, { ctx, mode: 'panel', context, onCreated, onClose });
-  panel.open(id || null, { text }); // text: a starter prompt in a new chat's box, not sent
+  panel.open(id || null, { suggest, earlier });
   setTimeout(() => panel?.focusComposer(), 50);
 }
 export function unmountPanel() { panel?.destroy(); panel = null; }
@@ -127,9 +129,9 @@ function draftOptions(agent, rerender) {
   if (!o) agentOpts.set(agent, api.get(`api/agent/agents/${agent}/options`).catch(() => ({ models: [], effort: null })).then((r) => { agentOpts.set(agent, r); rerender(); }));
   return null;
 }
-// A new chat starts on its agent's default model from Settings, else the one last picked for it (if still offered).
+// A new chat starts on its agent's default model and effort from Settings, else the ones last picked for it (if still offered).
 const draftModel = (agent, o) => [chatDefaults(agent).model, o?.preferredModel].find((id) => id && o?.models?.some((m) => m.id === id)) || o?.currentModel;
-const draftEffort = (agent, o) => [chatDefaults(agent).effort].find((id) => id && o?.effort?.values?.some((v) => v.id === id)) || o?.effort?.current;
+const draftEffort = (agent, o) => [chatDefaults(agent).effort, o?.preferredEffort].find((id) => id && o?.effort?.values?.some((v) => v.id === id)) || o?.effort?.current;
 // Personas (~/home/personas): how the agent talks, picked in the composer's settings menu. A new chat starts on Settings' default.
 let personas = null; // [{ id, name, icon, description }] | Promise
 function personaList(rerender) {
@@ -324,6 +326,7 @@ class ThreadView {
       reset();
       this.draftAgent = q.agent || this.draftAgent || defaultAgent();
       if (q.cwd) this.draftCwd = q.cwd;
+      this.suggest = q.suggest || ''; this.earlier = q.earlier || null;
       this.renderHead(); this.renderEmpty(); this.renderComposerFoot(); this.renderStack();
       this.$input.value = q.text || this.loadDraft();
       this.autosize();
@@ -476,7 +479,11 @@ class ThreadView {
       <div class="empty-chat">
         <h1 class="ui-display">${item ? 'Chat about this.' : view ? `Chat about ${ui.esc(view)}.` : 'New chat.'}</h1>
         <p class="ui-muted">${item ? `${ui.esc(this.context.label || 'This')}. Tell the agent what you want; it can act on it.` : view ? 'The agent can see which app and page you have open, and can change it.' : 'Ask anything, or describe something to build. The agent works on this machine.'}</p>
+        ${this.suggest ? `<button class="ui-btn sm quiet empty-suggest" data-suggest title="Put this in the box">${ui.icon('sparkles', 'sm')}<span>${ui.esc(this.suggest)}</span></button>` : ''}
+        ${this.earlier ? `<a class="ui-btn sm quiet empty-earlier" href="#/t/${this.earlier.id}">${ui.icon('history', 'sm')}<span>Earlier chat about this · ${ui.esc(ui.ago(this.earlier.updated))}</span></a>` : ''}
       </div>`;
+    const sg = this.$timeline.querySelector('[data-suggest]');
+    if (sg) sg.onclick = () => { this.$input.value = this.suggest; this.autosize(); this.saveDraft(); this.updateSend(); this.$input.focus(); };
     this.$tail.innerHTML = '';
   }
 
@@ -1365,7 +1372,8 @@ class ThreadView {
   }
 
   autosize() { this.$input.style.height = 'auto'; this.$input.style.height = Math.min(this.$input.scrollHeight, 280) + 'px'; }
-  draftKey() { return `desk.draft.${this.id || (this.mode === 'panel' ? 'panel' : 'new')}`; }
+  // A new chat beside a page or item keeps its own draft: one's half-typed text never shows up on another's.
+  draftKey() { return `desk.draft.${this.id || (this.mode === 'panel' ? (this.context?.key ? `panel.${this.context.key}` : 'panel') : 'new')}`; }
   loadDraft() { try { return localStorage.getItem(this.draftKey()) || ''; } catch { return ''; } }
   saveDraft() { try { localStorage.setItem(this.draftKey(), this.$input.value); } catch {} }
 
@@ -1420,8 +1428,9 @@ class ThreadView {
     if (v !== this.draftAgent) { this.draftModel = null; this.draftEffort = null; this.pendingSend = false; this.sgGo = false; this.chatInstall = null; }
     this.draftAgent = v; this.renderComposerFoot(); this.renderStack(); // not signed in: the sign-in card shows
   }
-  setModel(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { model: v }).catch((err) => ui.toast(err.message)); else { this.draftModel = v; this.renderComposerFoot(); } }
-  setEffort(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { effort: v }).catch((err) => ui.toast(err.message)); else { this.draftEffort = v; this.renderComposerFoot(); } }
+  // A pick becomes what new chats with that agent start on (agentd remembers it), so the next new chat asks again.
+  setModel(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { model: v }).then(() => agentOpts.delete(t.agent)).catch((err) => ui.toast(err.message)); else { this.draftModel = v; this.renderComposerFoot(); } }
+  setEffort(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { effort: v }).then(() => agentOpts.delete(t.agent)).catch((err) => ui.toast(err.message)); else { this.draftEffort = v; this.renderComposerFoot(); } }
   setOption(id, value) { api.patch(`api/agent/threads/${this.thread.id}`, { option: { id, value } }).catch((err) => ui.toast(err.message)); }
   setPersona(v) {
     const t = this.thread;
@@ -1535,6 +1544,7 @@ class ThreadView {
       if (!this.id) {
         const t = await api.post('api/agent/threads', { agent: this.draftAgent || defaultAgent(), cwd: this.mode === 'panel' ? '~/home' : this.draftCwd, text, images, context: this.context || undefined, access: this.draftAccess, model: this.draftModel || undefined, effort: this.draftEffort || undefined, persona: this.draftPersona, origin: this.context?.view ? `view:${this.context.view}` : 'chat' });
         try { localStorage.removeItem(this.draftKey()); } catch {}
+        if (this.draftModel || this.draftEffort) agentOpts.delete(t.agent); // picked here: remembered, so ask again next time
         upsertThread(t);
         if (this.mode === 'page') this.ctx.go(`#/t/${t.id}`);
         else { this.onCreated?.(t.id); this.open(t.id); }

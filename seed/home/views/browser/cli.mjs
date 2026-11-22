@@ -7,7 +7,7 @@ import * as history from './history.mjs';
 
 const HELP = `browser: a real browser for agents, watched (and taken over) in the Browser app.
 
-  browser start [name] [--via home|local|kernel|browserbase] [--profile P] [--stealth|--no-stealth] [--url U]
+  browser start [name] [--via home|local|kernel|browserbase] [--profile P] [--stealth|--no-stealth] [--proxy residential|isp] [--url U]
       Start a browser (or reuse the running one called name, default "main") and attach the
       agent-browser session of the same name. Then drive it:
         agent-browser --session main open https://…
@@ -20,6 +20,8 @@ const HELP = `browser: a real browser for agents, watched (and taken over) in th
       --profile  keeps sign-ins between sessions (local: ~/data/browser/profiles/P; Kernel and
                  Browserbase: a profile/context in that account). Local and home default to "default".
       --stealth  Kernel: on by default (proxy + captcha solving). Browserbase: off by default.
+      --proxy    Kernel only: its US residential (carries .gov) or isp proxy, with captcha solving
+                 off unless --stealth too. Unmetered on Hobbyist; the proxy is reused by name.
   browser list [--json]          what's running
   browser stop [name|--all]      stop it (cloud browsers bill while running: stop when done)
   browser history [--job J] [--site S] [--limit N] [--json]
@@ -46,11 +48,11 @@ for (let i = 0; i < argv.length; i++) {
   else pos.push(a);
 }
 
-const line = (s) => [s.name, s.via, s.profile && `profile ${s.profile}`, new Date(s.started).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })].filter(Boolean).join(' · ');
+const line = (s) => [s.name, s.via, s.proxy && `${s.proxy} proxy${s.stealth ? ' + captcha solving' : ', no captcha solving'}`, s.profile && `profile ${s.profile}`, new Date(s.started).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })].filter(Boolean).join(' · ');
 
 try {
   if (cmd === 'start') {
-    const s = await startSession({ name: pos[0], via: flags.via, profile: flags.profile, stealth: flags.stealth, url: flags.url });
+    const s = await startSession({ name: pos[0], via: flags.via, profile: flags.profile, stealth: flags.stealth, proxy: flags.proxy, url: flags.url });
     console.log(`${s.reused ? 'Reusing' : 'Started'} ${line(s)}`);
     console.log(`Drive it:  agent-browser --session ${s.name} open <url>   (snapshot -i, click @e1, fill, screenshot, …)`);
     console.log(`Owner watches/takes over: show browser   ·   stop when done: browser stop ${s.name}`);

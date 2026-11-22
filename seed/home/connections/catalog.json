@@ -89,6 +89,13 @@
     "test": "curl -fsS -H \"Authorization: Bearer $OPENAI_API_KEY\" https://api.openai.com/v1/models | jq -r '.data | length | tostring + \" models available\"'"
   },
   {
+    "id": "anthropic", "name": "Anthropic API", "icon": "sparkles", "category": "AI",
+    "description": "For scripts and jobs that call Claude models through the API (Mail triage).",
+    "fields": [{ "key": "ANTHROPIC_API_KEY", "label": "API key", "secret": true, "placeholder": "sk-ant-…" }],
+    "help": "Create a key at https://console.anthropic.com/settings/keys. Usage is billed to that account's API credits. (Claude Code keeps using its own sign-in.)",
+    "test": "curl -fsS -H \"x-api-key: $ANTHROPIC_API_KEY\" -H 'anthropic-version: 2023-06-01' https://api.anthropic.com/v1/models | jq -r '.data | length | tostring + \" models available\"'"
+  },
+  {
     "id": "brave", "name": "Brave Search", "icon": "search", "category": "Web",
     "description": "Web search for agents and Views.",
     "fields": [{ "key": "BRAVE_API_KEY", "label": "API key", "secret": true }],

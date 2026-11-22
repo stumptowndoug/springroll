@@ -8,18 +8,27 @@ export const USAGE_OPTIONS = [
   { key: 'cursorPools', label: 'Cursor · Auto/API', detail: 'Auto and API shares of the plan', agent: 'cursor', enabled: false },
 ];
 
+export const USAGE_SHOW_VALUES = ['all', 'tightest', 'warn', 'off'];
+export const USAGE_SYSTEM_VALUES = ['always', 'warn', 'off'];
+
 export function usageSettings(value) {
-  return Object.fromEntries(USAGE_OPTIONS.map(o => [o.key, typeof value?.[o.key] === 'boolean' ? value[o.key] : o.enabled]));
+  const out = Object.fromEntries(USAGE_OPTIONS.map(o => [o.key, typeof value?.[o.key] === 'boolean' ? value[o.key] : o.enabled]));
+  out.show = USAGE_SHOW_VALUES.includes(value?.show) ? value.show : 'all';
+  out.system = USAGE_SYSTEM_VALUES.includes(value?.system) ? value.system : 'always';
+  return out;
 }
 
 export function patchUsageSettings(current, patch) {
   const result = usageSettings(current);
   for (const { key } of USAGE_OPTIONS) if (typeof patch?.[key] === 'boolean') result[key] = patch[key];
+  if (USAGE_SHOW_VALUES.includes(patch?.show)) result.show = patch.show;
+  if (USAGE_SYSTEM_VALUES.includes(patch?.system)) result.system = patch.system;
   return result;
 }
 
 export function visibleUsage(providers, preferences) {
   const settings = usageSettings(preferences);
+  if (settings.show === 'off') return [];
   return providers.flatMap(a => {
     if (a.id === 'claude' || a.id === 'codex') return settings[a.id] ? [a] : [];
     if (a.id === 'cursor') {

@@ -33,7 +33,8 @@ Backends (`--via`):
   Chromium hide that they're headless (Linux Chrome user agent, no `navigator.webdriver`): Reddit
   blocks a plain headless one even from home. Home browsers also keep WebRTC to the proxy via the
   profile's Preferences (the command-line flag alone isn't honored).
-- `kernel`: Kernel cloud browser (`KERNEL_API_KEY`), headful, stealth on by default, 15 min
+- `kernel`: Kernel cloud browser (`KERNEL_API_KEY`), headful, stealth on by default (`--proxy residential|isp|mobile`:
+  Kernel's US proxy of that type, reused by name `springroll-<type>-us`, captcha solving off unless `--stealth`), 15 min
   inactivity timeout, Kernel profiles for sign-ins. Default when the key is set.
 - `browserbase`: Browserbase session (`BROWSERBASE_API_KEY`); a Browserbase context per profile
   (ids in `sessions.json` → `contexts`).
@@ -113,7 +114,7 @@ a browser of its own instead of attaching to ours (skipping the home proxy and p
 ## JSON API
 
 - `GET api/sessions` → `[{name, via, id, live, profile, started, title, url}]` (never the CDP URL)
-- `POST api/sessions` `{name?, via?, profile?, stealth?, url?}` → the session (reuses one by name)
+- `POST api/sessions` `{name?, via?, profile?, stealth?, proxy?, url?}` → the session (reuses one by name)
 - `POST api/sessions/<name>/open` `{url}`, `/back`, `/reload` → `{title, url}`
 - `POST api/sessions/<name>/viewport` `{w, h}`: the page size (the app sets it to its stage)
 - `POST api/sessions/<name>/stop`

@@ -12,7 +12,8 @@ bg, fg, accent, run, ok, warn, danger). To change a shortcut, edit
 Coding agents: `defaultAgent`, and `chatDefaults: {<agent>: {model, effort}}`
 for new chats (options from agentd's `GET /agents/<id>/options`). agentd
 applies them in `POST /threads` to chats that don't pick their own; jobs don't
-use them.
+use them. Unset, a new chat starts on the model and reasoning last picked in a
+chat with that agent.
 
 Utilization: four boolean switches in `desk.json`'s `utilization` object:
 `claude`, `codex`, `antigravityGemini` (default on) and

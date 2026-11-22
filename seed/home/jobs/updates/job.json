@@ -3,7 +3,7 @@
   "group": "Springroll",
   "type": "command",
   "schedule": "40 4 * * *",
-  "command": "~/home/bin/updates apply",
+  "command": "bash ~/home/jobs/updates/run.sh",
   "timeout": "45m",
   "retries": 1,
   "retryDelay": "30m",

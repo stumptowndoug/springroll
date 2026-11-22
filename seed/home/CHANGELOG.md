@@ -5,6 +5,64 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-11-22 · Timeline chat one step shorter; Runs; mail triage quarantined; CLIs stay current; desk proxy stops leaking
+
+- **Timeline: rows show, Chat starts fresh, Reply answers** (`views/desk/public/app/timeline.js`,
+  `main.js`, `thread.js`, `thread.css`, `pages.css`, DESIGN.md, `skills/apps/SKILL.md`): clicking a row
+  opened a chat with text already typed in, and Chat reopened the item's remembered chat or dropped the
+  owner into a job's own run, so "chat about this" landed in a days-old conversation. Now a row click
+  opens the thing (its report, run, mail); **Chat** always starts a new chat beside it with the item
+  attached (it shows in the sidebar; the suggested next step is a chip under the empty box; the last
+  chat about the item is an "Earlier chat about this" link); **Reply** (a permission, a question, a key)
+  goes to the agent that's waiting. The Chat button (bottom right, phone top bar) follows the same rule,
+  keyed by the page itself (`page:#/r/<id>`, not `page:run`, under which every run report shared one
+  chat). Drafts are kept per item and page. `desk.askAbout({key, label, note, text, thread})`: `text`
+  is now the suggestion, `thread` a Reply. **If you changed this:** keep one rule for every Chat (new,
+  with the old one as a link) and keep Reply for waiting agents only.
+- **Chats → Runs** (`views/desk/public/app/chats.js`, `models.js`, `run.js`, `pages.css`, `main.js`):
+  job runs stay out of the sidebar, even waiting ones (they're on the Timeline), and get their own tab
+  (`#/chats?runs`, paged with `?origin=job&before=`), replacing Archived (now a link at the bottom).
+  Runs carry no unread mark (nobody opens every nightly run), and each row and run page names what did
+  the work: the model the run's thread recorded, by its agent's name ("Opus 5.5"), or Script for a
+  command job. All chats rows sit further from the left edge with one unread mark, not two.
+- **Mail triage is quarantined** (`jobs/mail-triage/triage.py`, `PROMPT.md`, `job.json`,
+  `connections/catalog.json`, `templates/mail/index.html`, `bin/quarantine`): an agent with every key in
+  its environment read strangers' mail, held back only by its prompt. Now a command job does every
+  action and the model only reads mail and answers JSON through one no-tools API call (JSON schema on
+  Claude), which the script checks (known ids and categories, lengths, rules/notes lines aimed at an AI
+  dropped) before saving. **Needs `ANTHROPIC_API_KEY`** (new Connections → Anthropic API); with
+  `OPENROUTER_API_KEY` too, Grok answers when Claude can't. `job.json` "model" picks it (Haiku 5.5).
+  `bin/quarantine`: bubblewrap with no network, no keys and no home, for parsing untrusted files.
+  **If you changed this:** keep untrusted text away from any process that has keys or tools.
+- **Claude Code stays on the subscription** (`agents/agents.json`, `bin/updates`, `agents/README.md`):
+  every Claude launch (chat adapter, terminal, headless, sign-in, account check) unsets
+  `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, so an API key saved for scripts never turns chats into
+  API-billed sessions. `acpEnvUnset` lists what the adapter launcher drops; `updates launchers`
+  rewrites installed launchers from the registry without updating them.
+- **The effort picked in a chat is remembered per agent** (`agentd/threads.mjs`, `server.mjs`,
+  `views/desk/public/app/thread.js`, `views/settings/`): a new Codex chat started on Codex's own level
+  every time. Order: composer pick, Settings' default, last picked, the agent's own; jobs keep theirs.
+  Needs an agentd restart.
+- **Updates keeps the agent CLIs current too** (`jobs/updates/run.sh`, `cli.py`, `test_cli.py`,
+  `job.json`, `NOTES.md`): standalone Claude, Codex, OpenCode, Pi and agent-browser from npm (3 days
+  old, verified, versioned folders, atomic launchers), Antigravity and Cursor through their own
+  updaters, and Antigravity's and Codex's chat model menus re-probed daily (they went stale).
+- **Desk proxy hangs up when the browser goes away** (`views/desk/server.mjs`,
+  `jobs/housekeeping/tcp-check.sh`, `NOTES.md`): every closed tab or sleeping phone left an agentd event
+  stream open; over days they filled the kernel's TCP buffers and every download on the box crawled.
+  The proxy now destroys the upstream request on close; housekeeping checks TCP buffer memory nightly.
+- **Gmail** (`bin/gmail`): `archive`/`move` work from All Mail on the whole conversation (inside INBOX
+  Gmail ignored the label removal, so archive printed "archived" and changed nothing); `reply` stamps
+  `\Answered \Seen` on the original and wraps the quote as Gmail does.
+- **Browser** (`views/browser/`, `skills/web/SKILL.md`): `browser start <n> --proxy
+  residential|isp|mobile` runs a Kernel browser on Kernel's US proxy without captcha solving (unless
+  `--stealth`); the saved key is read before the process environment, so a replaced key doesn't leave
+  live browsers orphaned.
+- **Smaller**: `show` reminds the agent to also name what it showed in its final message (a phone that
+  was asleep misses the push) (`bin/show`, AGENTS.md); DESIGN.md: one home for Chat, actions at the top
+  of sheets; Settings → Utilization chooses quota bars and machine memory in the sidebar corner;
+  the chat panel on phones is opaque in glass themes; a gap between the agent's mark and name.
+
 ## 2026-10-28 · Phone menus without the keyboard; bigger chat type on phones; Gmail replies quote; Stripe; housekeeping tidies worktrees and agentd
 
 - **Menus on phones** (`views/desk/public/ui/kit.js`, `tests/browser/phone.spec.js`): `ui.combobox` focused

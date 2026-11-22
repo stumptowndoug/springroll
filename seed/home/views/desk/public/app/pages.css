@@ -76,7 +76,7 @@
 .tl-fold[aria-expanded="true"] .chev .ui-icon { transform: rotate(180deg); }
 .tl-folded { margin-left: 24px; padding-left: 8px; box-shadow: inset 1px 0 0 var(--line); }
 .tl-folded .ui-tag { visibility: hidden; }
-.tl-know { cursor: pointer; }
+.tl-know[data-open] { cursor: pointer; }
 .tl-older { margin: 18px 0 0 6px; }
 
 /* Phones: the top bar already says Timeline and the first day says the date, so the heading is just its tools. */
@@ -103,6 +103,9 @@
 /* ---------- All chats ---------- */
 .chats .ui-feed-day { margin: 28px 0 10px; }
 .chat-row { position: relative; }
+/* All chats: room on the left, and one unread mark (the dot by the time, with the bold title), not two. */
+.chats .chat-row { padding-left: calc(var(--row-px) + 8px); }
+.chats .chat-row.unread::before { display: none; }
 .chat-row .lead .ui-logo { --icon: 18px; }
 .chat-row .meta { display: inline-flex; align-items: center; gap: 8px; }
 .chat-row .meta > :not(:last-child) { display: inline-flex; }
@@ -256,3 +259,7 @@
 .agents-default { font-size: var(--text-xs); color: var(--muted); text-decoration: none; white-space: nowrap; }
 .agents-default:hover { color: var(--fg); }
 .connections .ui-section > header { flex-wrap: wrap; row-gap: 4px; }
+.chats-foot { display: flex; justify-content: center; margin: 24px 0 8px; }
+.run-row .lead { color: var(--muted); }
+.run-meta > span:not(.ui-status) { display: inline-flex; align-items: center; gap: 6px; }
+.run-row .run-model { color: var(--fg); font-weight: 550; }

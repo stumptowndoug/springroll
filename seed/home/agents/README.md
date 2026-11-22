@@ -61,3 +61,13 @@ color filters with unique Antigravity IDs. The kit renders it as an image
 because its mask loses its shape inside the zero-sized inline sprite. Keep
 its registry `logo: antigravity` and the kit's supported marks in sync. Gallery's
 `#agent-marks` section previews every agent, including Gemini separately.
+
+Claude Code uses the saved subscription: every registry launch (ACP chat, terminal,
+headless, account check and sign-in) strips `ANTHROPIC_API_KEY` and
+`ANTHROPIC_AUTH_TOKEN`, even in a parent process with old credentials, so an
+Anthropic API key in Keys (for scripts and jobs that call the API) never turns
+chats into API-billed sessions.
+
+`acpEnvUnset` lists credential variables the managed ACP launcher removes before
+starting its adapter. `updates launchers [item…]` applies registry changes to
+installed launchers without downloading or changing adapter versions.

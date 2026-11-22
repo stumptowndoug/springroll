@@ -29,9 +29,12 @@ the real version, delete it.
   agent is running. You build and fix it; you don't run every click.
 - Every app's server exposes its data as a JSON API, documented in its README, so other apps and
   agents can use it.
-- Every item the owner might act on gets **Chat** (`desk.askAbout({key, label, note})` opens the
-  chat beside it about that item; `note` tells the agent what it is and how to act on it), **View**
-  (the thing itself) and **Done**. Keep direct buttons only for what an agent can't do for them
+- Every item the owner might act on gets **Chat** (`desk.askAbout({key, label, note, text})` starts a
+  new chat beside it with the item attached, every time; `note` tells the agent what it is and how to
+  act on it, `text` is a suggested next step shown under the empty box; the last chat about the same
+  `key` is offered as a link, never reopened), **View** (the thing itself; clicking the row does this,
+  never opens a chat) and **Done**. When an agent is waiting on the owner about the item, pass
+  `thread` instead: the button reads **Reply** and opens that chat or run. Keep direct buttons only for what an agent can't do for them
   (approve, paste a secret).
 - Optional: `STATUS` naming an endpoint (e.g. `api/status`) returning
   `{text, level: ok|warn|danger, icon, title}` puts a chip in the sidebar. Only for something worth

@@ -144,7 +144,8 @@ button { background: none; border: 0; padding: 0; }
   .mobile-title > .ui-icon { flex: none; color: var(--faint); }
   .mobile-title:disabled { cursor: default; opacity: 1; }
   .mobile-title:not(:disabled):active { background: var(--state-hover); }
-  .panel { position: fixed; inset: 0; z-index: 15; border: 0; }
+  /* The chat covers the page here too: opaque in glass themes, or the page shows through it. */
+  .panel { position: fixed; inset: 0; z-index: 15; border: 0; background: color-mix(in srgb, var(--fg) 3%, var(--bg)); }
   .shell:not(.panel-open) .panel { display: none; }
   /* Phones: the Chat button lives in the top bar, so it never covers the page. */
   .ask-fab { display: none !important; }

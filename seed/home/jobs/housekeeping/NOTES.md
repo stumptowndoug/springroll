@@ -58,6 +58,14 @@ clean up what's clearly pointless, and report in a few lines. When in doubt, lea
   --if-over 2048`. It waits for no chat turn or job run, restarts, and signals if agentd doesn't come
   back. Idle chats resume on their next message. Say in the report that it's queued.
 
+- **TCP buffers**: run `~/home/jobs/housekeeping/tcp-check.sh --fix`. It reports TCP buffer memory
+  against the kernel's pressure line and who holds the biggest queues. Over the line the kernel
+  shrinks every socket's window and every download on the box crawls (a desk proxy that kept agentd
+  event streams open after tabs closed once held ~860 MB and capped downloads at 2-4 MB/s; fixed in the
+  proxy). With `--fix` it restarts `desk` (open tabs reconnect) when desk holds stuck agentd
+  connections. Over 50% of the line it signals; report the line and anything it restarted, and name the
+  process if it's something else.
+
 - **Skills** (`~/home/skills/`, plus `AGENTS.md` and `notes/memory.md`, which every chat loads):
   run `~/home/jobs/housekeeping/skills-check.sh`. It prints one line per skill (size, frontmatter,
   linked into Claude/Codex/Pi, chats that read it in 30 days, paths it names that are gone) and the
@@ -72,7 +80,7 @@ clean up what's clearly pointless, and report in a few lines. When in doubt, lea
 
 Never touch `~/home`, `~/data`, `~/projects`, `~/backups` or `~/.config` (`change tidy` and
 `worktrees.sh` are the exceptions: they only remove empty changes and finished worktrees). Never stop Springroll
-(`desk`, `desk-term`, `agentd`, `system`; the agentd restart above is the one exception), the owner's terminal sessions, a job's own running work,
+(`desk`, `desk-term`, `agentd`, `system`; the agentd restart and tcp-check's desk restart above are the exceptions), the owner's terminal sessions, a job's own running work,
 or anything listed under **This machine** below.
 
 ## Report

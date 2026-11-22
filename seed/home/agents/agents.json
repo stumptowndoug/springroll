@@ -10,28 +10,33 @@
     ],
     "acpInstall": "updates install chat:claude",
     "install": "curl -fsSL https://claude.ai/install.sh | bash",
-    "login": "claude setup-token  # or run claude and use /login",
-    "fullLogin": "env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
+    "login": "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN claude setup-token  # or run claude and use /login",
+    "fullLogin": "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
     "auth": [
       "~/.config/springroll/claude-token",
       "~/.claude/.credentials.json"
     ],
-    "account": "m=$([ -s ~/.config/springroll/claude-token ] && echo \"Setup token\" || echo \"Claude.ai sign-in\"); env -u CLAUDE_CODE_OAUTH_TOKEN claude auth status 2>/dev/null | jq -c --arg m \"$m\" '{account: .email, plan: .subscriptionType, method: $m}'",
-    "start": "claude --dangerously-skip-permissions",
-    "continue": "claude --dangerously-skip-permissions --continue",
-    "startWithPrompt": "claude --dangerously-skip-permissions {prompt}",
-    "headless": "claude -p \"<prompt>\" --dangerously-skip-permissions",
-    "headlessContinue": "claude -p --continue \"<feedback>\"",
-    "notes": "Subscription via setup token. Reads CLAUDE.md (which includes AGENTS.md).",
+    "account": "m=$([ -s ~/.config/springroll/claude-token ] && echo \"Setup token\" || echo \"Claude.ai sign-in\"); env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN claude auth status 2>/dev/null | jq -c --arg m \"$m\" '{account: .email, plan: .subscriptionType, method: $m}'",
+    "start": "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN claude --dangerously-skip-permissions",
+    "continue": "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN claude --dangerously-skip-permissions --continue",
+    "startWithPrompt": "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN claude --dangerously-skip-permissions {prompt}",
+    "headless": "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN claude -p \"<prompt>\" --dangerously-skip-permissions",
+    "headlessContinue": "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN claude -p --continue \"<feedback>\"",
+    "notes": "Subscription via setup token. All launch paths exclude API billing credentials. Reads CLAUDE.md (which includes AGENTS.md).",
     "waitingPattern": "Do you want to proceed\\?|Do you want to (make|create|allow)|❯ 1\\. Yes",
     "headlessArgv": [
+      "env",
+      "-u",
+      "ANTHROPIC_API_KEY",
+      "-u",
+      "ANTHROPIC_AUTH_TOKEN",
       "claude",
       "-p",
       "{prompt}",
       "--dangerously-skip-permissions"
     ],
     "signin": {
-      "command": "env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
+      "command": "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
       "kind": "paste"
     },
     "size": {
@@ -47,7 +52,11 @@
       ]
     },
     "acpRemove": "updates remove chat:claude",
-    "acpPackage": "@agentclientprotocol/claude-agent-acp"
+    "acpPackage": "@agentclientprotocol/claude-agent-acp",
+    "acpEnvUnset": [
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN"
+    ]
   },
   {
     "id": "codex",

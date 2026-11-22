@@ -37,7 +37,9 @@ Each chat is a thread in **agentd** (`~/home/agentd/`, `localhost:8090`) with on
 started in `~/home`. The owner sees your messages, one line per tool call, and your final message
 most prominently: **end every turn with the answer**, short, result first; open what you built
 with `show`. Sharing anything to read or look at (a plan, drafts, a long list, code, an image, a PDF)?
-Put it in a file and `show` it: from a chat, it opens beside the chat. A message starting `[Context from Springroll]` says what the owner is looking at;
+Put it in a file and `show` it: from a chat, it opens beside the chat. `show` only reaches screens open
+right then (not a phone asleep in a pocket), so also name it in your final message: a file as its path in
+backticks (`~/data/drafts/x.md`, a tap opens it), an app or page as a link. A message starting `[Context from Springroll]` says what the owner is looking at;
 "this" means that. If the owner chose "Ask first", they approve actions as you go.
 To leave a command running, use your shell tool's own background (Claude: `run_in_background`;
 Codex: just run it, it carries on after it yields), never `&`, `nohup` or `setsid`: only the tool's

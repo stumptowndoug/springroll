@@ -23,11 +23,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const waiting = new Map();
 let nextId = 1000, cancelled = false, clientInfo = null;
 
+// Its settings: a model and an effort (reasoning level), starting on the lowest like Codex does.
+const config = { model: 'small', reasoning_effort: 'low' };
+const configOptions = () => [
+  { id: 'model', category: 'model', type: 'select', name: 'Model', currentValue: config.model, options: [{ value: 'small', name: 'Small' }, { value: 'big', name: 'Big' }] },
+  { id: 'reasoning_effort', category: 'thought_level', type: 'select', name: 'Reasoning', currentValue: config.reasoning_effort, options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }] },
+];
 readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
   if (m.id != null && !m.method) return waiting.get(m.id)?.(m.result);
   if (m.method === 'initialize') { clientInfo = m.params.clientInfo; return send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false, promptCapabilities: { image: true } }, agentInfo: { name: 'fake-acp', title: 'Fake adapter', version: '9.9.9' } } }); }
-  if (m.method === 'session/new') return send({ id: m.id, result: { sessionId: 's1', configOptions: [{ id: 'model', category: 'model', type: 'select', name: 'Model', currentValue: 'small', options: [{ value: 'small', name: 'Small' }, { value: 'big', name: 'Big' }] }] } });
+  if (m.method === 'session/new') return send({ id: m.id, result: { sessionId: 's1', configOptions: configOptions() } });
+  if (m.method === 'session/set_config_option') { config[m.params.configId] = m.params.value; return send({ id: m.id, result: { configOptions: configOptions() } }); }
   if (m.method === 'session/cancel') { cancelled = true; return; }
   if (m.method === '_session/async_task/stop') {
     update({ sessionUpdate: 'async_task_state_update', asyncTaskId: m.params.asyncTaskId, state: 'stopped' });

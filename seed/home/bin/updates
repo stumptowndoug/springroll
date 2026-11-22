@@ -4,6 +4,7 @@
 //   updates [--json]           what's installed, what's newer, what's held back
 //   updates apply [item…]      move what's set up to its newest ready version (the daily `updates` job)
 //   updates install <item>     set one up now (Connections → Add chat)
+//   updates launchers [item…]  rewrite installed launchers from the registry, without updating
 //   updates remove <item>
 // Items: chat:<agent> for each agent in agents/agents.json with "acpPackage" (npm) or "acpRegistry"
 // (the ACP registry, for Antigravity's runtime from Google).
@@ -165,8 +166,11 @@ function writeLauncher(it) {
   const [entry, ...args] = it.source.entry('$d');
   const q = (s) => (s.startsWith('$d') ? `"${s}"` : `'${s.replaceAll("'", "'\\''")}'`);
   fs.mkdirSync(BIN, { recursive: true });
+  const unset = it.agent.acpEnvUnset || [];
+  if (unset.some((name) => !/^[A-Z_][A-Z0-9_]*$/.test(name))) throw new Error('invalid acpEnvUnset name');
+  const clean = unset.length ? `unset ${unset.join(' ')}\n` : '';
   const tmp = `${it.launcher}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, `#!/bin/sh\n# ${it.name} (${it.agent.acpPackage || it.agent.acpRegistry.id}): the version \`updates\` made current (~/home/bin/updates)\nd=$(readlink -e '${path.join(it.dir, 'current')}') || { echo "${it.name} isn't installed: updates install ${it.id}" >&2; exit 127; }\nexec ${[entry, ...args].map(q).join(' ')} "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(tmp, `#!/bin/sh\n# ${it.name} (${it.agent.acpPackage || it.agent.acpRegistry.id}): the version \`updates\` made current (~/home/bin/updates)\n${clean}d=$(readlink -e '${path.join(it.dir, 'current')}') || { echo "${it.name} isn't installed: updates install ${it.id}" >&2; exit 127; }\nexec ${[entry, ...args].map(q).join(' ')} "$@"\n`, { mode: 0o755 });
   fs.renameSync(tmp, it.launcher);
 }
 
@@ -322,6 +326,11 @@ async function remove(id) {
 const [cmd = '', ...rest] = process.argv.slice(2);
 if (cmd === '-h' || cmd === '--help' || cmd === 'help') { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 16).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 if (cmd === '' || cmd === '--json' || cmd === 'check') await status(rest.includes('--json') || cmd === '--json');
+else if (cmd === 'launchers') {
+  const all = items();
+  const chosen = rest.length ? rest.map((id) => all.find((it) => it.id === id || it.agent.id === id) || die(`no item ${id}`)) : all.filter((it) => it.current());
+  for (const it of chosen) { if (!it.current()) die(`${it.id} is not installed`); writeLauncher(it); console.log(`Rewrote ${it.id} launcher.`); }
+}
 else if (cmd === 'apply') await apply(rest);
 else if (cmd === 'install') { if (!rest[0]) die('install <item>'); await apply(rest.slice(0, 1), { install: true }); }
 else if (cmd === 'remove') { if (!rest[0]) die('remove <item>'); await remove(rest[0]); }

@@ -511,6 +511,10 @@ function proxy(req, res, port, upstreamPath) {
     (r) => { res.writeHead(r.statusCode, r.headers); r.pipe(res); },
   );
   up.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(`View on port ${port} isn't responding.`); });
+  // A browser that goes away (tab closed, phone asleep) hangs up upstream too: an event stream left
+  // open kept agentd writing into a socket nobody read (2026-10-29: 245 of them, ~860 MB of TCP
+  // buffers, which put the kernel under memory pressure and slowed every download on the box).
+  res.on('close', () => { if (!res.writableFinished) up.destroy(); });
   req.pipe(up);
 }
 
@@ -908,6 +912,8 @@ server.on('upgrade', (req, socket, head) => {
   });
   up.on('error', () => socket.destroy());
   socket.on('error', () => up.destroy());
+  up.on('close', () => socket.destroy());
+  socket.on('close', () => up.destroy());
 });
 
 server.listen(PORT, '127.0.0.1', () => console.log(`Springroll on 127.0.0.1:${PORT}`));

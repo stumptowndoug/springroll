@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { usageSettings, patchUsageSettings, visibleUsage } from '../public/app/usage-settings.mjs';
 
-const defaults = { claude: true, codex: true, antigravityGemini: true, antigravityThirdParty: false, cursor: true, cursorPools: false };
+const defaults = { claude: true, codex: true, antigravityGemini: true, antigravityThirdParty: false, cursor: true, cursorPools: false, show: 'all', system: 'always' };
 const data = [
   { id: 'claude', windows: [{ key: 'five_hour' }] },
   { id: 'codex', windows: [{ key: '7d' }] },
@@ -20,10 +20,16 @@ test('existing installs retain Claude, Codex and Gemini; third-party Antigravity
 
 test('partial boolean patches persist independent choices and reject unknown or invalid fields', () => {
   const current = { ...defaults, codex: false };
-  const patched = patchUsageSettings(current, { antigravityThirdParty: true, claude: 'false', future: true });
+  const patched = patchUsageSettings(current, { antigravityThirdParty: true, claude: 'false', future: true, show: 'invalid' });
   assert.deepEqual(patched, { ...current, antigravityThirdParty: true });
   assert.deepEqual(current, { ...defaults, codex: false });
-  assert.deepEqual(usageSettings({ claude: null, codex: 0, antigravityThirdParty: 'true' }), defaults);
+  assert.deepEqual(usageSettings({ claude: null, codex: 0, antigravityThirdParty: 'true', show: 'bogus', system: 1 }), defaults);
+});
+
+test('show and system display modes persist and show=off hides all quota bars', () => {
+  const patched = patchUsageSettings(defaults, { show: 'tightest', system: 'warn' });
+  assert.deepEqual(patched, { ...defaults, show: 'tightest', system: 'warn' });
+  assert.deepEqual(visibleUsage(data, { show: 'off' }), []);
 });
 
 test('provider switches can hide everything or select only Antigravity third-party quotas', () => {
