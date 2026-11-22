@@ -121,13 +121,18 @@ function renderSort() {
   ui.morph(t, read.generating ? '<span class="ui-shimmer">Sorting</span>' : read.error ? '<span class="ui-status"><span class="ui-dot danger"></span>Sort failed</span>' : '');
 }
 
-// Agent first: each thing that needs you is a pointer (what, why, when) and a conversation. Ask opens
-// the chat beside it about that item (its own chat when it has one); View shows the thing itself;
-// Done clears it. Only what an agent can't do for you stays a direct action (approve, paste a key).
+// Agent first: each thing that needs you is a pointer (what, why, when) and a conversation. Clicking a row
+// shows the thing itself (its View); Chat starts a new chat beside it with the item attached; Reply (an
+// agent waiting on you: a question, a permission, a key) goes to that agent's own chat or run; Done clears
+// it. Only what an agent can't do for you stays a direct action (approve, paste a key).
 const openPanels = new Set();
 let focusNext = false;
-const ask = (item, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" data-ask='${ui.esc(JSON.stringify(item))}' aria-label="Chat">${ui.icon('message-square', 'sm')}<span class="label">Chat</span></button>`;
+const ask = (item, primary = true) => { const label = item.thread ? 'Reply' : 'Chat';
+  return `<button class="ui-btn sm${primary ? ' primary' : ''}" data-ask='${ui.esc(JSON.stringify(item))}' aria-label="${label}">${ui.icon(item.thread ? 'reply' : 'message-square', 'sm')}<span class="label">${label}</span></button>`; };
 const external = (href) => /^https?:/i.test(href || '');
+// What clicking a row opens: its link, else the chat or run it came from; nothing when there's nothing to show.
+const threadHref = (id) => { const t = id && state.threads.find((x) => x.id === id); return !id ? '' : t?.origin?.startsWith('job:') || !t ? `#/r/${id}` : `#/t/${id}`; };
+const shows = (href) => (href ? { href } : null);
 // Rows without a View keep its space, so every row's actions line up.
 const view = (href) => (href ? `<a class="ui-btn sm quiet" href="${ui.esc(href)}"${external(href) ? ' target="_blank" rel="noopener"' : ''}>View</a>` : '<span class="ui-btn sm quiet" aria-hidden="true" style="visibility:hidden">View</span>');
 const done = (attrs) => `<button class="ui-icon-btn more done" ${attrs} title="Done" aria-label="Done">${ui.icon('check')}</button>`;
@@ -141,7 +146,7 @@ function needRow(n) {
     const cmd = tc.rawInput?.command || tc.rawInput?.file_path || tc.rawInput?.path || '';
     const opts = perm?.options || [], allow = opts.find((o) => o.kind === 'allow_once') || opts.find((o) => o.kind?.startsWith('allow'));
     const deny = opts.find((o) => o.kind?.startsWith('reject'));
-    return task({ id: `p:${t.id}`, src, icon: 'lock', title: t.title || 'A chat', when: t.updated, keep: true,
+    return task({ id: `p:${t.id}`, src, icon: 'lock', title: t.title || 'A chat', when: t.updated, keep: true, open: shows(threadHref(t.id)),
       sub: `${agentName(t.agent)} wants to ${tc.title ? tc.title.replace(/^./, (c) => c.toLowerCase()) : 'take an action'}`,
       code: cmd ? String(Array.isArray(cmd) ? cmd.join(' ') : cmd) : '',
       acts: (perm && allow ? btn('Allow', `data-perm="${t.id}:${perm.id}:${ui.esc(allow.optionId)}"`) : '')
@@ -152,12 +157,12 @@ function needRow(n) {
     const { s } = n, k = s.key || '';
     const clear = done(`data-dismiss="${s.id}"`);
     if (k.startsWith('job:')) {
-      const name = k.slice(4), t = state.threads.find((x) => x.id === s.thread_id), agentRun = t && t.agent !== 'shell';
+      const name = k.slice(4), href = s.href || threadHref(s.thread_id);
       return task({ id: `s:${s.id}`, src, icon: 'circle-x', danger: true, title: s.title, when: s.updated, sub: s.body || 'See the run for details',
-        open: { ask: agentRun ? { thread: t.id } : null },
-        acts: ask(agentRun ? { thread: t.id } : { key: `job:${name}`, label: s.title,
-          note: `The job "${name}" failed: ${s.body || 'no details'}. Its run is thread ${s.thread_id || '?'} (curl -s localhost:8090/threads/${s.thread_id}); the job is in ~/home/jobs/${name}/. The owner wants to talk about it: find out why, fix what you can, run it again if that makes sense.` })
-          + view(s.href) + clear });
+        open: shows(href),
+        acts: ask({ key: `job:${name}:${s.thread_id || s.id}`, label: s.title,
+          note: `The job "${name}" failed: ${s.body || 'no details'}. Its run is thread ${s.thread_id || '?'} (curl -s localhost:8090/threads/${s.thread_id}; its report: curl -s localhost:8090/runs/thread/${s.thread_id}); the job is in ~/home/jobs/${name}/. The owner wants to talk about it: find out why, fix what you can, run it again if that makes sense. Anything the job should remember goes in its NOTES.md.` })
+          + view(href) + clear });
     }
     if (k.startsWith('secret:')) {
       const name = k.slice(7);
@@ -175,7 +180,7 @@ function needRow(n) {
     if (k.startsWith('mail:')) {
       const id = k.slice(5);
       const item = { key: `mail:${id}`, label: `Email: ${s.title}`, note: `This is about the email with Mail id ${id}: "${s.title}" (${s.body || ''}). Read it with \`gmail show ${id}\`; act with \`gmail reply ${id}\` (text on stdin) or \`gmail archive ${id}\`. Do what the owner asks.` };
-      return task({ id: `s:${s.id}`, src, icon: 'mail', title: s.title, when: s.updated, sub: s.body || '', open: { ask: item },
+      return task({ id: `s:${s.id}`, src, icon: 'mail', title: s.title, when: s.updated, sub: s.body || '', open: shows(s.href),
         acts: ask(item, false) + view(s.href) + clear });
     }
     return signalRow(s, true);
@@ -191,17 +196,17 @@ function needRow(n) {
 // from, Chat with the note it came with (how to act on it), View (a route, or a URL in a new tab), Done.
 function signalRow(s, primary) {
   return task({ id: `s:${s.id}`, src: sourceOf(s), icon: s.icon || (s.thread_id ? 'message-circle-question' : s.level === 'needs' ? 'circle-alert' : 'bell'), title: s.title, when: s.updated, sub: s.body || '',
-    open: { ask: askItem(s) }, acts: ask(askItem(s), false) + view(s.href) + done(`data-dismiss="${s.id}"`) });
+    open: shows(s.href || threadHref(s.thread_id)), acts: ask(askItem(s), false) + view(s.href || threadHref(s.thread_id)) + done(`data-dismiss="${s.id}"`) });
 }
-// An item from the read: why it matters underneath, what it came from, Chat (its new chat starts with the
-// suggested next step in the box, unless Settings → Needs you turns starter prompts off) / View / Done,
+// An item from the read: why it matters underneath, what it came from, Chat (a new chat with the item attached;
+// the suggested next step sits under its box, unless Settings → Needs you turns starter prompts off) / View / Done,
 // and 👍 / 👎 for what should show here.
 function readRow(i) {
   const first = i.sources[0];
   const vote = (v, icon, label) => `<button class="ui-icon-btn more vote" data-vote="${ui.esc(i.id)}:${v}" aria-pressed="${i.vote === v}" title="${label}" aria-label="${label}">${ui.icon(icon, 'sm')}</button>`;
   const chat = { key: `needs:${i.id}`, label: i.title, note: readNote(i), ...(i.action && read.starter !== false ? { text: i.action.ask } : {}) };
   return task({ id: `r:${i.id}`, src: first?.src || '', icon: i.kind === 'watch' ? 'eye' : first?.icon || 'circle-alert', title: i.title, when: i.when, sub: i.insight,
-    open: { ask: chat }, acts: ask(chat, false) + view(first?.href)
+    open: shows(first?.href), acts: ask(chat, false) + view(first?.href)
       + vote('up', 'thumbs-up', 'More like this') + vote('down', 'thumbs-down', 'Less like this') + done(`data-read-done="${ui.esc(i.id)}"`) });
 }
 
@@ -275,7 +280,7 @@ const menuBtn = `<button class="ui-icon-btn more tl-menu" data-acts-menu title="
 
 // A waiting row, shaped like every other feed row: how long it's waited · an amber icon · title, source,
 // one line · its buttons (on hover, unless it needs a direct answer: keep) · a drawer for sign-ins and keys.
-// open: what clicking the row does (its chat).
+// open: what clicking the row shows ({href}); none when there's nothing to show.
 function task({ id, src = '', icon, danger, title, when, sub, code = '', acts = '', panel = '', keep = false, open: onRow = null }) {
   const open = panel && openPanels.has(id);
   return `<div class="ui-feed-row tl-wait${open ? ' open' : ''}${keep || open ? ' keep' : ''}" data-task="${ui.esc(id)}"${onRow ? ` data-open='${ui.esc(JSON.stringify(onRow))}' tabindex="0"` : ''}>
@@ -501,13 +506,13 @@ function foldRow(f) {
     ${open ? `<div class="tl-folded">${f.items.map((x) => runRow(x)).join('')}</div>` : ''}`;
 }
 
-// Worth knowing (`signal "…"`): opens what it points at (or a chat about it); Chat and Done beside it.
+// Worth knowing (`signal "…"`): opens what it points at (or the chat or run it came from); Chat and Done beside it.
 function knowRow(s) {
-  const src = sourceOf(s);
-  return `<div class="ui-feed-row tl-know" data-open='${ui.esc(JSON.stringify(s.href ? { href: s.href } : { ask: askItem(s) }))}' tabindex="0">
+  const src = sourceOf(s), o = shows(s.href || threadHref(s.thread_id));
+  return `<div class="ui-feed-row tl-know"${o ? ` data-open='${ui.esc(JSON.stringify(o))}' tabindex="0"` : ''}>
     <span class="time">${ui.time(s.updated)}</span><span class="lead">${ui.icon(s.icon || 'bell', 'sm')}</span>
     <span class="title">${ui.esc(s.title)}</span>${tag(src, s.title)}
-    <span class="acts"><button class="ui-icon-btn plain" data-ask='${ui.esc(JSON.stringify(askItem(s)))}' title="Chat about this" aria-label="Chat about this">${ui.icon('message-square', 'sm')}</button><button class="ui-icon-btn plain" data-dismiss="${s.id}" title="Done" aria-label="Done">${ui.icon('check', 'sm')}</button></span>
+    <span class="acts"><button class="ui-icon-btn plain" data-ask='${ui.esc(JSON.stringify(askItem(s)))}' title="${askItem(s).thread ? 'Reply' : 'Chat about this'}" aria-label="${askItem(s).thread ? 'Reply' : 'Chat about this'}">${ui.icon(askItem(s).thread ? 'reply' : 'message-square', 'sm')}</button><button class="ui-icon-btn plain" data-dismiss="${s.id}" title="Done" aria-label="Done">${ui.icon('check', 'sm')}</button></span>
     ${s.body ? `<span class="sub">${ui.esc(s.body)}</span>` : ''}</div>`;
 }
 
@@ -544,7 +549,7 @@ async function onClick(e) {
   const b = e.target.closest('[data-perm],[data-dismiss],[data-run],[data-setup],[data-fix],[data-expand]');
   if (!b) {
     const o = e.target.closest('[data-open]');
-    if (o && !e.target.closest('a,button,input,form,.drawer')) { const x = JSON.parse(o.dataset.open); if (x.href) { if (external(x.href)) window.open(x.href, '_blank', 'noopener'); else ctx.go(x.href); } else if (x.ask) ctx.askAbout(x.ask); }
+    if (o && !e.target.closest('a,button,input,form,.drawer')) { const x = JSON.parse(o.dataset.open); if (x.href) { if (external(x.href)) window.open(x.href, '_blank', 'noopener'); else ctx.go(x.href); } }
     return;
   }
   if (!b) return;

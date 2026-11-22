@@ -107,6 +107,10 @@
 
       <section class="ui-section" id="utilization">
         <header><span class="ui-label">Utilization</span></header>
+        <div class="ui-card" style="padding: 4px var(--pad); margin-bottom: var(--gap)">
+          <div class="opt"><div class="lbl"><b>Quota bars</b><span>How much to show in the sidebar</span></div><div><select id="usageShow"></select></div></div>
+          <div class="opt"><div class="lbl"><b>Machine memory</b><span>The System indicator in the corner</span></div><div><select id="usageSystem"></select></div></div>
+        </div>
         <div class="ui-group" id="usageOptions"></div>
         <p class="ui-note">Choose which quotas appear in the sidebar. Providers appear when installed and signed in.</p>
       </section>
@@ -200,12 +204,19 @@ const opts = {
   density: [['compact', 'Compact'], ['comfortable', 'Comfortable'], ['spacious', 'Spacious']],
   radius: [['sharp', 'Sharp'], ['soft', 'Soft'], ['round', 'Round']],
   sidebar: [['recessed', 'Darker'], ['raised', 'Lighter']],
+  usageShow: [['all', 'Every window'], ['tightest', 'Tightest window per agent'], ['warn', 'Only when running high'], ['off', 'Off']],
+  usageSystem: [['always', 'Always'], ['warn', 'Only when high'], ['off', 'Off']],
 };
 let themes = [];
 const $ = (id) => document.getElementById(id);
 
 function renderUsageSettings(s) {
   const el = $('usageOptions'), preferences = usageSettings(s.utilization);
+  for (const [id, key] of [['usageShow', 'show'], ['usageSystem', 'system']]) {
+    const sel = $(id);
+    sel.innerHTML = opts[id].map(([v, label]) => `<option value="${v}"${preferences[key] === v ? ' selected' : ''}>${label}</option>`).join('');
+    sel.onchange = () => desk.save({ utilization: { [key]: sel.value } });
+  }
   if (!el.children.length) el.innerHTML = USAGE_OPTIONS.map(o => `<label class="ui-row">
     ${ui.agentMark(o.agent, o.label)}<span class="body"><span class="title">${ui.esc(o.label)}</span><span class="sub">${ui.esc(o.detail)}</span></span>
     <input type="checkbox" class="ui-switch" data-usage-setting="${o.key}" aria-label="Show ${ui.esc(o.label)} utilization">
@@ -292,7 +303,7 @@ function renderFonts(s) {
 // Default for chat: agent, model and reasoning as the chat composer's pickers, in a copy of the composer. Agents that can chat (have an ACP mode),
 // installed and signed in (signing in and installing live in Connections). Model and reasoning come from
 // what that agent offers (agentd remembers it, or asks the agent once) and are kept per agent in
-// desk.json chatDefaults[agent]. Unset model: the one last picked in a chat; unset reasoning: the agent's own.
+// desk.json chatDefaults[agent]. Unset model or reasoning: the one last picked in a chat (else the agent's own).
 // Jobs keep theirs. Rebuilt only when something changed: it also runs on focus and on every settings change.
 let agentsList = [], agentOpts = {}, defaultsShown = '', personas = null; // personas: ~/home/personas, desk.json persona.default
 async function renderAgents(refresh = true) {
@@ -313,17 +324,16 @@ async function renderAgents(refresh = true) {
 
   const name = (id) => agentsList.find((a) => a.id === id)?.name || id;
   const models = o?.models || [], efforts = o?.effort?.values || [];
-  const hasDefaultEffort = efforts.some((v) => v.id === 'default');
   const model = models.find((m) => m.id === d.model), effort = efforts.find((v) => v.id === d.effort);
-  // Unset shows what a new chat would actually get: the last picked model (else the agent's), the agent's reasoning.
+  // Unset shows what a new chat would actually get: the last picked model and reasoning (else the agent's).
   const shownModel = model || models.find((m) => m.id === o?.preferredModel) || models.find((m) => m.id === o?.currentModel);
-  const shownEffort = effort || efforts.find((v) => v.id === o?.effort?.current);
+  const shownEffort = effort || efforts.find((v) => v.id === o?.preferredEffort) || efforts.find((v) => v.id === o?.effort?.current);
   const chev = ui.icon('chevron-down');
   const el = $('chatDefaults');
   el.innerHTML = `
     <button class="ui-combo" data-p="agent" title="Agent">${ui.agentMark(agent, name(agent), 'sm')}<span>${ui.esc(name(agent))}</span>${chev}</button>
     ${o && !models.length ? '' : `<button class="ui-combo" data-p="model" title="Model${model ? '' : ': last picked in a chat'}">${ui.icon('sparkles', 'sm')}<span>${!o ? 'Model' : ui.esc(shownModel?.name || d.model || 'Model')}</span>${chev}</button>`}
-    ${o && !efforts.length ? '' : `<button class="ui-combo" data-p="effort" title="Reasoning${effort ? '' : ": the agent's default"}">${ui.icon('brain', 'sm')}<span>${!o ? 'Reasoning' : ui.esc(!shownEffort ? 'Reasoning' : shownEffort.id === 'default' ? 'Default reasoning' : shownEffort.name)}</span>${chev}</button>`}
+    ${o && !efforts.length ? '' : `<button class="ui-combo" data-p="effort" title="Reasoning${effort ? '' : ': last picked in a chat'}">${ui.icon('brain', 'sm')}<span>${!o ? 'Reasoning' : ui.esc(!shownEffort ? 'Reasoning' : shownEffort.id === 'default' ? 'Default reasoning' : shownEffort.name)}</span>${chev}</button>`}
     <span class="send" aria-hidden="true">${ui.icon('arrow-up', 'sm')}</span>`;
   const save = (k, v) => desk.save({ chatDefaults: { [agent]: { [k]: v || null } } });
   el.querySelector('[data-p="agent"]').onclick = (e) => ui.combobox(e.currentTarget, {
@@ -341,10 +351,10 @@ async function renderAgents(refresh = true) {
     onSelect: (v) => save('model', v),
   });
   if (el.querySelector('[data-p="effort"]')) el.querySelector('[data-p="effort"]').onclick = (e) => ui.combobox(e.currentTarget, {
-    value: d.effort || (hasDefaultEffort ? 'default' : ''), width: 220,
-    escape: hasDefaultEffort ? undefined : { value: '', label: "Agent's default" },
+    value: d.effort || '', width: 220,
+    escape: { value: '', label: 'Last picked in a chat', icon: 'history', desc: efforts.find((v) => v.id === o?.preferredEffort)?.name },
     options: efforts.map((v) => ({ value: v.id, label: v.name || v.id })),
-    onSelect: (v) => save('effort', v === 'default' ? '' : v),
+    onSelect: (v) => save('effort', v),
   });
 }
 

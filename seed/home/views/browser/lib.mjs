@@ -40,12 +40,15 @@ const APP_PORT = fs.readFileSync(new URL('./PORT', import.meta.url), 'utf8').tri
 const KEYS = { kernel: 'KERNEL_API_KEY', browserbase: 'BROWSERBASE_API_KEY' };
 
 // A key from the environment, else from secrets.env (the app's service doesn't get them as env vars).
+// The saved key first: a process's environment holds the key from when it started, and a key the owner
+// replaced since (a new Kernel account, 2026-11-17) made every liveness check ask the wrong account, write
+// live browsers off as gone and leave them holding Kernel's concurrency slots.
 export function key(name) {
-  if (process.env[name]) return process.env[name];
   try {
     const m = fs.readFileSync(SECRETS, 'utf8').match(new RegExp(`^${name}='(.*)'$`, 'm'));
-    return m ? m[1].replace(/'\\''/g, "'") : '';
-  } catch { return ''; }
+    if (m) return m[1].replace(/'\\''/g, "'");
+  } catch {}
+  return process.env[name] || '';
 }
 export async function backends() {
   const home = await homeStatus().catch((e) => ({ ok: false, reason: e.message }));
@@ -170,8 +173,19 @@ const start = {
 
   // Kernel: a headful cloud Chromium with its own live view. Stealth (proxy + captcha solving) on by
   // default since this machine's address is a data center's. A profile keeps sign-ins between sessions.
-  async kernel({ profile, stealth = true }) {
+  // --proxy residential|isp|mobile: Kernel's own proxy (US, unmetered on Hobbyist+, reused by name) with
+  // captcha solving off unless --stealth is also given. Residential is the one that carries .gov.
+  async kernel({ profile, stealth, proxy }) {
+    if (stealth === undefined) stealth = !proxy;
     const body = { headless: false, stealth, timeout_seconds: IDLE_SECONDS };
+    if (proxy) {
+      if (!['residential', 'isp', 'mobile'].includes(proxy)) throw new Error(`--proxy ${proxy}? (residential, isp, mobile)`);
+      const pname = `springroll-${proxy}-us`;
+      const list = await api('kernel', 'GET', '/proxies');
+      let px = (Array.isArray(list) ? list : list.items || []).find((x) => x.name === pname);
+      px ||= await api('kernel', 'POST', '/proxies', { type: proxy, name: pname, config: { country: 'US' } });
+      body.proxy_id = px.id;
+    }
     if (profile) {
       try { await api('kernel', 'GET', `/profiles/${encodeURIComponent(profile)}`); }
       catch (e) { if (e.status === 404) await api('kernel', 'POST', '/profiles', { name: profile }); else throw e; }
@@ -213,19 +227,20 @@ const alive = {
 // Start a browser and attach agent-browser session `name` to it. Reuses a running one of that name.
 // `by` says who asked ({ origin: 'app' } from the Browser app); otherwise the chat or job running this.
 // Every start, and every failed one, goes into the history (history.mjs).
-export async function startSession({ name = 'main', via, profile, stealth, url, by } = {}) {
+export async function startSession({ name = 'main', via, profile, stealth, proxy, url, by } = {}) {
   name = slug(name) || 'main';
   const asked = via || null;
   by = await history.who(by);
   const note = {};
   try {
-    return await startOne({ name, via, profile, stealth, url, asked, by, note });
+    return await startOne({ name, via, profile, stealth, proxy, url, asked, by, note });
   } catch (e) {
     if (!e.recorded) try { history.failed({ name, via: note.via || via || null, asked, profile: profile || null, fallback_from: note.from, fallback_reason: note.why }, by, e.message); } catch {}
     throw e;
   }
 }
-async function startOne({ name, via, profile, stealth, url, asked, by, note }) {
+async function startOne({ name, via, profile, stealth, proxy, url, asked, by, note }) {
+  if (proxy) { if (via && via !== 'kernel') throw new Error('--proxy is for --via kernel'); via = 'kernel'; }
   via ||= readHome().enabled ? 'home' : cloudVia();
   note.via = via;
   if (!VIA.includes(via)) throw new Error(`Unknown backend ${via}: ${VIA.join(', ')}`);
@@ -261,8 +276,9 @@ async function startOne({ name, via, profile, stealth, url, asked, by, note }) {
   const state = read();
   const opts = { name, profile: profile || (via === 'local' || via === 'home' ? 'default' : undefined), stealth };
   if (stealth === undefined) delete opts.stealth;
+  if (proxy) opts.proxy = proxy;
   const b = await start[via](opts, state);
-  const s = { name, via, id: b.id, cdp: b.cdp, live: b.live || null, port: b.port || null, profile: opts.profile || null, started: Date.now(), ...(exitIP ? { exitIP } : {}) };
+  const s = { name, via, id: b.id, cdp: b.cdp, live: b.live || null, port: b.port || null, profile: opts.profile || null, ...(proxy ? { proxy, stealth: opts.stealth ?? false } : {}), started: Date.now(), ...(exitIP ? { exitIP } : {}) };
   try {
     await attach(name, b.cdp);
   } catch (e) {

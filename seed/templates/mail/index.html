@@ -276,14 +276,14 @@ function renderToday() {
   if (today.off) {
     // Sorting is opt-in: say exactly what an agent would read, and turn it on in one click.
     html += `<div class="ui-card pad" style="margin-top:20px"><p><b>Let an agent sort your new mail?</b></p>
-      <p class="today-note" style="margin-top:6px">The Mail triage job (Claude Haiku) reads each new email's sender, subject and preview, and the full text only when it drafts a reply. It never changes anything in Gmail. Emails that need you also show on the Timeline. Turn it off any time in Jobs.</p>
+      <p class="today-note" style="margin-top:6px">The Mail triage job sorts each new email with Claude Haiku: the model sees what you'd see of it (sender, subject, text) but has no tools or keys, and a script checks its answer before anything is saved. It needs an Anthropic API key (Connections → Anthropic API). It never changes anything in Gmail. Emails that need you also show on the Timeline. Turn it off any time in Jobs.</p>
       <p style="margin-top:14px"><button class="ui-btn primary" data-turnon>Turn on sorting</button> <a class="ui-btn quiet" href="#" data-go="#/jobs/mail-triage">The triage job</a></p></div>
       ${today.items.length ? '<p class="today-note" style="margin-top:20px">Sorting is off. Below: what it sorted before.</p>' : ''}`;
     if (!today.items.length) { ui.morph($('todayIn'), html); return; }
   }
   if (!today.items.length) {
     html += today.pending
-      ? `<p class="today-note"><span class="ui-shimmer">Sorting ${today.pending} new email${today.pending === 1 ? '' : 's'}…</span> An agent reads the sender, subject and preview and sorts them; this fills in when it's done.</p>
+      ? `<p class="today-note"><span class="ui-shimmer">Sorting ${today.pending} new email${today.pending === 1 ? '' : 's'}…</span> A model with no tools reads them and sorts them; this fills in when it's done.</p>
          <p style="margin-top:12px"><button class="ui-btn" data-sort>Sort now</button> <a class="ui-btn quiet" href="#" data-go="#/jobs/mail-triage">The triage job</a></p>`
       : `<div class="ui-empty"><i data-icon="inbox"></i><span class="title">Nothing new</span><p>New mail is sorted by an agent as it arrives. The full inbox is under Inbox.</p></div>`;
     $('todayIn').innerHTML = html; ui.hydrate($('todayIn')); return;

@@ -27,10 +27,29 @@ web template.
 
 **Agent first.** The owner tells an agent what they want; screens point at
 things and open a conversation about them. Anything the owner might act on (an
-email, a failed run, a question) is a row with **Chat** (opens the chat beside it
-about that item: `desk.askAbout`), **View** (the thing itself) and **Done**. Keep
+email, a failed run, a question) is a row with **Chat** (a new chat beside it
+with the item attached: `desk.askAbout`), **View** (the thing itself; what
+clicking the row does) and **Done**. An agent waiting on the owner gets **Reply**
+(its own chat) instead of Chat. Job runs are not chats: they stay out of the
+sidebar, under Chats → Runs. Keep
 direct buttons only for what an agent can't do for them (approve, paste a key).
 No row of five action buttons: the agent is the action.
+
+**Chat has one home.** Springroll's own Chat button (bottom right on desktop, the
+top bar on a phone) is how the owner talks to an agent about whatever is on screen:
+a new chat each time (the last one from the same page or app is offered as a link).
+Apps don't add their own "Ask about this" or chat buttons for the screen or for an
+open item. They call `desk.context({label, note})` whenever what's in front of the
+owner changes (a sheet opens or closes, a row is selected), so that one button is
+already about the right thing. The exception is a **list** of things the owner acts
+on without opening them (the Timeline, a queue): a quiet Chat action on each row
+(`desk.askAbout`) is fine there. Anything that opens a detail view sets context
+instead and needs no Chat button of its own.
+
+**Actions sit at the top; the bottom right belongs to Chat.** A sheet or detail
+panel puts its actions in its header, right-aligned before the close ×, small
+(`ui-btn sm`): at most one primary (Approve, Save), the rest ghost. Nothing is
+pinned to the bottom right, where it would sit beside or under the Chat button.
 
 **Build from the kit.** Use `ui-` components and tokens; don't restyle them
 per View. If you need something the kit lacks (a calendar grid, a player bar),

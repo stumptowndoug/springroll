@@ -640,15 +640,21 @@ export class ThreadManager {
       if (which === 'model') this.store.updateThread(threadId, { model: value });
       else this.store.db.prepare('update threads set effort = ? where id = ?').run(value, threadId);
       if (which === 'model') this.rememberModel(thread.agent, value);
+      else this.rememberEffort(thread.agent, value);
       return this.threadEvent(threadId);
     }
     if (!live?.sessionId) live = await this.connect(thread);
-    if (await this.setOption(threadId, which, value, { live }) && which === 'model' && live.options.currentModel === value) this.rememberModel(thread.agent, value);
+    if (await this.setOption(threadId, which, value, { live })) {
+      if (which === 'model' && live.options.currentModel === value) this.rememberModel(thread.agent, value);
+      if (which === 'effort' && live.options.effort?.current === value) this.rememberEffort(thread.agent, value); // not one the agent refused or clamped
+    }
     this.saveOptions(threadId, live);
   }
 
   // A model the owner picked becomes the one new chats with that agent start on.
   rememberModel(agent, model) { this.store.setAgentOptions(agent, { ...(this.store.agentOptions(agent) || {}), preferredModel: model }); }
+  // So does the effort (reasoning level): without it every new chat fell back to the agent's own default (Codex: low).
+  rememberEffort(agent, effort) { this.store.setAgentOptions(agent, { ...(this.store.agentOptions(agent) || {}), preferredEffort: effort }); }
 
   async setAccess(threadId, access) {
     this.store.db.prepare('update threads set access = ? where id = ?').run(access, threadId);

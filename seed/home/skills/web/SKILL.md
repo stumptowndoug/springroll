@@ -52,7 +52,8 @@ browse; `browser backends` and `browser home` show them). The routes, cheapest f
 | Route | Sites see | Cost | Good for |
 |---|---|---|---|
 | `home` | the owner's home address (their device on Tailscale) | free | the owner's accounts; most sites. Needs that device awake |
-| `kernel` | a residential address elsewhere (stealth proxy), solves captchas | ~$0.50/hour while running (free credit $5/month) | signed-out work when home is down or blocked |
+| `kernel` | a residential address elsewhere (stealth proxy), solves captchas | ~$0.50/hour while running (Hobbyist $30/mo, $10 credit) | signed-out work when home is down or blocked |
+| `kernel --proxy residential` | a US home-type address (carries .gov), no captcha solving | same; proxy traffic unmetered | public-records and other sites where solving isn't wanted |
 | `browserbase --stealth` | a residential address; captchas sometimes | billed per GB of proxy traffic (pages can be several MB) | a second opinion when Kernel is blocked |
 | `local` | this server's data-center address | free | sites that don't care (docs, your own tools) |
 

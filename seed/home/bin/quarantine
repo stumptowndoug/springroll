@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Run a command on untrusted input (a customer's spreadsheet, an attachment) with no keys and no network.
+#   quarantine [--rw DIR]... -- command args...
+#
+# Inside (bubblewrap): the system read-only (/usr, /etc), an empty home and /tmp, no network at all
+# (not even localhost, so not agentd), and no environment beyond HOME/PATH/LANG. No ~/home, ~/data,
+# ~/projects, ~/.config/springroll, ~/.ssh, no agents' sign-ins. stdin/stdout pass through.
+#   --rw DIR  bind DIR read-write at the same path (files in, results out).
+# Example: quarantine --rw /tmp/job1 -- python3 -I /tmp/job1/parse.py /tmp/job1/in.xlsx
+# For AI on untrusted text, don't sandbox an agent: call a model with no tools and check its JSON
+# (jobs/mail-triage/triage.py). A sandbox with network can still reach agentd on localhost.
+set -euo pipefail
+binds=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --rw) binds+=(--bind "$2" "$2"); shift 2 ;;
+    --) shift; break ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) break ;;
+  esac
+done
+[ $# -gt 0 ] || { echo "quarantine: no command (quarantine --help)" >&2; exit 2; }
+H=/home/agent
+exec env -i HOME="$H" PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 TERM=dumb \
+  bwrap --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --symlink usr/sbin /sbin \
+        --ro-bind /etc /etc --proc /proc --dev /dev --tmpfs /tmp --tmpfs /run --tmpfs /home --dir "$H/work" \
+        --unshare-all --die-with-parent --new-session --chdir "$H/work" "${binds[@]}" -- "$@"

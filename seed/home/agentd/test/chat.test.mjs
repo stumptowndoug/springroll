@@ -118,6 +118,26 @@ test('a new agent\'s models are read from a short session and remembered', async
 });
 
 
+test('the effort picked in a chat is remembered for the agent, before its session starts or during it', async () => {
+  const t = store.createThread({ agent: 'fake', cwd: os.tmpdir() });
+  await tm.changeSetting(t.id, 'effort', 'high'); // no session yet: saved for when it starts
+  assert.equal(store.agentOptions('fake').preferredEffort, 'high');
+  await tm.prompt(t.id, { text: 'hello' });
+  await turnsEnded(t.id);
+  assert.equal(store.thread(t.id).options.effort.current, 'high'); // applied when the session started
+  assert.deepEqual(store.agentOptions('fake').models.map((m) => m.id), ['small', 'big']); // the menu is kept beside it
+  assert.equal(store.agentOptions('fake').preferredEffort, 'high'); // and a session start doesn't forget it
+  await tm.changeSetting(t.id, 'effort', 'low'); // mid-chat
+  assert.equal(store.thread(t.id).effort, 'low');
+  assert.equal(store.agentOptions('fake').preferredEffort, 'low');
+  await tm.changeSetting(t.id, 'effort', 'ludicrous'); // not offered: neither applied nor remembered
+  assert.equal(store.agentOptions('fake').preferredEffort, 'low');
+  // A new chat's first session start leaves the agent's own level alone unless the thread asks for one.
+  const fresh = await chat('hello');
+  await turnsEnded(fresh);
+  assert.equal(store.thread(fresh).effort, 'low');
+});
+
 test('models of providers without a key are hidden, and a usable one is picked to start on', () => {
   const auth = path.join(dir, 'auth.json');
   fs.writeFileSync(auth, JSON.stringify({ openrouter: { type: 'api' } }));

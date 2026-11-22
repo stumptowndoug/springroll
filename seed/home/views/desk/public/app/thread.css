@@ -11,6 +11,7 @@
 .th-title[contenteditable="true"] { background: var(--surface); }
 .th-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 6px; color: var(--muted); font-size: var(--text-sm); }
 .th-meta .sep { color: var(--faint); }
+.th-who:not(.sep) { display: inline-flex; align-items: center; gap: 6px; }
 .th-meta .ui-mono { font-size: var(--text-xs); }
 .thread-scroll-area { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .thread-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
@@ -308,3 +309,6 @@ audio.side-img { width: 100%; }
 a.file-ref { text-decoration: none; }
 a.file-ref > code { color: var(--accent); }
 a.file-ref:hover > code { text-decoration: underline; }
+/* A new chat about an item: its suggested next step (a tap puts it in the box) and the last chat about it. */
+.empty-chat .empty-suggest, .empty-chat .empty-earlier { display: flex; width: fit-content; max-width: 52ch; height: auto; min-height: 30px; padding-block: 6px; gap: 8px; align-items: flex-start; white-space: normal; text-align: left; margin-top: 6px; }
+.empty-chat .empty-suggest .ui-icon, .empty-chat .empty-earlier .ui-icon { flex: none; margin-top: 2px; }

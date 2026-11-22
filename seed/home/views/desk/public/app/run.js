@@ -1,6 +1,7 @@
 // A job run, as the owner reads it: when, the report's title, one line of links (the job, the work),
 // then the report (Rollmark: Markdown plus charts). The steps live in the run's chat, a click away.
-import { api, on } from './api.js';
+import { api, on, state } from './api.js';
+import { modelLabel } from './models.js';
 
 let el, current = null, run = null, loading = null;
 
@@ -20,6 +21,9 @@ async function load(id) {
   const r = await mine;
   if (loading !== mine || current !== id) return;
   if (r.error) { el.querySelector('.run-report').hidden = true; ui.morph(el.querySelector('.run-top'), `<a class="ui-back" href="#/">${ui.icon('chevron-left', 'sm')}Timeline</a><div class="ui-empty"><h2>No such run.</h2><p>${ui.esc(r.error)}</p></div>`); ui.morph(el.querySelector('.run-rest'), ''); return; }
+  // Its thread says which agent and model did the work (the newest are in state; an older one is fetched).
+  r.thread = state.threads.find((t) => t.id === r.thread_id) || (await api.get(`api/agent/threads/${r.thread_id}`).catch(() => null))?.thread || null;
+  if (loading !== mine || current !== id) return;
   run = r;
   render();
 }
@@ -36,6 +40,7 @@ function render() {
       <div class="run-meta">
         <span class="ui-status"><span class="ui-dot ${status[0]}"></span>${status[1]}${took ? ` <span class="ui-mono">${took}</span>` : ''}</span>
         <a href="#/jobs/${ui.esc(r.job)}">${ui.icon('calendar-clock', 'sm')}${ui.esc(r.jobTitle)}</a>
+        ${(() => { const m = modelLabel(r.thread, () => run === r && render()); return m ? `<span title="What did the work">${ui.icon(m.startsWith('Script') ? 'square-terminal' : 'cpu', 'sm')}${ui.esc(m)}</span>` : ''; })()}
         <a href="#/t/${ui.esc(r.thread_id)}">${ui.icon('list-tree', 'sm')}See the work</a>
       </div>
     </header>`);

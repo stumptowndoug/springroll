@@ -91,6 +91,7 @@ const readAgents = () => { try { return JSON.parse(fs.readFileSync(AGENTS, 'utf8
 const deskSettings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) || {}; } catch { return {}; } };
 const defaultAgent = () => deskSettings().defaultAgent || 'claude';
 // Settings → Coding agents: the model and effort a new chat with this agent starts on, unless it picks its own.
+// Unset, a new chat starts on the ones last picked in a chat (agent_options.preferredModel / preferredEffort).
 // Jobs keep theirs (job.json, else the agent's default).
 const chatDefaults = (agent) => deskSettings().chatDefaults?.[agent] || {};
 
@@ -267,11 +268,13 @@ const server = http.createServer(async (req, res) => {
       if (!fs.existsSync(cwd)) return json(res, 400, { error: `no folder ${b.cwd}` });
       const t = store.createThread({ agent, cwd, origin: b.origin || 'chat', title: b.title || null });
       const job = String(b.origin || '').startsWith('job:'), def = job ? {} : chatDefaults(agent);
-      const model = b.model || def.model, effort = (typeof b.effort === 'string' && b.effort) || def.effort;
+      const picked = typeof b.effort === 'string' && b.effort; // in the composer
+      const model = b.model || def.model, effort = picked || def.effort || (!job && store.agentOptions(agent)?.preferredEffort);
       store.updateThread(t.id, { last_read: Date.now(), ...(model ? { model } : {}) });
       if (b.model && (b.origin || 'chat') === 'chat') threads.rememberModel(agent, b.model); // picked in the composer (not a job's or a background read's)
       if (b.access) store.db.prepare('update threads set access = ? where id = ?').run(b.access === 'ask' ? 'ask' : 'full', t.id);
       if (effort) store.db.prepare('update threads set effort = ? where id = ?').run(effort, t.id);
+      if (picked && (b.origin || 'chat') === 'chat') threads.rememberEffort(agent, picked);
       // A chat starts with the persona picked in the composer, else Settings' default; a job only with its own.
       const persona = typeof b.persona === 'string' ? b.persona : job ? null : deskSettings().persona?.default;
       if (persona) try { threads.setPersona(t.id, persona); } catch {}

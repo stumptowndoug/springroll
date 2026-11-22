@@ -204,7 +204,8 @@ export function threadGlyph(t) {
 const SIDE_CHATS = 4;
 export const isChat = (t) => t.origin === 'chat' || t.origin?.startsWith('view:');
 function renderChats() {
-  const all = state.threads.filter((t) => isChat(t) || t.status === 'waiting');
+  // A job run waiting on the owner is on the Timeline (Needs you), not here: the sidebar is the owner's chats.
+  const all = state.threads.filter((t) => isChat(t) || (t.status === 'waiting' && !t.origin?.startsWith('job:')));
   const busy = (t) => t.status === 'waiting' || t.status === 'running' || t.status === 'starting' || t.running;
   const shown = all.filter((t, i) => i < SIDE_CHATS || busy(t) || (current?.page === 'thread' && current.params.id === t.id));
   const rows = shown.map((t) => {
@@ -327,7 +328,10 @@ async function refreshUsage() {
 }
 
 function renderUsage() {
-  const rows = usageRows(), el = $('usage');
+  const all = usageRows(), show = usageSettings(desk.settings?.utilization).show, el = $('usage');
+  const rows = show === 'tightest' ? all.filter((r, i) => all.findIndex((x) => x.a.id === r.a.id) === i)
+    : show === 'warn' ? all.filter((r) => !r.w || r.tone === 'warn' || r.tone === 'danger')
+    : all;
   el.hidden = !rows.length;
   // Rows run worst first, so an agent's first row is its worst window: phones show only that one.
   ui.morph(el, `<header><span>Utilization</span></header>` + rows.map((r, i) => `
@@ -336,6 +340,7 @@ function renderUsage() {
       <span class="usage-bar ${r.tone || 'none'}"><span class="fill" style="width:${r.w ? Math.min(100, r.w.used) : 0}%"></span>${r.p ? `<span class="tick" style="left:${r.p.elapsed}%"></span>` : ''}</span>
       <span class="usage-pct ${r.tone || ''}">${r.w ? `${r.w.used}%` : '–'}</span></button>`).join(''));
   el._rows = rows;
+  el._allRows = all;
 }
 
 function usageWhen(ts) {
@@ -378,10 +383,10 @@ $('usage').addEventListener('click', (e) => {
   const b = e.target.closest('[data-usage]');
   if (!b) return;
   usageTip.hidden = true;
-  const rows = $('usage')._rows || [], agent = rows[b.dataset.usage]?.a.id;
+  const rows = $('usage')._rows || [], all = $('usage')._allRows || rows, agent = rows[b.dataset.usage]?.a.id;
   const m = document.createElement('div');
   m.className = 'ui-popover usage-pop';
-  m.innerHTML = rows.filter((r) => r.a.id === agent).map((r) => `<div class="usage-pop-item">${usageDetail(r)}</div>`).join('');
+  m.innerHTML = all.filter((r) => r.a.id === agent).map((r) => `<div class="usage-pop-item">${usageDetail(r)}</div>`).join('');
   m.addEventListener('click', async (ev) => {
     const l = ev.target.closest('[data-usage-login]');
     if (!l) return;
@@ -398,18 +403,25 @@ api.get('api/settings').then((s) => { const tz = Intl.DateTimeFormat().resolvedO
 setInterval(refreshUsage, 60000);
 
 /* ---------- Status chips (Views with a STATUS file) ---------- */
+let chipResults = [];
+function renderChips() {
+  const sys = usageSettings(desk.settings?.utilization).system;
+  const shown = chipResults.filter(({ v, s }) => v.name !== 'system' || (sys === 'always' ? true : sys === 'warn' ? (s.level === 'warn' || s.level === 'danger') : false));
+  $('chips').innerHTML = shown.map(({ v, s }) =>
+    `<a class="chip-status ${s.level === 'ok' ? '' : s.level || ''}" href="#/v/${v.name}" title="${ui.esc(s.title || v.title)}">${s.level ? `<span class="ui-dot ${s.level}"></span>` : ''}${s.icon ? ui.icon(s.icon, 'sm') : ''}<span>${ui.esc(s.text || '')}</span></a>`).join('');
+}
 async function refreshChips() {
   const withStatus = state.views.filter((v) => v.status);
   const results = await Promise.all(withStatus.map(async (v) => {
     try { return { v, s: await (await fetch(`/v/${v.name}/${v.status}`)).json() }; } catch { return null; }
   }));
-  $('chips').innerHTML = results.filter(Boolean).map(({ v, s }) =>
-    `<a class="chip-status ${s.level === 'ok' ? '' : s.level || ''}" href="#/v/${v.name}" title="${ui.esc(s.title || v.title)}">${s.level ? `<span class="ui-dot ${s.level}"></span>` : ''}${s.icon ? ui.icon(s.icon, 'sm') : ''}<span>${ui.esc(s.text || '')}</span></a>`).join('');
+  chipResults = results.filter(Boolean);
+  renderChips();
 }
 setInterval(() => { if (!document.hidden) refreshChips(); }, 10000);
 
 /* ---------- Ask panel: talk about the View you're looking at ---------- */
-let panelThread = null, panelView = null;
+let panelView = null;
 const fab = document.createElement('button');
 fab.className = 'ask-fab';
 fab.innerHTML = `${ui.icon('message-square', 'sm')}Chat`;
@@ -456,35 +468,39 @@ function viewContext() {
     return { key: v.name, view: v.name, title: v.title, source: v.source, page: currentPage(), label: extra.label || undefined, note: extra.note || undefined };
   }
   const title = PAGES[current.page]?.title?.(current.params) || 'Timeline';
-  return { key: `page:${current.page}`, title, page: location.hash || '#/', source: '~/home/views/desk' };
+  // Keyed by the page itself (this run, this job), not its kind: two runs are two things to talk about.
+  return { key: `page:${(location.hash || '#/').split('?')[0]}`, title, page: location.hash || '#/', source: '~/home/views/desk' };
 }
 
+// The Chat button: a new chat beside the page, about what's on screen, every time (like Chat on an item).
+// The last chat started from the same page or app is a link in the empty chat, never reopened by itself.
+// Already open about this page: leave the chat that's there.
 export function togglePanel(open = !shell.classList.contains('panel-open')) {
+  const context = viewContext();
+  if (open && shell.classList.contains('panel-open') && panelView && panelView === (context?.key || null)) return;
   shell.classList.toggle('panel-open', open);
   if (!open) { Thread.unmountPanel(); return; }
-  const context = viewContext();
   panelView = context?.key || null;
   const key = context ? `desk.panel.${context.key}` : 'desk.panel';
-  panelThread = store.get(key, null);
-  if (panelThread && !state.threads.find((t) => t.id === panelThread)) panelThread = null;
-  Thread.mountPanel($('panel'), { id: panelThread, context, ctx, onCreated: (id) => store.set(key, id), onClose: () => togglePanel(false) });
+  const prev = state.threads.find((t) => t.id === store.get(key, null)) || null;
+  Thread.mountPanel($('panel'), { id: null, context, ctx, earlier: prev, onCreated: (id) => store.set(key, id), onClose: () => togglePanel(false) });
 }
 
-// Agent first: "Chat" on anything (an email, a failed run, a question) opens the chat beside it, about
-// that item. Its own chat when it has one (thread); else a chat that knows the item (label shows on
-// the chip, note reaches the agent), the same one each time you ask about the same item (key). A new
-// chat can start with text in its box (a starter prompt the owner edits or sends).
+// Chat on an item is always a new chat with the item attached (it lands in the sidebar like any other);
+// the last one about the same item is a link in the empty chat, never reopened by itself. `thread` is a
+// Reply: the chat or run that's waiting on the owner. `text` is a suggestion under the box, not typed in.
 let panelItemPage = null;
 export function askAbout({ key, label, note, thread, text } = {}) {
   shell.classList.add('panel-open');
+  const onClose = () => togglePanel(false);
+  panelItemPage = location.hash.split('#').slice(0, 2).join('#'); // the page it was asked from: the chat stays while you're on it
+  if (thread) { panelView = `item:reply:${thread}`; return Thread.mountPanel($('panel'), { id: thread, context: null, ctx, onClose }); }
   const base = viewContext() || {};
   const context = { ...base, key: `item:${key || label}`, label: label || base.title, note: note || base.note };
   panelView = context.key;
-  panelItemPage = location.hash.split('#').slice(0, 2).join('#'); // the page it was asked from
   const sk = `desk.panel.item:${key || label}`;
-  let id = thread || store.get(sk, null);
-  if (id && !thread && !state.threads.find((t) => t.id === id)) id = null;
-  Thread.mountPanel($('panel'), { id, context: thread ? null : context, ctx, text: id ? undefined : text, onCreated: (nid) => store.set(sk, nid), onClose: () => togglePanel(false) });
+  const prev = state.threads.find((t) => t.id === store.get(sk, null)) || null;
+  Thread.mountPanel($('panel'), { id: null, context, ctx, suggest: text, earlier: prev, onCreated: (nid) => store.set(sk, nid), onClose });
 }
 
 /* ---------- Focus mode ---------- */
@@ -685,6 +701,7 @@ desk.onTheme((t) => {
   usageTip.hidden = true;
   if (document.querySelector('.usage-pop.open')) ui.closePopover();
   renderUsage();
+  renderChips();
   const preferences = JSON.stringify(usageSettings(desk.settings?.utilization));
   if (preferences !== usagePreferences) { usagePreferences = preferences; refreshUsage(); }
   for (const f of viewFrames.values()) { try { f.contentWindow.postMessage({ type: 'desk:settings', settings: desk.settings }, '*'); } catch {} }
