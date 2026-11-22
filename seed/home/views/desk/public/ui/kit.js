@@ -225,7 +225,8 @@
     input?.addEventListener('input', () => { active = escape && input.value.trim() ? 1 : 0; render(); }); // searching: the first match, not the pinned escape
     render();
     ui.popover(anchor, el, { align, temp: true });
-    (input || el).focus();
+    // Phones: focusing the search would raise the keyboard over the list; tap the field to search.
+    (input && matchMedia('(pointer: fine)').matches ? input : el).focus({ preventScroll: true });
     return el;
   };
 

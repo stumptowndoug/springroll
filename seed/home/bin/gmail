@@ -4,11 +4,13 @@
   gmail accounts
   gmail search "<Gmail search, e.g. from:maya newer_than:7d>" [--account A] [--limit 20]
   gmail show <ref>
-  gmail reply <ref> [--all] [--attach FILE]... [--approved]        the reply text on stdin
+  gmail reply <ref> [--all] [--as "<Name> <alias@…>"] [--attach FILE]... [--approved]   the reply text on stdin
   gmail send --from <account> --to <addr> [--cc <addr>] --subject <s> [--as "<Name> <alias@…>"] [--attach FILE]... [--approved]   text on stdin
   gmail archive <ref>...                        out of the inbox (still in All Mail)
   gmail move <ref> <label>                      label it and take it out of the inbox
 
+A reply goes in the same Gmail thread, from the account the mail came to, with the original quoted
+under "On … wrote:" the way Gmail's own replies are. Prefer it to a fresh `send` when answering someone.
 --as sends from one of the account's aliases (it must be under Gmail → Settings → Accounts → Send mail as,
 or Gmail puts the account's own address back). <ref> is Mail's id (the number in Mail's API and Home's links) or account:<Message-ID> (from search).
 Replies and new mail go out through Gmail (they land in Sent). Unless the owner chose "Send right away"
@@ -100,6 +102,27 @@ def text_of(m):
         t = re.sub(r"(?is)<(script|style).*?</\1>", " ", t); t = re.sub(r"<br\s*/?>|</p>", "\n", t); t = re.sub(r"<[^>]+>", "", t)
     return t.strip()
 
+def quoted(orig, text):
+    """(plain, html) of a reply: the new text, then the original under "On <date>, <sender> wrote:"."""
+    import html as H
+    who = orig.get("From", "")
+    try: when = email.utils.parsedate_to_datetime(orig.get("Date")).strftime("%a, %b %-d, %Y at %-I:%M %p")
+    except Exception: when = orig.get("Date", "")
+    attr = f"On {when}, {who} wrote:"
+    b = orig.get_body(preferencelist=("plain",)); plain_orig = b.get_content().strip() if b else text_of(orig)
+    plain = text.rstrip() + "\n\n" + attr + "\n" + "\n".join(">" + (" " + l if l else "") for l in plain_orig.splitlines()) + "\n"
+    hb = orig.get_body(preferencelist=("html",))
+    if hb:
+        orig_html = hb.get_content()
+        m = re.search(r"(?is)<body[^>]*>(.*)</body>", orig_html)
+        orig_html = re.sub(r"(?is)<(script|style|head)\b.*?</\1>", "", m.group(1) if m else orig_html)
+    else:
+        orig_html = H.escape(plain_orig).replace("\n", "<br>")
+    new_html = "".join(f"<div>{H.escape(l) or '<br>'}</div>" for l in text.rstrip().splitlines())
+    html = (f'<div dir="ltr">{new_html}</div><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">{H.escape(attr)}<br></div>'
+            f'<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">{orig_html}</blockquote></div>')
+    return plain, html
+
 def policy_ok(c, approved):
     if (c.get("policy") or {}).get("send", "ask") != "auto" and not approved:
         die("the owner wants to approve what agents send (Connections → Gmail). Show them the exact email in the chat; when they say yes, run this again with --approved.", 3)
@@ -157,7 +180,7 @@ def main():
             M = imap(a, c)
             try:
                 M.select(all_mail(M), readonly=True)
-                typ, d = M.uid("SEARCH", None, "X-GM-RAW", f'"{q}"')
+                typ, d = M.uid("SEARCH", None, "X-GM-RAW", '"' + q.replace("\\", "\\\\").replace('"', '\\"') + '"')
                 uids = (d[0].split() if d and d[0] else [])[-lim:]
                 for u in reversed(uids):
                     typ, h = M.uid("FETCH", u, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])")
@@ -179,7 +202,7 @@ def main():
         return
     if cmd in ("reply", "send", "archive", "move"): not_read_only_job()
     if cmd == "reply":
-        reply_all = flag("--all"); approved = flag("--approved"); files = attachments()
+        reply_all = flag("--all"); alias = arg("--as"); approved = flag("--approved"); files = attachments()
         acct, mid, local = resolve(sys.argv[2] if len(sys.argv) > 2 else "")
         a = account(c, acct); policy_ok(c, approved); text = body_from_stdin()
         M = imap(a, c)
@@ -193,19 +216,21 @@ def main():
         if reply_all:
             cc = [x for _, x in email.utils.getaddresses([orig.get("To", ""), orig.get("Cc", "")]) if x and x.lower() != me and x.lower() not in to.lower()]
         r = EmailMessage()
-        r["From"] = a["email"]; r["To"] = to
+        r["From"] = alias or a["email"]; r["To"] = to
         if cc: r["Cc"] = ", ".join(cc)
         subj = orig.get("Subject", "")
-        r["Subject"] = subj if subj.lower().startswith("re:") else f"Re: {subj}"
+        r["Subject"] = subj if subj.lower().startswith("re:") else f"Re: {subj}".strip()
         r["In-Reply-To"] = orig.get("Message-ID", mid)
         r["References"] = " ".join(x for x in (orig.get("References", ""), orig.get("Message-ID", mid)) if x)
         r["Date"] = email.utils.formatdate(localtime=True); r["Message-ID"] = email.utils.make_msgid(domain=me.split("@")[-1])
-        r.set_content(text); attach(r, files)
+        plain, html = quoted(orig, text)
+        r.set_content(plain); r.add_alternative(html, subtype="html"); attach(r, files)
+        if os.environ.get("GMAIL_DRY_RUN"): print(r.as_string()); return
         S = smtp(a, c)
         try: S.send_message(r)
         finally: S.quit()
         if local: mail_api_post(f"/api/triage/{local}/done", {})
-        print(f"Sent your reply to {to} from {a['email']}.")
+        print(f"Sent your reply to {to} from {alias or a['email']}, in the same thread with the original quoted.")
         return
     if cmd == "send":
         frm = arg("--from"); to = arg("--to"); cc = arg("--cc"); subj = arg("--subject"); alias = arg("--as"); approved = flag("--approved"); files = attachments()
